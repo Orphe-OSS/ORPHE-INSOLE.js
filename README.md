@@ -2,7 +2,7 @@
 Happy hacking for ORPHE INSOLE module on javascript.
 
 > [!CAUTION]
-> プライベートリポジトリの間はcdnリンクや幾つかのリンクは機能しませんのでご注意ください。
+> プライベートリポジトリの間はcdnリンクや幾つかのリンクは機能しませんのでご注意ください。必ずローカルにリポジトリをクローンして動作を確認してください。
 
 ## 動作確認
 まずは手元のORPHE INSOLEを[sensor dashboard](https://orphe-oss.github.io/ORPHE-CORE.js/examples/sensor-dashboard)ページで接続し、値が取得できるかを確認してみましょう
