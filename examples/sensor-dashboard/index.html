@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>ORPHE CORE JS DEMO</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #000;
+            color: #fff;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 60px 0 40px;
+            border-bottom: 1px solid #333;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 300;
+            letter-spacing: 0.5px;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: #888;
+            font-weight: 300;
+            margin-bottom: 30px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        button {
+            background-color: transparent;
+            color: #fff;
+            border: 1px solid #fff;
+            padding: 12px 32px;
+            font-size: 14px;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background-color: #fff;
+            color: #000;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:disabled:hover {
+            background-color: transparent;
+            color: #fff;
+        }
+
+        .connection-status {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 1rem;
+            font-weight: 300;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        .status-connected {
+            background: #00ff00;
+            animation: pulse 2s infinite;
+        }
+
+        .status-disconnected {
+            background: #ff0000;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .sensor-card {
+            background-color: #111;
+            border: 1px solid #333;
+            padding: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .sensor-card:hover {
+            border-color: #555;
+            background-color: #1a1a1a;
+        }
+
+        .sensor-title {
+            font-size: 1rem;
+            font-weight: 400;
+            margin-bottom: 30px;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 15px;
+        }
+
+        .sensor-values {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .value-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .value-label {
+            font-weight: 300;
+            color: #aaa;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .value-number {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 400;
+            color: #fff;
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .quaternion-card {
+            grid-column: span 2;
+        }
+
+        .quaternion-values {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .meta-info {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+            font-size: 0.8rem;
+            color: #666;
+            font-weight: 300;
+        }
+
+        .meta-info div {
+            margin-bottom: 5px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 60px 0 20px;
+            border-top: 1px solid #333;
+            margin-top: 60px;
+            color: #666;
+            font-size: 0.9rem;
+            font-weight: 300;
+        }
+
+        /* レスポンシブデザイン */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            header {
+                padding: 40px 0 30px;
+            }
+
+            h1 {
+                font-size: 2.5rem;
+            }
+
+            .quaternion-card {
+                grid-column: span 1;
+            }
+
+            .quaternion-values {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            button {
+                width: 200px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .sensor-card {
+                padding: 20px;
+            }
+
+            .sensor-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 高度なアニメーション */
+        .sensor-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sensor-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #fff, transparent);
+            transition: left 0.5s ease;
+        }
+
+        .sensor-card:hover::before {
+            left: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <img src="../../assets/images/orphe.svg" alt="ORPHE" style="height: 40px; margin-bottom: 10px;">
+            <div class="subtitle">ORPHE-INSOLE.js - Sensor Dashboard</div>
+
+            <div class="connection-status">
+                <span class="status-indicator status-disconnected" id="status-indicator"></span>
+                <span id="connection-text">Not Connected</span>
+            </div>
+
+            <div class="controls">
+                <button onclick="connectDevice();" id="connect-btn">Connect Device</button>
+            </div>
+        </header>
+
+        <div class="sensor-grid">
+            <!-- Accelerometer Card -->
+            <div class="sensor-card">
+                <div class="sensor-title">Accelerometer</div>
+                <div class="sensor-values">
+                    <div class="value-row">
+                        <span class="value-label">X</span>
+                        <span class="value-number" id="acc-x">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Y</span>
+                        <span class="value-number" id="acc-y">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Z</span>
+                        <span class="value-number" id="acc-z">0.000</span>
+                    </div>
+                </div>
+                <div class="meta-info">
+                    <div>Timestamp: <span id="acc-timestamp">—</span></div>
+                    <div>Packet: <span id="acc-packet">—</span></div>
+                </div>
+            </div>
+
+            <!-- Gyroscope Card -->
+            <div class="sensor-card">
+                <div class="sensor-title">Gyroscope</div>
+                <div class="sensor-values">
+                    <div class="value-row">
+                        <span class="value-label">X</span>
+                        <span class="value-number" id="gyro-x">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Y</span>
+                        <span class="value-number" id="gyro-y">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Z</span>
+                        <span class="value-number" id="gyro-z">0.000</span>
+                    </div>
+                </div>
+                <div class="meta-info">
+                    <div>Timestamp: <span id="gyro-timestamp">—</span></div>
+                    <div>Packet: <span id="gyro-packet">—</span></div>
+                </div>
+            </div>
+
+            <!-- Pressure Card -->
+            <div class="sensor-card">
+                <div class="sensor-title">Pressure Sensors</div>
+                <div class="sensor-values">
+                    <div class="value-row">
+                        <span class="value-label">Sensor 1</span>
+                        <span class="value-number" id="press-0">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Sensor 2</span>
+                        <span class="value-number" id="press-1">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Sensor 3</span>
+                        <span class="value-number" id="press-2">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Sensor 4</span>
+                        <span class="value-number" id="press-3">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Sensor 5</span>
+                        <span class="value-number" id="press-4">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Sensor 6</span>
+                        <span class="value-number" id="press-5">0.000</span>
+                    </div>
+                </div>
+                <div class="meta-info">
+                    <div>Timestamp: <span id="press-timestamp">—</span></div>
+                    <div>Packet: <span id="press-packet">—</span></div>
+                </div>
+            </div>
+
+            <!-- Quaternion Card -->
+            <div class="sensor-card quaternion-card">
+                <div class="sensor-title">Quaternion</div>
+                <div class="quaternion-values">
+                    <div class="value-row">
+                        <span class="value-label">W</span>
+                        <span class="value-number" id="quat-w">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">X</span>
+                        <span class="value-number" id="quat-x">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Y</span>
+                        <span class="value-number" id="quat-y">0.000</span>
+                    </div>
+                    <div class="value-row">
+                        <span class="value-label">Z</span>
+                        <span class="value-number" id="quat-z">0.000</span>
+                    </div>
+                </div>
+                <div class="meta-info">
+                    <div>Timestamp: <span id="quat-timestamp">—</span></div>
+                    <div>Packet: <span id="quat-packet">—</span></div>
+                </div>
+            </div>
+
+            <!-- Status Card -->
+            <div class="sensor-card">
+                <div class="sensor-title">Status</div>
+                <div class="sensor-values">
+                    <div id="status-content">
+                        <div class="status-message" id="chrome-flag-message" style="display: none;">
+                            <p style="color: #ff9500; margin-bottom: 15px;">⚠️ Chrome Experimental Features Required</p>
+                            <p style="font-size: 0.9rem; line-height: 1.4; margin-bottom: 10px;">
+                                To enable advertisement monitoring, please:
+                            </p>
+                            <ol style="font-size: 0.9rem; line-height: 1.4; margin-left: 20px; margin-bottom: 15px;">
+                                <li>
+                                    Open <code style="background:#333; padding:2px 6px; color:#4fc3f7;">
+    chrome://flags/#enable-experimental-web-platform-features
+  </code>
+                                    (Copy & paste this into the address bar)
+                                </li>
+
+                                <li>Set "Experimental Web Platform features" to <strong>Enabled</strong></li>
+                                <li>Restart Chrome browser</li>
+                            </ol>
+                        </div>
+                        <div class="advertisement-data" id="advertisement-data" style="display: none;">
+                            <div class="value-row">
+                                <span class="value-label">Battery</span>
+                                <span class="value-number" id="ad-battery">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">Model Type</span>
+                                <span class="value-number" id="ad-model-type">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">Mount Position</span>
+                                <span class="value-number" id="ad-mounting-position">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">Activity Recognition</span>
+                                <span class="value-number" id="ad-human-activity">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">Version</span>
+                                <span class="value-number" id="ad-version">—</span>
+                            </div>
+                        </div>
+                        <div class="no-advertisement" id="no-advertisement">
+                            <p style="color: #666;">No advertisement data received</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <footer>
+            <p>© 2025 ORPHE Inc. — Sensor Dashboard</p>
+        </footer>
+    </div>
+    <script src="../../src/ORPHE-INSOLE.js" crossorigin="anonymous"></script>
+    <script>
+        var insole = new Orphe(0);
+        var isConnected = false;
+
+        // Chrome実験的機能の確認（UI表示用）
+        function checkChromeExperimentalFeatures() {
+            const chromeMessage = document.getElementById('chrome-flag-message');
+            const advertisementData = document.getElementById('advertisement-data');
+            const noAdvertisement = document.getElementById('no-advertisement');
+
+            // watchAdvertisements APIが利用可能かチェック
+            if (!navigator.bluetooth || !BluetoothDevice.prototype.watchAdvertisements) {
+                chromeMessage.style.display = 'block';
+                advertisementData.style.display = 'none';
+                noAdvertisement.style.display = 'none';
+                return false;
+            } else {
+                chromeMessage.style.display = 'none';
+                noAdvertisement.style.display = 'block';
+                return true;
+            }
+        }
+
+        // バッテリー情報を解析する関数
+        function parseBatteryInfo(batteryValue) {
+            if (batteryValue === undefined || batteryValue === null) return '—';
+
+            const chargingFlag = (batteryValue & 0xF0) >> 4; // 上位4ビット
+            const batteryLevel = batteryValue & 0x0F; // 下位4ビット
+
+            // バッテリー残量の表示
+            let levelText;
+            switch (batteryLevel) {
+                case 0: levelText = 'Low'; break;
+                case 1: levelText = 'Mid'; break;
+                case 2: levelText = 'High'; break;
+                default: levelText = 'Unknown'; break;
+            }
+
+            // 充電状態の表示
+            let chargingText;
+            switch (chargingFlag) {
+                case 0x0: chargingText = ''; break; // チャージなし
+                case 0x1: chargingText = ' (MAT Charging)'; break; // MATチャージ
+                case 0x2: chargingText = ' (Wired Power)'; break; // 有線給電
+                default: chargingText = ' (Unknown)'; break;
+            }
+
+            return `${levelText}${chargingText}`;
+        }
+
+        // アドバタイズメントデータを表示（gotStatusの形式に対応）
+        function updateAdvertisementData(status) {
+            const advertisementData = document.getElementById('advertisement-data');
+            const noAdvertisement = document.getElementById('no-advertisement');
+
+            if (status) {
+                document.getElementById('ad-battery').textContent = parseBatteryInfo(status.battery);
+                document.getElementById('ad-model-type').textContent = status.model_type !== undefined ? status.model_type : '—';
+                document.getElementById('ad-mounting-position').textContent = status.mounting_position !== undefined ? status.mounting_position : '—';
+                document.getElementById('ad-human-activity').textContent = status.human_activity_recognition !== undefined ? status.human_activity_recognition : '—';
+                document.getElementById('ad-version').textContent = status.version || '—';
+
+                advertisementData.style.display = 'block';
+                noAdvertisement.style.display = 'none';
+            } else {
+                advertisementData.style.display = 'none';
+                noAdvertisement.style.display = 'block';
+            }
+        }
+
+        // UI更新用のヘルパー関数
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const statusIndicator = document.getElementById('status-indicator');
+            const connectionText = document.getElementById('connection-text');
+            const connectBtn = document.getElementById('connect-btn');
+
+            if (connected) {
+                statusIndicator.className = 'status-indicator status-connected';
+                connectionText.textContent = 'Connected';
+                connectBtn.textContent = 'Disconnect';
+            } else {
+                statusIndicator.className = 'status-indicator status-disconnected';
+                connectionText.textContent = 'Not Connected';
+                connectBtn.textContent = 'Connect Device';
+            }
+        }
+
+        function formatValue(value) {
+            if (typeof value === 'number') {
+                return value.toFixed(3);
+            }
+            return value || '0.000';
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '—';
+            return new Date(timestamp).toLocaleTimeString();
+        }
+
+        function updateValue(elementId, value) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = formatValue(value);
+            }
+        }
+
+        window.onload = function () {
+            // Chrome実験的機能をチェック（UI表示用）
+            checkChromeExperimentalFeatures();
+
+            // ORPHE CORE Init
+            insole.setup();
+
+            // 接続イベント
+            insole.onConnect = function () {
+                updateConnectionStatus(true);
+            };
+
+            insole.onDisconnect = function () {
+                updateConnectionStatus(false);
+                // ステータスデータをクリア
+                updateAdvertisementData(null);
+            };
+
+            // センサーデータ受信
+            insole.gotConvertedAcc = function (acc) {
+                updateValue("acc-x", acc.x);
+                updateValue("acc-y", acc.y);
+                updateValue("acc-z", acc.z);
+                document.getElementById("acc-timestamp").textContent = formatTimestamp(acc.timestamp);
+                document.getElementById("acc-packet").textContent = acc.packet_number || '—';
+            };
+
+            insole.gotConvertedGyro = function (gyro) {
+                updateValue("gyro-x", gyro.x);
+                updateValue("gyro-y", gyro.y);
+                updateValue("gyro-z", gyro.z);
+                document.getElementById("gyro-timestamp").textContent = formatTimestamp(gyro.timestamp);
+                document.getElementById("gyro-packet").textContent = gyro.packet_number || '—';
+            };
+
+            insole.gotQuat = function (quat) {
+                updateValue("quat-w", quat.w);
+                updateValue("quat-x", quat.x);
+                updateValue("quat-y", quat.y);
+                updateValue("quat-z", quat.z);
+                document.getElementById("quat-timestamp").textContent = formatTimestamp(quat.timestamp);
+                document.getElementById("quat-packet").textContent = quat.packet_number || '—';
+            };
+
+            insole.gotPress = function (press) {
+                // press.values[] 配列の6つの値を表示
+                if (press.values && Array.isArray(press.values)) {
+                    for (let i = 0; i < 6; i++) {
+                        const value = press.values[i] || 0;
+                        updateValue(`press-${i}`, value);
+                    }
+                } else {
+                    // フォールバック: press.valueが単一値の場合
+                    updateValue("press-0", press.value || 0);
+                    for (let i = 1; i < 6; i++) {
+                        updateValue(`press-${i}`, 0);
+                    }
+                }
+                document.getElementById("press-timestamp").textContent = formatTimestamp(press.timestamp);
+                document.getElementById("press-packet").textContent = press.packet_number || '—';
+            };
+
+            // ステータスデータ受信コールバック（アドバタイズメントデータ用）
+            insole.gotStatus = function (status) {
+                console.log('Status data received:', status);
+                updateAdvertisementData(status);
+            };
+        };
+
+        function connectDevice() {
+            if (isConnected) {
+                insole.stop();
+                updateConnectionStatus(false);
+            } else {
+                insole.begin()
+                    .then(() => {
+                        console.log('デバイスに接続しました');
+                    })
+                    .catch(error => {
+                        console.error('接続エラー:', error);
+                        alert('デバイスの接続に失敗しました: ' + error.message);
+                    });
+            }
+        }
+    </script>
+</body>
+
+</html>
