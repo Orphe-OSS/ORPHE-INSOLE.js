@@ -65,19 +65,23 @@ npm run generate-docs
 ```
 
  ##  BLE情報
- characteristicに関しては、device informationとupdate sensor valuesの2つのサービスを利用しています。これはORPHE COREと同じUUIDです。
+ characteristicに関しては、device information, update sensor values, date timeの3つのサービスを利用しています。これはORPHE COREと同じUUIDです。
    * device information: 01a9d6b5-ff6e-444a-b266-0be75e85c064
    * update sensor values: f3f9c7ce-46ee-4205-89ac-abe64e626c0f
+   * date time: f53eeeb1-b2e8-492a-9673-10e0f1c29026
 
 ### Device Information
 coreの時とは異なり、sensor_valuesの値を取得形式を変更する手段になっています。任意のデータをwriteすることで以下の通りのデータ形式になります。
  * 0x0D,0x01：リアルタイムデータを取得（従来の200Hz魔改造版のデータ形式）
- * 0x0D,0x02: ところてん
+ * 0x0D,0x02: 任意データ取得（現在未対応）
  * 0x0D,0x03: リアルタイム（ジャイロ、加速度、圧力）200Hz
- * 0x0D,0x04: リアルタイム（ジャイロ、加速度、圧力、クオータニオン）100Hz
+ * 0x0D,0x04: リアルタイム（ジャイロ、加速度、圧力、クオータニオン）100Hz -- デフォルト
 
 ### Update Sensor Values
 センサーの値を更新するためのサービスです。device informationを通じてデータを送信すると、送信フォーマットを変更することができます。デフォルトでは0x0D,0x04の100Hzreal time送信になります。
+
+### Date Time
+センサから送信されてくるタイムスタンプ情報を同期するために利用します。ユーザサイドからの操作は基本的には不要です。
 
 ## Requirements
  * float16.js, https://github.com/petamoriken/float16

@@ -1,12 +1,12 @@
 var orphe_js_version_date = `
-Last modified: 2025/08/22 13:22:56
+Last modified: 2025/08/22 14:08:39
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE CORE Module, inspired by BlueJelly.js
 Class形式で記述を変更したバージョン
 @module Orphe
 @author Tetsuaki BABA
-@version 1.0.0
+@version 0.9.0
 
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
