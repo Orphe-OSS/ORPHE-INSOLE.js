@@ -36,10 +36,17 @@ Happy hacking for ORPHE INSOLE module on javascript.
   </html>
 ```
 
+https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
+
 ### CDN
 ```
 <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/dist/orphe-insole.min.js"></script>
 ```
+### Tutorial
+  * https://github.com/Orphe-OSS/ORPHE-INSOLE.js/wiki
+
+### API Document
+  * https://orphe-oss.github.io/ORPHE-INSOLE.js/docs/
 
 ## 開発者向け情報
 ### 環境構築
