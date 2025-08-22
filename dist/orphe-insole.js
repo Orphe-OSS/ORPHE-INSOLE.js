@@ -1,5 +1,5 @@
 var orphe_js_version_date = `
-Last modified: 2025/08/22 13:22:56
+Last modified: 2025/08/21 22:11:11
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE CORE Module, inspired by BlueJelly.js
@@ -325,12 +325,12 @@ class Orphe {
     this.hashUUID[name] = { 'serviceUUID': serviceUUID, 'characteristicUUID': characteristicUUID };
   }
   /**
-   * 最初に必要な初期化処理メソッドです。利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES）の指定の他、オプションを指定することができます。通常利用では引数を省略して 今後の機能拡張を見据えたメソッドなので、基本的にはsetup()で呼び出せば良いです。
-   * @param {string[]} [string[]=["DEVICE_INFORMATION","DATE_TIME", "SENSOR_VALUES"]] DEVICE_INFORMATION, DATE_TIME, SENSOR_VALUES,
+   * 最初に必要な初期化処理メソッドです。利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS）の指定の他、オプションを指定することができます。オプションでは生データの取得を指定することができます。通常利用では引数を省略して setup() が呼び出されることが多いです。
+   * @param {string[]} [string[]=["DEVICE_INFORMATION", "SENSOR_VALUES", "STEP_ANALYSIS"]] DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS
    * @param {object} [options = {interpolation}] - interpolationは未実装
    *
    */
-  setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES'],
+  setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES', 'STEP_ANALYSIS'],
     options = {
       interpolation: {
         enabled: false, // 線形補間の有効化/無効化
@@ -355,6 +355,9 @@ class Orphe {
       }
       else if (name == 'SENSOR_VALUES') {
         this.setUUID(name, this.ORPHE_OTHER_SERVICE, this.ORPHE_SENSOR_VALUES);
+      }
+      else if (name == 'STEP_ANALYSIS') {
+        this.setUUID(name, this.ORPHE_OTHER_SERVICE, this.ORPHE_STEP_ANALYSIS);
       }
     }
   }
@@ -399,7 +402,30 @@ class Orphe {
     this.reset();
   }
 
-
+  /**
+   * set LED mode
+   * @param {int} on_off 0: turning off the LED, 1: turning on the LED
+   * @param {int} pattern 0-4
+   */
+  setLED(on_off, pattern) {
+    const data = new Uint8Array([0x02, on_off, pattern]);
+    this.write('DEVICE_INFORMATION', data);
+  }
+  /**
+   * sets the LED Brightness
+   * @param {uint8} value 0-255, 0:turning off the LED
+   */
+  setLEDBrightness(value) {
+    this.array_device_information.setUint8(2, value);
+    this.write('DEVICE_INFORMATION', this.array_device_information);
+  }
+  /**
+   * Reset motion sensor attitude, quaternion culculation.
+   */
+  resetMotionSensorAttitude() {
+    const data = new Uint8Array([0x03]);
+    this.write('DEVICE_INFORMATION', data);
+  }
   /**
    * Reset Analysis logs in the core module.
    */
@@ -523,17 +549,15 @@ class Orphe {
     console.log('RSSI:', event.rssi, 'dBm');
     console.log('TX Power:', event.txPower);
     console.log('==============================');
+
     console.log(event);
 
     const dv = event.manufacturerData.get(0x0000);
+    console.log('raw=', new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
 
     // カスタムコールバックがあれば呼び出し
     if (this.gotStatus) {
       const status = {
-        name: event.device.name,
-        rssi: event.rssi,
-        txPower: event.txPower,
-        id: event.device.id,
         battery: dv.getUint8(14),
         model_type: dv.getUint8(5),
         mounting_position: dv.getUint8(6),
@@ -1234,25 +1258,14 @@ class Orphe {
    */
   gotData(data) { }
 
-
   /**
-   * Handles the received status.
-   * @param {Object} status - The status object containing device advertisement information.
-   * @param {string} status.name - デバイス名
-   * @param {number} status.rssi - 受信信号強度 (dBm)
-   * @param {number} status.txPower - 送信出力 (dBm)
-   * @param {string} status.id - デバイスID
-   * @param {number} status.battery - バッテリー残量
-   * @param {number} status.model_type - モデルタイプ
-   * @param {number} status.mounting_position - 取り付け位置
-   * @param {number} status.human_activity_recognition - 人間活動認識
-   * @param {string} status.version - ファームウェアバージョン (例: "1.2.3")
+   * 
    */
   gotStatus(status) {
   }
   /**
    * コアモジュールの圧力情報を取得する
-   * @param {Object} press {values[],timestamp,packet_number} 圧力の取得
+   * @param {Object} press {value} 圧力の取得
    */
   gotPress(press) { }
 

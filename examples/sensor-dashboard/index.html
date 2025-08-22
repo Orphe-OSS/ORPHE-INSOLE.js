@@ -277,6 +277,11 @@
         .sensor-card:hover::before {
             left: 100%;
         }
+
+        /* Device ID用の小さなフォントサイズ */
+        #ad-id {
+            font-size: 0.7rem !important;
+        }
     </style>
 </head>
 
@@ -429,6 +434,22 @@
                         </div>
                         <div class="advertisement-data" id="advertisement-data" style="display: none;">
                             <div class="value-row">
+                                <span class="value-label">Device Name</span>
+                                <span class="value-number" id="ad-name">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">Device ID</span>
+                                <span class="value-number" id="ad-id">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">RSSI</span>
+                                <span class="value-number" id="ad-rssi">—</span>
+                            </div>
+                            <div class="value-row">
+                                <span class="value-label">TX Power</span>
+                                <span class="value-number" id="ad-txpower">—</span>
+                            </div>
+                            <div class="value-row">
                                 <span class="value-label">Battery</span>
                                 <span class="value-number" id="ad-battery">—</span>
                             </div>
@@ -520,6 +541,10 @@
             const noAdvertisement = document.getElementById('no-advertisement');
 
             if (status) {
+                document.getElementById('ad-name').textContent = status.name || '—';
+                document.getElementById('ad-id').textContent = status.id || '—';
+                document.getElementById('ad-rssi').textContent = status.rssi !== undefined ? `${status.rssi} dBm` : '—';
+                document.getElementById('ad-txpower').textContent = status.txPower !== undefined ? `${status.txPower} dBm` : '—';
                 document.getElementById('ad-battery').textContent = parseBatteryInfo(status.battery);
                 document.getElementById('ad-model-type').textContent = status.model_type !== undefined ? status.model_type : '—';
                 document.getElementById('ad-mounting-position').textContent = status.mounting_position !== undefined ? status.mounting_position : '—';

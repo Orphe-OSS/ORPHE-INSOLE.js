@@ -1,0 +1,38 @@
+{
+    "name": "orphe-insole",
+    "version": "1.0.0",
+    "description": "JavaScript library for ORPHE insole devices",
+    "main": "dist/orphe-insole.js",
+    "jsdelivr": "dist/orphe-insole.min.js",
+    "files": [
+        "dist/",
+        "src/"
+    ],
+    "scripts": {
+        "build": "mkdir -p dist && cp src/ORPHE-INSOLE.js dist/orphe-insole.js && terser src/ORPHE-INSOLE.js -o dist/orphe-insole.min.js --source-map --mangle --compress",
+        "build:dev": "mkdir -p dist && cp src/ORPHE-INSOLE.js dist/orphe-insole.js",
+        "build:min": "mkdir -p dist && terser src/ORPHE-INSOLE.js -o dist/orphe-insole.min.js --source-map --mangle --compress",
+        "generate-docs": "jsdoc --configure jsdoc.json --verbose"
+    },
+    "directories": {
+        "doc": "docs",
+        "example": "examples"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Orphe-OSS/ORPHE-INSOLE.js.git"
+    },
+    "author": "Tetsuaki Baba",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/Orphe-OSS/ORPHE-INSOLE.js/issues"
+    },
+    "homepage": "https://github.com/Orphe-OSS/ORPHE-INSOLE.js#readme",
+    "dependencies": {
+        "jsdoc": "^4.0.4"
+    },
+    "devDependencies": {
+        "clean-jsdoc-theme": "^4.3.0",
+        "terser": "^5.43.1"
+    }
+}
