@@ -20,7 +20,7 @@ window.onload = function () {
         console.log('onConnect callback triggered');
         const wasConnected = is_connected; // 既に接続されていたかを記録
         is_connected = true;
-        
+
         // 初回接続時のみis_playingをtrueにする
         if (!wasConnected) {
             is_playing = true;
@@ -290,7 +290,7 @@ function send(dom, characteristic = 'DEVICE_INFORMATION') {
 
 async function read(dom, characteristic = 'DEVICE_INFORMATION') {
     console.log('read() called with characteristic:', characteristic, 'current is_playing:', is_playing);
-    
+
     if (is_connected == false) {
         alert('ORPHE COREに接続してください');
         return;

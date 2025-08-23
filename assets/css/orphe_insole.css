@@ -313,3 +313,129 @@
  #ad-id-1 {
      font-size: 0.7rem !important;
  }
+
+ /* Terminal specific styles */
+ .terminal-card {
+     background-color: #111;
+     border: 1px solid #333;
+     padding: 30px;
+     margin-bottom: 20px;
+     transition: all 0.3s ease;
+ }
+
+ .terminal-card:hover {
+     border-color: #555;
+     background-color: #1a1a1a;
+ }
+
+ .terminal-title {
+     font-size: 1rem;
+     font-weight: 400;
+     margin-bottom: 20px;
+     color: #fff;
+     text-transform: uppercase;
+     letter-spacing: 1px;
+     border-bottom: 1px solid #333;
+     padding-bottom: 15px;
+ }
+
+ .input-group {
+     display: flex;
+     gap: 10px;
+     margin-bottom: 20px;
+ }
+
+ input[type="text"] {
+     flex: 1;
+     background-color: #222;
+     border: 1px solid #444;
+     color: #fff;
+     padding: 12px;
+     font-size: 14px;
+     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+ }
+
+ input[type="text"]::placeholder {
+     color: #666;
+ }
+
+ textarea {
+     width: 100%;
+     background-color: #000;
+     border: 1px solid #333;
+     color: #0f0;
+     padding: 15px;
+     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace !important;
+     font-size: 12px;
+     line-height: 1.4;
+     resize: vertical;
+ }
+
+ textarea::placeholder {
+     color: #666;
+ }
+
+ .buffer-info {
+     font-size: 0.8rem;
+     color: #666;
+     margin-bottom: 10px;
+ }
+
+ .buffer-info span {
+     color: #888;
+ }
+
+ .controls-row {
+     display: flex;
+     gap: 10px;
+     justify-content: flex-end;
+     margin-top: 15px;
+ }
+
+ .terminal-main {
+     display: grid;
+     grid-template-columns: 1fr 1fr;
+     gap: 40px;
+     margin-bottom: 40px;
+ }
+
+ .terminal-full {
+     grid-column: span 2;
+ }
+
+ .connect-section {
+     border: 1px solid #333;
+     background-color: #111;
+     padding: 30px;
+     margin: 30px 0;
+     transition: all 0.3s ease;
+ }
+
+ .connect-section:hover {
+     border-color: #555;
+     background-color: #1a1a1a;
+ }
+
+ #connectionStatus {
+     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+     letter-spacing: 0.5px;
+ }
+
+ #connectionStatus.connected {
+     color: #0f0 !important;
+ }
+
+ #connectionStatus.disconnected {
+     color: #f00 !important;
+ }
+
+ @media (max-width: 768px) {
+     .terminal-main {
+         grid-template-columns: 1fr;
+         gap: 20px;
+     }
+
+     .terminal-full {
+         grid-column: span 1;
+     }
+ }
