@@ -12,27 +12,53 @@ function formatNumber(number) {
     return number.toString().padStart(4, '0');
 }
 
+var insole = new Orphe(0);
 window.onload = function () {
 
-    // ORPHE CORE Init; bles[0] and bles[1] are used by CoreToolkit.js
-    bles[0].setup();
-    buildCoreToolkit(document.querySelector('#toolkit_placeholder'), 'CORE', 0, 'SENSOR_VALUES');
-    bles[0].onConnect = function () {
+    insole.setup();
+    insole.onConnect = function () {
+        console.log('onConnect callback triggered');
+        const wasConnected = is_connected; // 既に接続されていたかを記録
         is_connected = true;
-        is_playing = true;
+        
+        // 初回接続時のみis_playingをtrueにする
+        if (!wasConnected) {
+            is_playing = true;
+            console.log('First connection - setting is_playing to true');
+        } else {
+            console.log('Reconnection - preserving is_playing state:', is_playing);
+        }
+
+        // Update UI
+        const connectButton = document.querySelector('#connectButton');
+        const connectionStatus = document.querySelector('#connectionStatus');
+        if (connectButton && connectionStatus) {
+            connectButton.textContent = 'Disconnect';
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.className = 'connected';
+        }
     }
-    bles[0].onDisconnect = function () {
+    insole.onDisconnect = function () {
+        console.log('onDisconnect callback triggered');
         is_connected = false;
         is_playing = false;
+        // Update UI
+        const connectButton = document.querySelector('#connectButton');
+        const connectionStatus = document.querySelector('#connectionStatus');
+        if (connectButton && connectionStatus) {
+            connectButton.textContent = 'Connect Device';
+            connectionStatus.textContent = 'Not Connected';
+            connectionStatus.className = 'disconnected';
+        }
         alert('ORPHE COREとの接続が切れました');
     }
-    bles[0].lostData = function (num, num_prev) {
+    insole.lostData = function (num, num_prev) {
         let str = document.querySelector('#textarea_lost_data').innerHTML;
         str += `[${formatNumber(number_of_lost_data)}]: ${num_prev} <-> ${num}\n`;
         number_of_lost_data++;
         document.querySelector('#textarea_lost_data').innerHTML = str;
     }
-    bles[0].gotData = function (data, uuid) {
+    insole.gotData = function (data, uuid) {
 
         if (uuid == 'DEVICE_INFORMATION') {
             document.querySelector('#di_textarea_recv').innerHTML = '';
@@ -259,20 +285,24 @@ function send(dom, characteristic = 'DEVICE_INFORMATION') {
     }
 
     let senddata = new Uint8Array(commands);
-    bles[0].write(characteristic, senddata);
+    insole.write(characteristic, senddata);
 }
 
 async function read(dom, characteristic = 'DEVICE_INFORMATION') {
+    console.log('read() called with characteristic:', characteristic, 'current is_playing:', is_playing);
+    
     if (is_connected == false) {
         alert('ORPHE COREに接続してください');
         return;
     }
 
     if (characteristic == 'DEVICE_INFORMATION') {
-        let ret = await bles[0].getDeviceInformation();
+        console.log('Calling insole.getDeviceInformation()');
+        let ret = await insole.getDeviceInformation();
+        console.log('getDeviceInformation completed, is_playing after call:', is_playing);
         let resultArray = [];
-        for (let i = 0; i < ret.data.byteLength; i++) {
-            resultArray.push(ret.data.getUint8(i).toString(16).padStart(2, '0').toUpperCase());
+        for (let i = 0; i < ret.raw.byteLength; i++) {
+            resultArray.push(ret.raw.getUint8(i).toString(16).padStart(2, '0').toUpperCase());
         }
         document.querySelector('#di_textarea_recv').innerHTML += resultArray.join(',');
         document.querySelector('#di_textarea_recv').innerHTML += '\n';
@@ -280,16 +310,86 @@ async function read(dom, characteristic = 'DEVICE_INFORMATION') {
 
     }
     else if (characteristic == 'DATE_TIME') {
-        let ret = await bles[0].getDateTime();
-        console.log(ret.data);
+        console.log('Calling insole.getDateTime()');
+        let ret = await insole.getDateTime();
+        console.log('getDateTime completed, is_playing after call:', is_playing);
         let resultArray = [];
-        for (let i = 0; i < ret.data.byteLength; i++) {
-            resultArray.push(ret.data.getUint8(i).toString(16).padStart(2, '0').toUpperCase());
+        for (let i = 0; i < ret.raw.byteLength; i++) {
+            resultArray.push(ret.raw.getUint8(i).toString(16).padStart(2, '0').toUpperCase());
         }
         document.querySelector('#dt_textarea_recv').innerHTML += resultArray.join(',');
         document.querySelector('#dt_textarea_recv').innerHTML += '\n';
         document.querySelector("#dt_textarea_recv").scrollTop = document.querySelector("#dt_textarea_recv").scrollHeight;
     }
 
+    console.log('read() completed, final is_playing:', is_playing);
+}
 
+// Connect Device function
+async function connectDevice() {
+    const connectButton = document.querySelector('#connectButton');
+    const connectionStatus = document.querySelector('#connectionStatus');
+
+    console.log('connectDevice called, current is_connected:', is_connected);
+
+    if (is_connected) {
+        // Disconnect
+        console.log('Attempting to disconnect...');
+        try {
+            connectButton.textContent = 'Disconnecting...';
+            connectionStatus.textContent = 'Disconnecting...';
+            connectionStatus.className = '';
+
+            await insole.reset();
+            console.log('insole.reset() completed');
+
+            // reset()がonDisconnectを呼び出さない場合に備えて手動で更新
+            if (is_connected) {
+                console.log('Manually updating disconnect state');
+                is_connected = false;
+                is_playing = false;
+                connectButton.textContent = 'Connect Device';
+                connectionStatus.textContent = 'Not Connected';
+                connectionStatus.className = 'disconnected';
+            }
+        } catch (error) {
+            console.error('Disconnect error:', error);
+            // エラー時も切断状態にする
+            is_connected = false;
+            is_playing = false;
+            connectButton.textContent = 'Connect Device';
+            connectionStatus.textContent = 'Disconnected (Error)';
+            connectionStatus.className = 'disconnected';
+        }
+    } else {
+        // Connect
+        console.log('Attempting to connect...');
+        try {
+            connectButton.textContent = 'Connecting...';
+            connectionStatus.textContent = 'Connecting...';
+            connectionStatus.className = '';
+
+            await insole.begin();
+            console.log('insole.begin() completed');
+
+            // begin()がonConnectを呼び出さない場合に備えて手動で更新
+            if (!is_connected) {
+                console.log('Manually updating connect state');
+                is_connected = true;
+                is_playing = true; // 手動接続時のみtrueに設定
+                connectButton.textContent = 'Disconnect';
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'connected';
+            }
+        } catch (error) {
+            console.error('Connection error:', error);
+            connectButton.textContent = 'Connect Device';
+            connectionStatus.textContent = 'Connection Failed';
+            connectionStatus.className = 'disconnected';
+            is_connected = false;
+            is_playing = false;
+        }
+    }
+
+    console.log('connectDevice completed, final is_connected:', is_connected);
 }

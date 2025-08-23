@@ -1,5 +1,5 @@
 var orphe_js_version_date = `
-Last modified: 2025/08/22 14:23:38
+Last modified: 2025/08/23 10:10:20
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
@@ -302,6 +302,10 @@ class Orphe {
     }
 
     this.half_round_trip_time = 0;
+
+    // Advertisement handling flags
+    this.isFirstAdvertisementReceived = false;
+
     // メンバ変数の初期化ここまで
     //////////////////////////
 
@@ -383,13 +387,18 @@ class Orphe {
     // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
     await this.syncCoreTime();
 
-    return this.startNotify('SENSOR_VALUES')
-      .then(() => {
-        return "done begin(); SENSOR VALUES";
-      })
-      .catch(error => {
-        this.onError(error);
-      });
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        this.startNotify('SENSOR_VALUES')
+          .then(() => {
+            resolve("done begin(); SENSOR VALUES");
+          })
+          .catch(error => {
+            this.onError(error);
+            reject(error);
+          });
+      }, 0);
+    });
   }
 
   /**
@@ -418,51 +427,35 @@ class Orphe {
    * @param {string} uuid 
    * 
    */
-  requestDevice(uuid) {
+  async requestDevice(uuid) {
     let options = {
-      /*
-      ORPHE insole module name: INS0
-      */
       filters: [
         {
           services: ['01a9d6b5-ff6e-444a-b266-0be75e85c064', 'db1b7aca-cda5-4453-a49b-33a53d3f0833']
         },
         { namePrefix: ['INS'] }
       ],
-      //acceptAllDevices: true,
       optionalServices: [this.hashUUID[uuid].serviceUUID],
-
-      // アドバタイズメントデータへのアクセスを許可
       optionalManufacturerData: [
-        // ORPHEのCompany ID（実際の値に要調整）
-        // 一般的なCompany IDの範囲で試行
-        0x0000 // ORPHE固有のCompany IDがあれば追加
+        0x0000
       ]
+    };
+
+    try {
+      const device = await navigator.bluetooth.requestDevice(options);
+      this.bluetoothDevice = device;
+      this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
+
+      await this.autoStartWatchingAdvertisements();
+    } catch (error) {
+      console.warn('Failed requestDevice:', error);
     }
-
-    return navigator.bluetooth.requestDevice(options)
-      .then(device => {
-        this.bluetoothDevice = device;
-        this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
-
-        // アドバタイズメント監視を開始してからonScanを実行
-        // this.startWatchingAdvertisements();
-        this.autoStartWatchingAdvertisements()
-        Promise.resolve().then(() => {
-          this.onScan(this.bluetoothDevice.name);
-        });
-        // this.onScan(this.bluetoothDevice.name);
-      })
-      .catch(error => {
-        console.warn('Failed requestDevice:', error);
-
-      });
   }
 
   /**
    * アドバタイズメント監視を自動開始（機能が利用可能な場合のみ）
    */
-  autoStartWatchingAdvertisements() {
+  async autoStartWatchingAdvertisements() {
     // 機能が利用可能かチェック
     if (!this.bluetoothDevice) {
       return;
@@ -480,7 +473,7 @@ class Orphe {
     }
 
     // アドバタイズメント監視を自動開始
-    this.startWatchingAdvertisements();
+    await this.startWatchingAdvertisements();
   }
 
   /**
@@ -525,6 +518,7 @@ class Orphe {
     console.log('==============================');
     console.log(event);
 
+
     const dv = event.manufacturerData.get(0x0000);
 
     // カスタムコールバックがあれば呼び出し
@@ -544,8 +538,30 @@ class Orphe {
     }
   }
 
+  /**
+   * Notificationに接続する処理を実行
+   */
+  async connectToNotifications() {
+    try {
+      console.log('Connecting to notifications...');
 
+      // SENSOR_VALUESのnotificationを開始
+      await this.startNotify('SENSOR_VALUES');
+      console.log('Connected to SENSOR_VALUES notifications');
 
+      // STEP_ANALYSISのnotificationを開始（オプション）
+      try {
+        await this.startNotify('STEP_ANALYSIS');
+        console.log('Connected to STEP_ANALYSIS notifications');
+      } catch (error) {
+        console.warn('STEP_ANALYSIS notification not available:', error.message);
+      }
+
+    } catch (error) {
+      console.error('Failed to connect to notifications:', error);
+      throw error;
+    }
+  }
 
   /**
    * アドバタイズメント監視を停止
@@ -587,7 +603,7 @@ class Orphe {
         this.onConnect(uuid);
 
         // アドバタイズメント監視を自動開始（機能が利用可能な場合のみ）
-        this.autoStartWatchingAdvertisements();
+        // this.autoStartWatchingAdvertisements();
       })
       .catch(error => {
         this.onError(error);
@@ -795,6 +811,7 @@ class Orphe {
   clear() {
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this.isFirstAdvertisementReceived = false; // フラグをリセット
     this.onClear();
   }
   /**
@@ -1173,7 +1190,7 @@ class Orphe {
         const elapsedTime = endTime - startTime; // 経過時間を計算
         this.date_time = {
           date: date,
-          data: data,
+          raw: data,
           round_trip_time: Math.floor(elapsedTime)
         };
         resolve(this.date_time);
@@ -1214,7 +1231,7 @@ class Orphe {
             acc: data.getUint8(8),
             gyro: data.getUint8(9)
           },
-          data: data
+          raw: data
         }
         resolve(this.device_information);
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる

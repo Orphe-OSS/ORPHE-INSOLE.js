@@ -1,0 +1,315 @@
+ .main-content {
+     display: flex;
+     gap: 40px;
+     align-items: flex-start;
+ }
+
+ .device-column {
+     flex: 1;
+     min-width: 0;
+ }
+
+ .device-header {
+     text-align: center;
+     margin-bottom: 30px;
+     padding: 20px;
+     border: 1px solid #333;
+     background-color: rgba(255, 255, 255, 0.02);
+ }
+
+ .device-title {
+     font-size: 1.5rem;
+     font-weight: 300;
+     margin-bottom: 15px;
+     color: #fff;
+ }
+
+ .device-controls {
+     display: flex;
+     flex-direction: column;
+     gap: 15px;
+     align-items: center;
+ }
+
+ .device-status {
+     font-size: 0.9rem;
+     margin-bottom: 10px;
+ }
+
+ .sensor-grid {
+     display: flex;
+     flex-direction: column;
+     gap: 20px;
+ }
+
+ * {
+     margin: 0;
+     padding: 0;
+     box-sizing: border-box;
+ }
+
+ body {
+     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+     background-color: #000;
+     color: #fff;
+     min-height: 100vh;
+     line-height: 1.6;
+ }
+
+ .container {
+     max-width: 1200px;
+     margin: 0 auto;
+     padding: 20px;
+ }
+
+ header {
+     text-align: center;
+     padding: 60px 0 40px;
+     border-bottom: 1px solid #333;
+     margin-bottom: 40px;
+ }
+
+ h1 {
+     font-size: 3rem;
+     font-weight: 300;
+     letter-spacing: 0.5px;
+     margin-bottom: 20px;
+     color: #fff;
+ }
+
+ .subtitle {
+     font-size: 1.2rem;
+     color: #888;
+     font-weight: 300;
+     margin-bottom: 30px;
+ }
+
+ .controls {
+     display: flex;
+     justify-content: center;
+     gap: 20px;
+     margin-bottom: 40px;
+ }
+
+ button {
+     background-color: transparent;
+     color: #fff;
+     border: 1px solid #fff;
+     padding: 12px 32px;
+     font-size: 14px;
+     font-weight: 400;
+     letter-spacing: 0.5px;
+     cursor: pointer;
+     transition: all 0.3s ease;
+     text-transform: uppercase;
+ }
+
+ button:hover {
+     background-color: #fff;
+     color: #000;
+ }
+
+ button:disabled {
+     opacity: 0.5;
+     cursor: not-allowed;
+ }
+
+ button:disabled:hover {
+     background-color: transparent;
+     color: #fff;
+ }
+
+ .connection-status {
+     text-align: center;
+     margin-bottom: 40px;
+     font-size: 1rem;
+     font-weight: 300;
+ }
+
+ .status-indicator {
+     display: inline-block;
+     width: 8px;
+     height: 8px;
+     border-radius: 50%;
+     margin-right: 10px;
+ }
+
+ .status-connected {
+     background: #00ff00;
+     animation: pulse 2s infinite;
+ }
+
+ .status-disconnected {
+     background: #ff0000;
+ }
+
+ @keyframes pulse {
+
+     0%,
+     100% {
+         opacity: 1;
+     }
+
+     50% {
+         opacity: 0.5;
+     }
+ }
+
+ .sensor-grid {
+     display: grid;
+     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+     gap: 20px;
+     margin-top: 20px;
+ }
+
+ .sensor-card {
+     background-color: #111;
+     border: 1px solid #333;
+     padding: 30px;
+     transition: all 0.3s ease;
+ }
+
+ .sensor-card:hover {
+     border-color: #555;
+     background-color: #1a1a1a;
+ }
+
+ .sensor-title {
+     font-size: 1rem;
+     font-weight: 400;
+     margin-bottom: 30px;
+     color: #fff;
+     text-transform: uppercase;
+     letter-spacing: 1px;
+     border-bottom: 1px solid #333;
+     padding-bottom: 15px;
+ }
+
+ .sensor-values {
+     display: flex;
+     flex-direction: column;
+     gap: 15px;
+ }
+
+ .value-row {
+     display: flex;
+     justify-content: space-between;
+     align-items: center;
+     padding: 8px 0;
+ }
+
+ .value-label {
+     font-weight: 300;
+     color: #aaa;
+     font-size: 0.9rem;
+     text-transform: uppercase;
+     letter-spacing: 0.5px;
+ }
+
+ .value-number {
+     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+     font-size: 1.1rem;
+     font-weight: 400;
+     color: #fff;
+     min-width: 80px;
+     text-align: right;
+ }
+
+ .quaternion-values {
+     display: flex;
+     flex-direction: column;
+     gap: 15px;
+ }
+
+ .meta-info {
+     margin-top: 20px;
+     padding-top: 20px;
+     border-top: 1px solid #333;
+     font-size: 0.8rem;
+     color: #666;
+     font-weight: 300;
+ }
+
+ .meta-info div {
+     margin-bottom: 5px;
+ }
+
+ footer {
+     text-align: center;
+     padding: 60px 0 20px;
+     border-top: 1px solid #333;
+     margin-top: 60px;
+     color: #666;
+     font-size: 0.9rem;
+     font-weight: 300;
+ }
+
+ /* レスポンシブデザイン */
+ @media (max-width: 768px) {
+     .container {
+         padding: 15px;
+     }
+
+     header {
+         padding: 40px 0 30px;
+     }
+
+     h1 {
+         font-size: 2.5rem;
+     }
+
+     .controls {
+         flex-direction: column;
+         align-items: center;
+     }
+
+     .main-content {
+         flex-direction: column;
+         gap: 20px;
+     }
+
+     button {
+         width: 200px;
+     }
+ }
+
+ @media (max-width: 480px) {
+     h1 {
+         font-size: 2rem;
+     }
+
+     .sensor-card {
+         padding: 20px;
+     }
+
+     .main-content {
+         flex-direction: column;
+     }
+ }
+
+ /* 高度なアニメーション */
+ .sensor-card {
+     position: relative;
+     overflow: hidden;
+ }
+
+ .sensor-card::before {
+     content: '';
+     position: absolute;
+     top: 0;
+     left: -100%;
+     width: 100%;
+     height: 2px;
+     background: linear-gradient(90deg, transparent, #fff, transparent);
+     transition: left 0.5s ease;
+ }
+
+ .sensor-card:hover::before {
+     left: 100%;
+ }
+
+ /* Device ID用の小さなフォントサイズ */
+ #ad-id-0,
+ #ad-id-1 {
+     font-size: 0.7rem !important;
+ }
