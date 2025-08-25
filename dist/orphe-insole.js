@@ -1,12 +1,12 @@
 var orphe_js_version_date = `
-Last modified: 2025/08/21 22:11:11
+Last modified: 2025/08/26 00:40:25
 `;
 /**
-ORPHE-INSOLE.js is javascript library for ORPHE CORE Module, inspired by BlueJelly.js
+ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
 Class形式で記述を変更したバージョン
 @module Orphe
 @author Tetsuaki BABA
-@version 1.0.0
+@version 0.9.0
 
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
@@ -127,14 +127,11 @@ class Orphe {
    * デバイスインフォメーションを取得して保存しておく連想配列です。begin()を呼び出すとデバイスから値を取得して初期化されます。
    * @property {Object} device_information - デバイス情報
    * @property {number} device_information.battery - バッテリー残量（少ない:0、普通:1、多い:2）
-   * @property {number} device_information.lr - コアモジュール取り付け位置（左右情報）
+   * @property {number} device_information.mount_position - コアモジュール取り付け位置（左右情報）
   bit0 : 左右
   bit1 : 0(足底) / 1(足背)
   足底 : 左、右：0=(0000 0000b), 1=(0000 0001b)、
   足背 : 左、右：2(=0000 0010b), 3(=0000 0011b)
-   * @property {number} device_information.rec_mode - 記録モード。記録してない, 記録中, 一時停止中：0, 1, 2
-   * @property {number} device_information.rec_auto_run - 自動RUN記録　Off, On：0, 1
-   * @property {number} device_information.led_brightness - LEDの明るさ（0-255）
    * @property {Object} device_information.range - 加速度とジャイロセンサの感度設定
    * @property {number} device_information.range.acc - 加速度レンジ（ 2, 4, 8, 16(g)：0, 1, 2, 3）
    * @property {number} device_information.range.gyro - ジャイロレンジ（250, 500, 1000, 2000(°/s)：0, 1, 2, 3）
@@ -302,6 +299,10 @@ class Orphe {
     }
 
     this.half_round_trip_time = 0;
+
+    // Advertisement handling flags
+    this.isFirstAdvertisementReceived = false;
+
     // メンバ変数の初期化ここまで
     //////////////////////////
 
@@ -325,12 +326,12 @@ class Orphe {
     this.hashUUID[name] = { 'serviceUUID': serviceUUID, 'characteristicUUID': characteristicUUID };
   }
   /**
-   * 最初に必要な初期化処理メソッドです。利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS）の指定の他、オプションを指定することができます。オプションでは生データの取得を指定することができます。通常利用では引数を省略して setup() が呼び出されることが多いです。
-   * @param {string[]} [string[]=["DEVICE_INFORMATION", "SENSOR_VALUES", "STEP_ANALYSIS"]] DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS
+   * 最初に必要な初期化処理メソッドです。利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES）の指定の他、オプションを指定することができます。通常利用では引数を省略して 今後の機能拡張を見据えたメソッドなので、基本的にはsetup()で呼び出せば良いです。
+   * @param {string[]} [string[]=["DEVICE_INFORMATION","DATE_TIME", "SENSOR_VALUES"]] DEVICE_INFORMATION, DATE_TIME, SENSOR_VALUES,
    * @param {object} [options = {interpolation}] - interpolationは未実装
    *
    */
-  setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES', 'STEP_ANALYSIS'],
+  setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES'],
     options = {
       interpolation: {
         enabled: false, // 線形補間の有効化/無効化
@@ -356,9 +357,6 @@ class Orphe {
       else if (name == 'SENSOR_VALUES') {
         this.setUUID(name, this.ORPHE_OTHER_SERVICE, this.ORPHE_SENSOR_VALUES);
       }
-      else if (name == 'STEP_ANALYSIS') {
-        this.setUUID(name, this.ORPHE_OTHER_SERVICE, this.ORPHE_STEP_ANALYSIS);
-      }
     }
   }
 
@@ -374,6 +372,8 @@ class Orphe {
 
     this.notification_type = str_type;
 
+    await this.getDeviceInformation();
+
     // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
     /*
     0x01 : リアルタイム(クォータニオン、ジャイロ、加速度)
@@ -386,13 +386,18 @@ class Orphe {
     // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
     await this.syncCoreTime();
 
-    return this.startNotify('SENSOR_VALUES')
-      .then(() => {
-        return "done begin(); SENSOR VALUES";
-      })
-      .catch(error => {
-        this.onError(error);
-      });
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        this.startNotify('SENSOR_VALUES')
+          .then(() => {
+            resolve("done begin(); SENSOR VALUES");
+          })
+          .catch(error => {
+            this.onError(error);
+            reject(error);
+          });
+      }, 0);
+    });
   }
 
   /**
@@ -402,30 +407,7 @@ class Orphe {
     this.reset();
   }
 
-  /**
-   * set LED mode
-   * @param {int} on_off 0: turning off the LED, 1: turning on the LED
-   * @param {int} pattern 0-4
-   */
-  setLED(on_off, pattern) {
-    const data = new Uint8Array([0x02, on_off, pattern]);
-    this.write('DEVICE_INFORMATION', data);
-  }
-  /**
-   * sets the LED Brightness
-   * @param {uint8} value 0-255, 0:turning off the LED
-   */
-  setLEDBrightness(value) {
-    this.array_device_information.setUint8(2, value);
-    this.write('DEVICE_INFORMATION', this.array_device_information);
-  }
-  /**
-   * Reset motion sensor attitude, quaternion culculation.
-   */
-  resetMotionSensorAttitude() {
-    const data = new Uint8Array([0x03]);
-    this.write('DEVICE_INFORMATION', data);
-  }
+
   /**
    * Reset Analysis logs in the core module.
    */
@@ -444,51 +426,35 @@ class Orphe {
    * @param {string} uuid 
    * 
    */
-  requestDevice(uuid) {
+  async requestDevice(uuid) {
     let options = {
-      /*
-      ORPHE insole module name: INS0
-      */
       filters: [
         {
           services: ['01a9d6b5-ff6e-444a-b266-0be75e85c064', 'db1b7aca-cda5-4453-a49b-33a53d3f0833']
         },
         { namePrefix: ['INS'] }
       ],
-      //acceptAllDevices: true,
       optionalServices: [this.hashUUID[uuid].serviceUUID],
-
-      // アドバタイズメントデータへのアクセスを許可
       optionalManufacturerData: [
-        // ORPHEのCompany ID（実際の値に要調整）
-        // 一般的なCompany IDの範囲で試行
-        0x0000 // ORPHE固有のCompany IDがあれば追加
+        0x0000
       ]
+    };
+
+    try {
+      const device = await navigator.bluetooth.requestDevice(options);
+      this.bluetoothDevice = device;
+      this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
+
+      // await this.autoStartWatchingAdvertisements();
+    } catch (error) {
+      console.warn('Failed requestDevice:', error);
     }
-
-    return navigator.bluetooth.requestDevice(options)
-      .then(device => {
-        this.bluetoothDevice = device;
-        this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
-
-        // アドバタイズメント監視を開始してからonScanを実行
-        // this.startWatchingAdvertisements();
-        this.autoStartWatchingAdvertisements()
-        Promise.resolve().then(() => {
-          this.onScan(this.bluetoothDevice.name);
-        });
-        // this.onScan(this.bluetoothDevice.name);
-      })
-      .catch(error => {
-        console.warn('Failed requestDevice:', error);
-
-      });
   }
 
   /**
    * アドバタイズメント監視を自動開始（機能が利用可能な場合のみ）
    */
-  autoStartWatchingAdvertisements() {
+  async autoStartWatchingAdvertisements() {
     // 機能が利用可能かチェック
     if (!this.bluetoothDevice) {
       return;
@@ -506,7 +472,7 @@ class Orphe {
     }
 
     // アドバタイズメント監視を自動開始
-    this.startWatchingAdvertisements();
+    await this.startWatchingAdvertisements();
   }
 
   /**
@@ -549,15 +515,18 @@ class Orphe {
     console.log('RSSI:', event.rssi, 'dBm');
     console.log('TX Power:', event.txPower);
     console.log('==============================');
-
     console.log(event);
 
+
     const dv = event.manufacturerData.get(0x0000);
-    console.log('raw=', new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
 
     // カスタムコールバックがあれば呼び出し
     if (this.gotStatus) {
       const status = {
+        name: event.device.name,
+        rssi: event.rssi,
+        txPower: event.txPower,
+        id: event.device.id,
         battery: dv.getUint8(14),
         model_type: dv.getUint8(5),
         mounting_position: dv.getUint8(6),
@@ -568,8 +537,30 @@ class Orphe {
     }
   }
 
+  /**
+   * Notificationに接続する処理を実行
+   */
+  async connectToNotifications() {
+    try {
+      console.log('Connecting to notifications...');
 
+      // SENSOR_VALUESのnotificationを開始
+      await this.startNotify('SENSOR_VALUES');
+      console.log('Connected to SENSOR_VALUES notifications');
 
+      // STEP_ANALYSISのnotificationを開始（オプション）
+      try {
+        await this.startNotify('STEP_ANALYSIS');
+        console.log('Connected to STEP_ANALYSIS notifications');
+      } catch (error) {
+        console.warn('STEP_ANALYSIS notification not available:', error.message);
+      }
+
+    } catch (error) {
+      console.error('Failed to connect to notifications:', error);
+      throw error;
+    }
+  }
 
   /**
    * アドバタイズメント監視を停止
@@ -611,7 +602,7 @@ class Orphe {
         this.onConnect(uuid);
 
         // アドバタイズメント監視を自動開始（機能が利用可能な場合のみ）
-        this.autoStartWatchingAdvertisements();
+        // this.autoStartWatchingAdvertisements();
       })
       .catch(error => {
         this.onError(error);
@@ -643,6 +634,7 @@ class Orphe {
       })
       .catch(error => {
         this.onError(error);
+        throw error; // エラーを再スローして、呼び出し側でキャッチできるようにする
       });
   }
   /**
@@ -754,8 +746,10 @@ class Orphe {
    * @param {object} obj 
    */
   setDeviceInformation(obj) {
-    const senddata = new Uint8Array([0x01, obj.lr, obj.led_brightness, 0, obj.rec_auto_run, obj.time01, obj.time02, obj.range.acc, obj.range.gyro]);
-    this.write('DEVICE_INFORMATION', senddata);
+    // この機能は insole では未対応とします。
+    // const senddata = new Uint8Array([0x01, obj.lr, obj.led_brightness, 0, obj.rec_auto_run, obj.time01, obj.time02, obj.range.acc, obj.range.gyro]);
+    // this.write('DEVICE_INFORMATION', senddata);
+    alert("setDeviceInformation: not supported");
   }
 
   /**
@@ -819,6 +813,7 @@ class Orphe {
   clear() {
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this.isFirstAdvertisementReceived = false; // フラグをリセット
     this.onClear();
   }
   /**
@@ -1197,7 +1192,7 @@ class Orphe {
         const elapsedTime = endTime - startTime; // 経過時間を計算
         this.date_time = {
           date: date,
-          data: data,
+          raw: data,
           round_trip_time: Math.floor(elapsedTime)
         };
         resolve(this.date_time);
@@ -1216,29 +1211,22 @@ class Orphe {
   async getDeviceInformation() {
     return new Promise((resolve, reject) => {
       this.read('DEVICE_INFORMATION').then((data) => {
-        this.array_device_information.setUint8(0, 1);
-        this.array_device_information.setUint8(1, data.getUint8(1));
-        this.array_device_information.setUint8(2, data.getUint8(4));
-        this.array_device_information.setUint8(3, data.getUint8(5));
-        this.array_device_information.setUint8(4, data.getUint8(3));
-        this.array_device_information.setUint8(5, data.getUint8(6));
-        this.array_device_information.setUint8(6, data.getUint8(7));
-        this.array_device_information.setUint8(7, data.getUint8(8));
-        this.array_device_information.setUint8(8, data.getUint8(9));
-        for (let i = 9; i <= 19; i++) {
-          this.array_device_information.setUint8(i, 0);
+        if (!data) {
+          const error = new Error('No data received from DEVICE_INFORMATION');
+          console.error('Error: ' + error.message);
+          this.onError(error);
+          reject(error);
+          return;
         }
+
         this.device_information = {
           battery: data.getUint8(0),
-          lr: data.getUint8(1),
-          rec_mode: data.getUint8(2),
-          rec_auto_run: data.getUint8(3),
-          led_brightness: data.getUint8(4),
+          mount_position: data.getUint8(1),
           range: {
             acc: data.getUint8(8),
             gyro: data.getUint8(9)
           },
-          data: data
+          raw: data
         }
         resolve(this.device_information);
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
@@ -1258,14 +1246,25 @@ class Orphe {
    */
   gotData(data) { }
 
+
   /**
-   * 
+   * Handles the received status.
+   * @param {Object} status - The status object containing device advertisement information.
+   * @param {string} status.name - デバイス名
+   * @param {number} status.rssi - 受信信号強度 (dBm)
+   * @param {number} status.txPower - 送信出力 (dBm)
+   * @param {string} status.id - デバイスID
+   * @param {number} status.battery - バッテリー残量
+   * @param {number} status.model_type - モデルタイプ
+   * @param {number} status.mounting_position - 取り付け位置
+   * @param {number} status.human_activity_recognition - 人間活動認識
+   * @param {string} status.version - ファームウェアバージョン (例: "1.2.3")
    */
   gotStatus(status) {
   }
   /**
    * コアモジュールの圧力情報を取得する
-   * @param {Object} press {value} 圧力の取得
+   * @param {Object} press {values[],timestamp,packet_number} 圧力の取得
    */
   gotPress(press) { }
 

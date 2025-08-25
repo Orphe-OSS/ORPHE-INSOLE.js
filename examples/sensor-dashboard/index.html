@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <title>ORPHE CORE JS DEMO</title>
-    <link rel="stylesheet" href="../../assets/css/orphe_insole.css">
+    <link rel="stylesheet" href="../assets/css/orphe_insole.css">
 </head>
 
 <body>
@@ -14,605 +14,567 @@
             <div class="subtitle">ORPHE-INSOLE.js - Sensor Dashboard</div>
         </header>
 
-        <div class="main-content">
-            <!-- Device 1 Column -->
-            <div class="device-column">
-                <div class="device-header">
-                    <div class="device-title">Device 1</div>
-                    <div style="margin-bottom: 15px;">
+        <div class="main-content dashboard-layout">
+            <!-- Connection Controls - Top Section (Compact Buttons) -->
+            <div class="connection-controls">
+                <button onclick="connectDevice(0);" id="connect-btn-0" class="device-connection-button"
+                    onmouseover="handleButtonHover(0, true)" onmouseout="handleButtonHover(0, false)">
+                    <div class="device-name-display">
                         <span class="status-indicator" id="status-indicator-0"></span>
-                        <span id="connection-text-0">Sensor 1: Not Connected</span>
+                        <span>DEVICE 1</span>
                     </div>
-                    <div class="device-controls">
-                        <button onclick="connectDevice(0);" id="connect-btn-0">Connect Device 1</button>
+                    <div id="connection-status-info-0" class="connection-status-text">Not Connected</div>
+                    <div id="device-side-info-0" class="device-position-info">
+                        Position: <span id="device-position-0">—</span>
                     </div>
-                </div>
+                </button>
 
-                <div class="sensor-grid">
-                    <!-- Left Accelerometer Card -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">Accelerometer</div>
-                        <div class="sensor-values">
-                            <div class="value-row">
-                                <span class="value-label">X</span>
-                                <span class="value-number" id="acc-x-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Y</span>
-                                <span class="value-number" id="acc-y-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Z</span>
-                                <span class="value-number" id="acc-z-0">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="acc-timestamp-0">—</span></div>
-                            <div>Packet: <span id="acc-packet-0">—</span></div>
-                        </div>
+                <button onclick="connectDevice(1);" id="connect-btn-1" class="device-connection-button"
+                    onmouseover="handleButtonHover(1, true)" onmouseout="handleButtonHover(1, false)">
+                    <div class="device-name-display">
+                        <span class="status-indicator" id="status-indicator-1"></span>
+                        <span>DEVICE 2</span>
                     </div>
-
-                    <!-- Left Gyroscope Card -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">Gyroscope</div>
-                        <div class="sensor-values">
-                            <div class="value-row">
-                                <span class="value-label">X</span>
-                                <span class="value-number" id="gyro-x-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Y</span>
-                                <span class="value-number" id="gyro-y-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Z</span>
-                                <span class="value-number" id="gyro-z-0">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="gyro-timestamp-0">—</span></div>
-                            <div>Packet: <span id="gyro-packet-0">—</span></div>
-                        </div>
+                    <div id="connection-status-info-1" class="connection-status-text">Not Connected</div>
+                    <div id="device-side-info-1" class="device-position-info">
+                        Position: <span id="device-position-1">—</span>
                     </div>
-
-                    <!-- Left Pressure Card -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">Pressure Sensors</div>
-                        <div class="sensor-values">
-                            <div class="value-row">
-                                <span class="value-label">Sensor 1</span>
-                                <span class="value-number" id="press-0-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 2</span>
-                                <span class="value-number" id="press-1-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 3</span>
-                                <span class="value-number" id="press-2-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 4</span>
-                                <span class="value-number" id="press-3-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 5</span>
-                                <span class="value-number" id="press-4-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 6</span>
-                                <span class="value-number" id="press-5-0">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="press-timestamp-0">—</span></div>
-                            <div>Packet: <span id="press-packet-0">—</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Left Quaternion Card -->
-                    <div class="sensor-card quaternion-card">
-                        <div class="sensor-title">Quaternion</div>
-                        <div class="quaternion-values">
-                            <div class="value-row">
-                                <span class="value-label">W</span>
-                                <span class="value-number" id="quat-w-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">X</span>
-                                <span class="value-number" id="quat-x-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Y</span>
-                                <span class="value-number" id="quat-y-0">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Z</span>
-                                <span class="value-number" id="quat-z-0">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="quat-timestamp-0">—</span></div>
-                            <div>Packet: <span id="quat-packet-0">—</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Left STATUS Panel -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">STATUS</div>
-
-                        <div class="status-message" id="chrome-flag-message-0" style="display: none;">
-                            <div style="padding: 20px; text-align: center;">
-                                <h3>⚠️ Chrome Experimental Features Required</h3>
-                                <p style="margin: 15px 0; color: #888;">
-                                    To receive advertisement data from ORPHE devices, you need to enable experimental
-                                    Web Bluetooth features in Chrome.
-                                </p>
-                                <ol style="text-align: left; color: #ccc; margin: 20px 0;">
-                                    <li>Go to <code>chrome://flags/#enable-experimental-web-platform-features</code>
-                                    </li>
-                                    <li>Set it to "Enabled"</li>
-                                    <li>Restart Chrome</li>
-                                </ol>
-                                <p style="color: #888; font-size: 0.9rem;">
-                                    Once enabled, connect your ORPHE device to see battery info, device details, and
-                                    more.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="advertisement-data" id="advertisement-data-0" style="display: none;">
-                            <div class="value-row">
-                                <span class="value-label">Device Name</span>
-                                <span class="value-number" id="ad-name-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Device ID</span>
-                                <span class="value-number" id="ad-id-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">RSSI</span>
-                                <span class="value-number" id="ad-rssi-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">TX Power</span>
-                                <span class="value-number" id="ad-txpower-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Battery</span>
-                                <span class="value-number" id="ad-battery-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Model Type</span>
-                                <span class="value-number" id="ad-model-type-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Position</span>
-                                <span class="value-number" id="ad-mounting-position-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Activity</span>
-                                <span class="value-number" id="ad-human-activity-0">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Version</span>
-                                <span class="value-number" id="ad-version-0">—</span>
-                            </div>
-                        </div>
-
-                        <div class="no-advertisement" id="no-advertisement-0" style="display: none;">
-                            <div style="text-align: center; color: #888; padding: 20px;">
-                                Connect to ORPHE device to see advertisement data
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                </button>
             </div>
 
-            <!-- Device 2 Column -->
-            <div class="device-column">
-                <div class="device-header">
-                    <div class="device-title">Device 2</div>
-                    <div style="margin-bottom: 15px;">
-                        <span class="status-indicator" id="status-indicator-1"></span>
-                        <span id="connection-text-1">Sensor 2: Not Connected</span>
-                    </div>
-                    <div class="device-controls">
-                        <button onclick="connectDevice(1);" id="connect-btn-1">Connect Device 2</button>
+            <!-- Sensor Display - Bottom Section (2 Columns: Left/Right) -->
+            <div class="sensor-display-container">
+                <!-- Left Side (0=left) -->
+                <div class="sensor-side" id="left-side">
+                    <div class="side-title">Left Foot</div>
+                    <div class="sensor-grid" id="left-sensor-grid">
+                        <!-- Accelerometer Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Accelerometer</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">X</span>
+                                    <span class="value-number" id="acc-x-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Y</span>
+                                    <span class="value-number" id="acc-y-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Z</span>
+                                    <span class="value-number" id="acc-z-0">0.000</span>
+                                </div>
+                            </div>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="acc-timestamp-0">—</span></div>
+                                <div>Packet: <span id="acc-packet-0">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Gyroscope Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Gyroscope</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">X</span>
+                                    <span class="value-number" id="gyro-x-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Y</span>
+                                    <span class="value-number" id="gyro-y-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Z</span>
+                                    <span class="value-number" id="gyro-z-0">0.000</span>
+                                </div>
+                            </div>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="gyro-timestamp-0">—</span></div>
+                                <div>Packet: <span id="gyro-packet-0">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Pressure Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Pressure</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 1</span>
+                                    <span class="value-number" id="press-0-0">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 2</span>
+                                    <span class="value-number" id="press-1-0">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 3</span>
+                                    <span class="value-number" id="press-2-0">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 4</span>
+                                    <span class="value-number" id="press-3-0">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 5</span>
+                                    <span class="value-number" id="press-4-0">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 6</span>
+                                    <span class="value-number" id="press-5-0">0</span>
+                                </div>
+                            </div>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="press-timestamp-0">—</span></div>
+                                <div>Packet: <span id="press-packet-0">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Quaternion Card -->
+                        <!-- Quaternion Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Quaternion</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">W</span>
+                                    <span class="value-number" id="quat-w-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">X</span>
+                                    <span class="value-number" id="quat-x-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Y</span>
+                                    <span class="value-number" id="quat-y-0">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Z</span>
+                                    <span class="value-number" id="quat-z-0">0.000</span>
+                                </div>
+                            </div>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="quat-timestamp-0">—</span></div>
+                                <div>Packet: <span id="quat-packet-0">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Status Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">STATUS</div>
+                            <!-- Status Information - Always visible -->
+                            <div id="device-info-0" style="margin-top: 15px;">
+                                <div class="info-row">
+                                    <span class="info-label">Battery:</span>
+                                    <span class="info-value" id="battery-0">—</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Mount Position:</span>
+                                    <span class="info-value" id="mount-position-0">—</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Acc Range:</span>
+                                    <span class="info-value" id="acc-range-0">—</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Gyro Range:</span>
+                                    <span class="info-value" id="gyro-range-0">—</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="sensor-grid">
-                    <!-- Right Accelerometer Card -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">Accelerometer</div>
-                        <div class="sensor-values">
-                            <div class="value-row">
-                                <span class="value-label">X</span>
-                                <span class="value-number" id="acc-x-1">0.000</span>
+                <!-- Right Side (1=right) -->
+                <div class="sensor-side" id="right-side">
+                    <div class="side-title">Right Foot</div>
+                    <div class="sensor-grid" id="right-sensor-grid">
+                        <!-- Accelerometer Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Accelerometer</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">X</span>
+                                    <span class="value-number" id="acc-x-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Y</span>
+                                    <span class="value-number" id="acc-y-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Z</span>
+                                    <span class="value-number" id="acc-z-1">0.000</span>
+                                </div>
                             </div>
-                            <div class="value-row">
-                                <span class="value-label">Y</span>
-                                <span class="value-number" id="acc-y-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Z</span>
-                                <span class="value-number" id="acc-z-1">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="acc-timestamp-1">—</span></div>
-                            <div>Packet: <span id="acc-packet-1">—</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Right Gyroscope Card -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">Gyroscope</div>
-                        <div class="sensor-values">
-                            <div class="value-row">
-                                <span class="value-label">X</span>
-                                <span class="value-number" id="gyro-x-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Y</span>
-                                <span class="value-number" id="gyro-y-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Z</span>
-                                <span class="value-number" id="gyro-z-1">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="gyro-timestamp-1">—</span></div>
-                            <div>Packet: <span id="gyro-packet-1">—</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Right Pressure Card -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">Pressure Sensors</div>
-                        <div class="sensor-values">
-                            <div class="value-row">
-                                <span class="value-label">Sensor 1</span>
-                                <span class="value-number" id="press-0-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 2</span>
-                                <span class="value-number" id="press-1-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 3</span>
-                                <span class="value-number" id="press-2-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 4</span>
-                                <span class="value-number" id="press-3-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 5</span>
-                                <span class="value-number" id="press-4-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Sensor 6</span>
-                                <span class="value-number" id="press-5-1">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="press-timestamp-1">—</span></div>
-                            <div>Packet: <span id="press-packet-1">—</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Right Quaternion Card -->
-                    <div class="sensor-card quaternion-card">
-                        <div class="sensor-title">Quaternion</div>
-                        <div class="quaternion-values">
-                            <div class="value-row">
-                                <span class="value-label">W</span>
-                                <span class="value-number" id="quat-w-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">X</span>
-                                <span class="value-number" id="quat-x-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Y</span>
-                                <span class="value-number" id="quat-y-1">0.000</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Z</span>
-                                <span class="value-number" id="quat-z-1">0.000</span>
-                            </div>
-                        </div>
-                        <div class="meta-info">
-                            <div>Timestamp: <span id="quat-timestamp-1">—</span></div>
-                            <div>Packet: <span id="quat-packet-1">—</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Right STATUS Panel -->
-                    <div class="sensor-card">
-                        <div class="sensor-title">STATUS</div>
-
-                        <div class="status-message" id="chrome-flag-message-1" style="display: none;">
-                            <div style="padding: 20px; text-align: center;">
-                                <h3>⚠️ Chrome Experimental Features Required</h3>
-                                <p style="margin: 15px 0; color: #888;">
-                                    To receive advertisement data from ORPHE devices, you need to enable experimental
-                                    Web Bluetooth features in Chrome.
-                                </p>
-                                <ol style="text-align: left; color: #ccc; margin: 20px 0;">
-                                    <li>Go to <code>chrome://flags/#enable-experimental-web-platform-features</code>
-                                    </li>
-                                    <li>Set it to "Enabled"</li>
-                                    <li>Restart Chrome</li>
-                                </ol>
-                                <p style="color: #888; font-size: 0.9rem;">
-                                    Once enabled, connect your ORPHE device to see battery info, device details, and
-                                    more.
-                                </p>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="acc-timestamp-1">—</span></div>
+                                <div>Packet: <span id="acc-packet-1">—</span></div>
                             </div>
                         </div>
 
-                        <div class="advertisement-data" id="advertisement-data-1" style="display: none;">
-                            <div class="value-row">
-                                <span class="value-label">Device Name</span>
-                                <span class="value-number" id="ad-name-1">—</span>
+                        <!-- Gyroscope Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Gyroscope</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">X</span>
+                                    <span class="value-number" id="gyro-x-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Y</span>
+                                    <span class="value-number" id="gyro-y-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Z</span>
+                                    <span class="value-number" id="gyro-z-1">0.000</span>
+                                </div>
                             </div>
-                            <div class="value-row">
-                                <span class="value-label">Device ID</span>
-                                <span class="value-number" id="ad-id-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">RSSI</span>
-                                <span class="value-number" id="ad-rssi-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">TX Power</span>
-                                <span class="value-number" id="ad-txpower-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Battery</span>
-                                <span class="value-number" id="ad-battery-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Model Type</span>
-                                <span class="value-number" id="ad-model-type-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Position</span>
-                                <span class="value-number" id="ad-mounting-position-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Activity</span>
-                                <span class="value-number" id="ad-human-activity-1">—</span>
-                            </div>
-                            <div class="value-row">
-                                <span class="value-label">Version</span>
-                                <span class="value-number" id="ad-version-1">—</span>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="gyro-timestamp-1">—</span></div>
+                                <div>Packet: <span id="gyro-packet-1">—</span></div>
                             </div>
                         </div>
 
-                        <div class="no-advertisement" id="no-advertisement-1" style="display: none;">
-                            <div style="text-align: center; color: #888; padding: 20px;">
-                                Connect to ORPHE device to see advertisement data
+                        <!-- Pressure Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Pressure</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 1</span>
+                                    <span class="value-number" id="press-0-1">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 2</span>
+                                    <span class="value-number" id="press-1-1">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 3</span>
+                                    <span class="value-number" id="press-2-1">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 4</span>
+                                    <span class="value-number" id="press-3-1">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 5</span>
+                                    <span class="value-number" id="press-4-1">0</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Sensor 6</span>
+                                    <span class="value-number" id="press-5-1">0</span>
+                                </div>
+                            </div>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="press-timestamp-1">—</span></div>
+                                <div>Packet: <span id="press-packet-1">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Quaternion Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">Quaternion</div>
+                            <div class="values">
+                                <div class="value-row">
+                                    <span class="value-label">W</span>
+                                    <span class="value-number" id="quat-w-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">X</span>
+                                    <span class="value-number" id="quat-x-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Y</span>
+                                    <span class="value-number" id="quat-y-1">0.000</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="value-label">Z</span>
+                                    <span class="value-number" id="quat-z-1">0.000</span>
+                                </div>
+                            </div>
+                            <div class="meta-info">
+                                <div>Timestamp: <span id="quat-timestamp-1">—</span></div>
+                                <div>Packet: <span id="quat-packet-1">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Status Card -->
+                        <div class="sensor-card">
+                            <div class="sensor-title">STATUS</div>
+                            <!-- Status Information - Always visible -->
+                            <div id="device-info-1" style="margin-top: 15px;">
+                                <div class="info-row">
+                                    <span class="info-label">Battery:</span>
+                                    <span class="info-value" id="battery-1">—</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Mount Position:</span>
+                                    <span class="info-value" id="mount-position-1">—</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Acc Range:</span>
+                                    <span class="info-value" id="acc-range-1">—</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Gyro Range:</span>
+                                    <span class="info-value" id="gyro-range-1">—</span>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
+    </div>
 
-        <script src="../../src/ORPHE-INSOLE.js" crossorigin="anonymous"></script>
-        <script>
-            var insole = [new Orphe(0), new Orphe(1)]; // Device 1(0)とDevice 2(1)のセンサー
-            var isConnected = [false, false];
+    <script src="../../src/ORPHE-INSOLE.js"></script>
+    <script>
+        // グローバル変数
+        const insole = [new Orphe(0), new Orphe(1)];
+        const isConnected = [false, false];
 
-            // Chrome実験的機能の確認（UI表示用）
-            function checkChromeExperimentalFeatures() {
-                const chromeMessage0 = document.getElementById('chrome-flag-message-0');
-                const chromeMessage1 = document.getElementById('chrome-flag-message-1');
-                const advertisementData0 = document.getElementById('advertisement-data-0');
-                const advertisementData1 = document.getElementById('advertisement-data-1');
-                const noAdvertisement0 = document.getElementById('no-advertisement-0');
-                const noAdvertisement1 = document.getElementById('no-advertisement-1');
+        // mount_positionとデバイスインデックスのマッピング
+        // mount_position: 0=left, 1=right
+        // deviceIndex: どのデバイス（0または1）がどちら側（0または1）にマップされるかを管理
+        const deviceToSideMapping = {};
 
-                // watchAdvertisements APIが利用可能かチェック
-                if (!navigator.bluetooth || !BluetoothDevice.prototype.watchAdvertisements) {
-                    // Chrome実験的機能が無効の場合
-                    chromeMessage0.style.display = 'block';
-                    chromeMessage1.style.display = 'block';
-                    advertisementData0.style.display = 'none';
-                    advertisementData1.style.display = 'none';
-                    noAdvertisement0.style.display = 'none';
-                    noAdvertisement1.style.display = 'none';
-                    return false;
-                } else {
-                    // Chrome実験的機能が有効の場合
-                    chromeMessage0.style.display = 'none';
-                    chromeMessage1.style.display = 'none';
-                    noAdvertisement0.style.display = 'block';
-                    noAdvertisement1.style.display = 'block';
-                    return true;
-                }
+        // 初期化関数
+        function init() {
+            console.log("ORPHE Sensor Dashboard initialized");
+
+            // 両デバイスを初期化
+            for (let deviceIndex = 0; deviceIndex < 2; deviceIndex++) {
+                // ORPHE CORE Init
+                insole[deviceIndex].setup();
+
+                // 接続イベント
+                insole[deviceIndex].onConnect = function () {
+                    updateConnectionStatus(deviceIndex, true);
+                };
+
+                insole[deviceIndex].onDisconnect = function () {
+                    updateConnectionStatus(deviceIndex, false);
+                    // マッピングをクリア
+                    delete deviceToSideMapping[deviceIndex];
+                };
+
+                // センサーデータ受信イベント
+                setupSensorCallbacks(deviceIndex);
             }
+        }
 
-            // バッテリー情報を解析する関数
-            function parseBatteryInfo(batteryValue) {
-                if (batteryValue === undefined || batteryValue === null) return '—';
-
-                const chargingFlag = (batteryValue & 0xF0) >> 4; // 上位4ビット
-                const batteryLevel = batteryValue & 0x0F; // 下位4ビット
-
-                // バッテリー残量の表示
-                let levelText;
-                switch (batteryLevel) {
-                    case 0: levelText = 'Low'; break;
-                    case 1: levelText = 'Mid'; break;
-                    case 2: levelText = 'High'; break;
-                    default: levelText = 'Unknown'; break;
-                }
-
-                // 充電状態の表示
-                let chargingText;
-                switch (chargingFlag) {
-                    case 0x0: chargingText = ''; break; // チャージなし
-                    case 0x1: chargingText = ' (MAT Charging)'; break; // MATチャージ
-                    case 0x2: chargingText = ' (Wired Power)'; break; // 有線給電
-                    default: chargingText = ' (Unknown)'; break;
-                }
-
-                return `${levelText}${chargingText}`;
-            }
-
-            // アドバタイズメントデータを表示（gotStatusの形式に対応）
-            function updateAdvertisementData(deviceIndex, status) {
-                const advertisementData = document.getElementById(`advertisement-data-${deviceIndex}`);
-                const noAdvertisement = document.getElementById(`no-advertisement-${deviceIndex}`);
-
-                if (status) {
-                    document.getElementById(`ad-name-${deviceIndex}`).textContent = status.name || '—';
-                    document.getElementById(`ad-id-${deviceIndex}`).textContent = status.id || '—';
-                    document.getElementById(`ad-rssi-${deviceIndex}`).textContent = status.rssi !== undefined ? `${status.rssi} dBm` : '—';
-                    document.getElementById(`ad-txpower-${deviceIndex}`).textContent = status.txPower !== undefined ? `${status.txPower} dBm` : '—';
-                    document.getElementById(`ad-battery-${deviceIndex}`).textContent = parseBatteryInfo(status.battery);
-                    document.getElementById(`ad-model-type-${deviceIndex}`).textContent = status.model_type !== undefined ? status.model_type : '—';
-                    document.getElementById(`ad-mounting-position-${deviceIndex}`).textContent = status.mounting_position !== undefined ? status.mounting_position : '—';
-                    document.getElementById(`ad-human-activity-${deviceIndex}`).textContent = status.human_activity_recognition !== undefined ? status.human_activity_recognition : '—';
-                    document.getElementById(`ad-version-${deviceIndex}`).textContent = status.version || '—';
-
-                    advertisementData.style.display = 'block';
-                    noAdvertisement.style.display = 'none';
-                } else {
-                    advertisementData.style.display = 'none';
-                    noAdvertisement.style.display = 'block';
-                }
-            }
-
-            // UI更新用のヘルパー関数
-            function updateConnectionStatus(deviceIndex, connected) {
-                isConnected[deviceIndex] = connected;
-                const statusIndicator = document.getElementById(`status-indicator-${deviceIndex}`);
-                const connectionText = document.getElementById(`connection-text-${deviceIndex}`);
-                const connectBtn = document.getElementById(`connect-btn-${deviceIndex}`);
-                const deviceName = deviceIndex === 0 ? 'Device 1' : 'Device 2';
-                const sensorName = deviceIndex === 0 ? 'Sensor 1' : 'Sensor 2';
-
-                statusIndicator.className = connected ? 'status-indicator status-connected' : 'status-indicator status-disconnected';
-                connectionText.textContent = `${sensorName}: ${connected ? 'Connected' : 'Not Connected'}`;
-                connectBtn.textContent = connected ? `Disconnect ${deviceName}` : `Connect ${deviceName}`;
-            }
-
-            function formatValue(value) {
-                if (typeof value === 'number') {
-                    return value.toFixed(3);
-                }
-                return value || '0.000';
-            }
-
-            function formatTimestamp(timestamp) {
-                if (!timestamp) return '—';
-                return new Date(timestamp).toLocaleTimeString();
-            }
-
-            function updateValue(elementId, value) {
-                const element = document.getElementById(elementId);
-                if (element) {
-                    element.textContent = formatValue(value);
-                }
-            }
-
-            window.onload = function () {
-                // Chrome実験的機能をチェック（UI表示用）
-                checkChromeExperimentalFeatures();
-
-                // 両デバイスを初期化
-                for (let deviceIndex = 0; deviceIndex < 2; deviceIndex++) {
-                    // ORPHE CORE Init
-                    insole[deviceIndex].setup();
-
-                    // 接続イベント (クロージャーを使ってdeviceIndexを保持)
-                    (function (index) {
-                        insole[index].onConnect = function () {
-                            updateConnectionStatus(index, true);
-                        };
-
-                        insole[index].onDisconnect = function () {
-                            updateConnectionStatus(index, false);
-                            updateAdvertisementData(index, null);
-                        };
-
-                        // センサーデータ受信
-                        insole[index].gotConvertedAcc = function (acc) {
-                            updateValue(`acc-x-${index}`, acc.x);
-                            updateValue(`acc-y-${index}`, acc.y);
-                            updateValue(`acc-z-${index}`, acc.z);
-                            document.getElementById(`acc-timestamp-${index}`).textContent = formatTimestamp(acc.timestamp);
-                            document.getElementById(`acc-packet-${index}`).textContent = acc.packet_number || '—';
-                        };
-
-                        insole[index].gotConvertedGyro = function (gyro) {
-                            updateValue(`gyro-x-${index}`, gyro.x);
-                            updateValue(`gyro-y-${index}`, gyro.y);
-                            updateValue(`gyro-z-${index}`, gyro.z);
-                            document.getElementById(`gyro-timestamp-${index}`).textContent = formatTimestamp(gyro.timestamp);
-                            document.getElementById(`gyro-packet-${index}`).textContent = gyro.packet_number || '—';
-                        };
-
-                        insole[index].gotQuat = function (quat) {
-                            updateValue(`quat-w-${index}`, quat.w);
-                            updateValue(`quat-x-${index}`, quat.x);
-                            updateValue(`quat-y-${index}`, quat.y);
-                            updateValue(`quat-z-${index}`, quat.z);
-                            document.getElementById(`quat-timestamp-${index}`).textContent = formatTimestamp(quat.timestamp);
-                            document.getElementById(`quat-packet-${index}`).textContent = quat.packet_number || '—';
-                        };
-
-                        insole[index].gotPress = function (press) {
-                            // press.values[] 配列の6つの値を表示
-                            if (press.values && Array.isArray(press.values)) {
-                                for (let i = 0; i < 6; i++) {
-                                    const value = press.values[i] || 0;
-                                    updateValue(`press-${i}-${index}`, value);
-                                }
-                            } else {
-                                // フォールバック: press.valueが単一値の場合
-                                updateValue(`press-0-${index}`, press.value || 0);
-                                for (let i = 1; i < 6; i++) {
-                                    updateValue(`press-${i}-${index}`, 0);
-                                }
-                            }
-                            document.getElementById(`press-timestamp-${index}`).textContent = formatTimestamp(press.timestamp);
-                            document.getElementById(`press-packet-${index}`).textContent = press.packet_number || '—';
-                        };
-
-                        // ステータスデータ受信コールバック（アドバタイズメントデータ用）
-                        insole[index].gotStatus = function (status) {
-                            console.log(`Status data received for device ${index}:`, status);
-                            updateAdvertisementData(index, status);
-                        };
-                    })(deviceIndex);
+        // センサーコールバック設定
+        function setupSensorCallbacks(deviceIndex) {
+            // 加速度センサー
+            insole[deviceIndex].gotConvertedAcc = function (acc) {
+                const side = deviceToSideMapping[deviceIndex];
+                if (side !== undefined) {
+                    updateValue(`acc-x-${side}`, acc.x);
+                    updateValue(`acc-y-${side}`, acc.y);
+                    updateValue(`acc-z-${side}`, acc.z);
+                    document.getElementById(`acc-timestamp-${side}`).textContent = formatTimestamp(acc.timestamp);
+                    document.getElementById(`acc-packet-${side}`).textContent = acc.packet_number || '—';
                 }
             };
 
-            function connectDevice(deviceIndex) {
-                if (isConnected[deviceIndex]) {
-                    insole[deviceIndex].stop();
-                    updateConnectionStatus(deviceIndex, false);
-                } else {
-                    insole[deviceIndex].begin()
-                        .then(() => {
-                            console.log(`デバイス${deviceIndex + 1}に接続しました`);
-                        })
-                        .catch(error => {
-                            console.error(`デバイス${deviceIndex + 1}接続エラー:`, error);
-                            const deviceName = deviceIndex === 0 ? 'Device 1' : 'Device 2';
-                            alert(`${deviceName} の接続に失敗しました: ` + error.message);
-                        });
+            // ジャイロスコープ
+            insole[deviceIndex].gotConvertedGyro = function (gyro) {
+                const side = deviceToSideMapping[deviceIndex];
+                if (side !== undefined) {
+                    updateValue(`gyro-x-${side}`, gyro.x);
+                    updateValue(`gyro-y-${side}`, gyro.y);
+                    updateValue(`gyro-z-${side}`, gyro.z);
+                    document.getElementById(`gyro-timestamp-${side}`).textContent = formatTimestamp(gyro.timestamp);
+                    document.getElementById(`gyro-packet-${side}`).textContent = gyro.packet_number || '—';
+                }
+            };
+
+            // 圧力センサー
+            insole[deviceIndex].gotPress = function (press) {
+                const side = deviceToSideMapping[deviceIndex];
+                if (side !== undefined) {
+                    for (let i = 0; i < press.values.length; i++) {
+                        document.getElementById(`press-${i}-${side}`).textContent = press.values[i];
+                    }
+                    document.getElementById(`press-timestamp-${side}`).textContent = formatTimestamp(press.timestamp);
+                    document.getElementById(`press-packet-${side}`).textContent = press.packet_number || '—';
+                }
+            };
+
+            // クォータニオン
+            insole[deviceIndex].gotQuat = function (quat) {
+                const side = deviceToSideMapping[deviceIndex];
+                if (side !== undefined) {
+                    updateValue(`quat-w-${side}`, quat.w);
+                    updateValue(`quat-x-${side}`, quat.x);
+                    updateValue(`quat-y-${side}`, quat.y);
+                    updateValue(`quat-z-${side}`, quat.z);
+                    document.getElementById(`quat-timestamp-${side}`).textContent = formatTimestamp(quat.timestamp);
+                    document.getElementById(`quat-packet-${side}`).textContent = quat.packet_number || '—';
+                }
+            };
+        }
+
+        // デバイス接続関数
+        function connectDevice(deviceIndex) {
+            if (isConnected[deviceIndex]) {
+                insole[deviceIndex].stop();
+                updateConnectionStatus(deviceIndex, false);
+            } else {
+                insole[deviceIndex].begin()
+                    .then(() => {
+                        console.log(`Device ${deviceIndex + 1} connected`);
+
+                        // begin()実行後、device_information.mount_positionを参照
+                        setupDeviceMapping(deviceIndex);
+                    })
+                    .catch(error => {
+                        console.error(`Device ${deviceIndex + 1} connection error:`, error);
+                        const deviceName = deviceIndex === 0 ? 'Device 1' : 'Device 2';
+                        alert(`${deviceName} connection failed: ` + error.message);
+                    });
+            }
+        }
+
+        // ボタンホバー効果処理 - CSS classes handle the hover effects now
+        function handleButtonHover(deviceIndex, isHover) {
+            // This function can be removed as CSS handles hover effects through classes
+            // Keeping for backward compatibility, but actual styling is handled by CSS
+        }
+
+        // デバイスマッピング設定
+        function setupDeviceMapping(deviceIndex) {
+            try {
+                // device_informationを直接参照
+                const deviceInfo = insole[deviceIndex].device_information;
+                console.log(`Device ${deviceIndex} info:`, deviceInfo);
+
+                if (!deviceInfo) {
+                    console.error(`Device information not available for device ${deviceIndex}`);
+                    return;
+                }
+
+                // mount_positionから左右判定 (0=left, 1=right)
+                const mountPosition = deviceInfo.mount_position;
+                const side = mountPosition === 0 ? 0 : 1; // 0=left, 1=right
+
+                deviceToSideMapping[deviceIndex] = side;
+                console.log(`Device ${deviceIndex} mapped to side ${side} (${side === 0 ? 'left' : 'right'}) based on mount_position: ${mountPosition}`);
+
+                // UIに左右情報を表示
+                updateDevicePositionInfo(deviceIndex, side);
+
+                // デバイス情報をステータスカードに表示
+                updateDeviceInformation(deviceIndex, deviceInfo, side);
+
+            } catch (error) {
+                console.error(`Error setting up device mapping for device ${deviceIndex}:`, error);
+            }
+        }
+
+        // デバイス情報表示更新
+        function updateDeviceInformation(deviceIndex, deviceInfo, side) {
+            try {
+                // デバイス情報表示エリアを表示
+                const deviceInfoArea = document.getElementById(`device-info-${side}`);
+                if (deviceInfoArea) {
+                    deviceInfoArea.style.display = 'block';
+                }
+
+                // バッテリー情報 (0: 少ない, 1: 普通, 2: フル)
+                const batteryElement = document.getElementById(`battery-${side}`);
+                if (batteryElement && deviceInfo.battery !== undefined) {
+                    const batteryLevels = ['Low', 'Normal', 'Full'];
+                    const batteryText = batteryLevels[deviceInfo.battery] || `Unknown (${deviceInfo.battery})`;
+                    batteryElement.textContent = batteryText;
+                }
+
+                // マウントポジション
+                const mountPositionElement = document.getElementById(`mount-position-${side}`);
+                if (mountPositionElement && deviceInfo.mount_position !== undefined) {
+                    const positionText = deviceInfo.mount_position === 0 ? 'Left Foot' : 'Right Foot';
+                    mountPositionElement.textContent = positionText;
+                }
+
+                // 加速度センサーレンジ (0: 2g, 1: 4g, 2: 8g, 3: 16g)
+                const accRangeElement = document.getElementById(`acc-range-${side}`);
+                if (accRangeElement && deviceInfo.range && deviceInfo.range.acc !== undefined) {
+                    const accRanges = ['±2g', '±4g', '±8g', '±16g'];
+                    const accText = accRanges[deviceInfo.range.acc] || `±${deviceInfo.range.acc}g`;
+                    accRangeElement.textContent = accText;
+                }
+
+                // ジャイロセンサーレンジ (0: 250, 1: 500, 2: 1000, 3: 2000 deg/s)
+                const gyroRangeElement = document.getElementById(`gyro-range-${side}`);
+                if (gyroRangeElement && deviceInfo.range && deviceInfo.range.gyro !== undefined) {
+                    const gyroRanges = ['±250°/s', '±500°/s', '±1000°/s', '±2000°/s'];
+                    const gyroText = gyroRanges[deviceInfo.range.gyro] || `±${deviceInfo.range.gyro}°/s`;
+                    gyroRangeElement.textContent = gyroText;
+                }
+
+            } catch (error) {
+                console.error(`Error updating device information for device ${deviceIndex}:`, error);
+            }
+        }
+
+        // デバイス位置情報表示更新
+        function updateDevicePositionInfo(deviceIndex, side) {
+            const deviceSideInfo = document.getElementById(`device-side-info-${deviceIndex}`);
+            const devicePosition = document.getElementById(`device-position-${deviceIndex}`);
+
+            if (deviceSideInfo && devicePosition) {
+                const sideText = side === 0 ? 'Left Foot' : 'Right Foot';
+                devicePosition.textContent = sideText;
+                deviceSideInfo.classList.add('visible');
+            }
+        }
+
+        // 接続状態更新
+        function updateConnectionStatus(deviceIndex, connected) {
+            isConnected[deviceIndex] = connected;
+            const statusIndicator = document.getElementById(`status-indicator-${deviceIndex}`);
+            const connectionStatusInfo = document.getElementById(`connection-status-info-${deviceIndex}`);
+            const connectBtn = document.getElementById(`connect-btn-${deviceIndex}`);
+
+            if (connected) {
+                statusIndicator.className = 'status-indicator connected';
+                if (connectionStatusInfo) connectionStatusInfo.textContent = 'Connected';
+                connectBtn.classList.add('connected');
+            } else {
+                statusIndicator.className = 'status-indicator';
+                if (connectionStatusInfo) connectionStatusInfo.textContent = 'Not Connected';
+                connectBtn.classList.remove('connected');
+
+                // 左右情報を非表示
+                const deviceSideInfo = document.getElementById(`device-side-info-${deviceIndex}`);
+                if (deviceSideInfo) {
+                    deviceSideInfo.classList.remove('visible');
+                }
+
+                // ステータスカードの更新 (デバイス情報は常に表示のため何もしない)
+                const side = deviceToSideMapping[deviceIndex];
+                if (side !== undefined) {
+                    // デバイス情報は常に表示されているため、非表示処理は不要
                 }
             }
-        </script>
+        }
+
+        // 値更新関数
+        function updateValue(elementId, value) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = typeof value === 'number' ? value.toFixed(3) : value;
+            }
+        }
+
+        // タイムスタンプフォーマット
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '—';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString() + '.' + String(date.getMilliseconds()).padStart(3, '0');
+        }
+
+        // 初期化実行
+        window.addEventListener('load', init);
+    </script>
 </body>
 
 </html>

@@ -1,5 +1,5 @@
 var orphe_js_version_date = `
-Last modified: 2025/08/23 10:10:20
+Last modified: 2025/08/26 00:40:25
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
@@ -127,14 +127,11 @@ class Orphe {
    * デバイスインフォメーションを取得して保存しておく連想配列です。begin()を呼び出すとデバイスから値を取得して初期化されます。
    * @property {Object} device_information - デバイス情報
    * @property {number} device_information.battery - バッテリー残量（少ない:0、普通:1、多い:2）
-   * @property {number} device_information.lr - コアモジュール取り付け位置（左右情報）
+   * @property {number} device_information.mount_position - コアモジュール取り付け位置（左右情報）
   bit0 : 左右
   bit1 : 0(足底) / 1(足背)
   足底 : 左、右：0=(0000 0000b), 1=(0000 0001b)、
   足背 : 左、右：2(=0000 0010b), 3(=0000 0011b)
-   * @property {number} device_information.rec_mode - 記録モード。記録してない, 記録中, 一時停止中：0, 1, 2
-   * @property {number} device_information.rec_auto_run - 自動RUN記録　Off, On：0, 1
-   * @property {number} device_information.led_brightness - LEDの明るさ（0-255）
    * @property {Object} device_information.range - 加速度とジャイロセンサの感度設定
    * @property {number} device_information.range.acc - 加速度レンジ（ 2, 4, 8, 16(g)：0, 1, 2, 3）
    * @property {number} device_information.range.gyro - ジャイロレンジ（250, 500, 1000, 2000(°/s)：0, 1, 2, 3）
@@ -375,6 +372,8 @@ class Orphe {
 
     this.notification_type = str_type;
 
+    await this.getDeviceInformation();
+
     // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
     /*
     0x01 : リアルタイム(クォータニオン、ジャイロ、加速度)
@@ -446,7 +445,7 @@ class Orphe {
       this.bluetoothDevice = device;
       this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
 
-      await this.autoStartWatchingAdvertisements();
+      // await this.autoStartWatchingAdvertisements();
     } catch (error) {
       console.warn('Failed requestDevice:', error);
     }
@@ -635,6 +634,7 @@ class Orphe {
       })
       .catch(error => {
         this.onError(error);
+        throw error; // エラーを再スローして、呼び出し側でキャッチできるようにする
       });
   }
   /**
@@ -746,8 +746,10 @@ class Orphe {
    * @param {object} obj 
    */
   setDeviceInformation(obj) {
-    const senddata = new Uint8Array([0x01, obj.lr, obj.led_brightness, 0, obj.rec_auto_run, obj.time01, obj.time02, obj.range.acc, obj.range.gyro]);
-    this.write('DEVICE_INFORMATION', senddata);
+    // この機能は insole では未対応とします。
+    // const senddata = new Uint8Array([0x01, obj.lr, obj.led_brightness, 0, obj.rec_auto_run, obj.time01, obj.time02, obj.range.acc, obj.range.gyro]);
+    // this.write('DEVICE_INFORMATION', senddata);
+    alert("setDeviceInformation: not supported");
   }
 
   /**
@@ -1209,24 +1211,17 @@ class Orphe {
   async getDeviceInformation() {
     return new Promise((resolve, reject) => {
       this.read('DEVICE_INFORMATION').then((data) => {
-        this.array_device_information.setUint8(0, 1);
-        this.array_device_information.setUint8(1, data.getUint8(1));
-        this.array_device_information.setUint8(2, data.getUint8(4));
-        this.array_device_information.setUint8(3, data.getUint8(5));
-        this.array_device_information.setUint8(4, data.getUint8(3));
-        this.array_device_information.setUint8(5, data.getUint8(6));
-        this.array_device_information.setUint8(6, data.getUint8(7));
-        this.array_device_information.setUint8(7, data.getUint8(8));
-        this.array_device_information.setUint8(8, data.getUint8(9));
-        for (let i = 9; i <= 19; i++) {
-          this.array_device_information.setUint8(i, 0);
+        if (!data) {
+          const error = new Error('No data received from DEVICE_INFORMATION');
+          console.error('Error: ' + error.message);
+          this.onError(error);
+          reject(error);
+          return;
         }
+
         this.device_information = {
           battery: data.getUint8(0),
-          lr: data.getUint8(1),
-          rec_mode: data.getUint8(2),
-          rec_auto_run: data.getUint8(3),
-          led_brightness: data.getUint8(4),
+          mount_position: data.getUint8(1),
           range: {
             acc: data.getUint8(8),
             gyro: data.getUint8(9)

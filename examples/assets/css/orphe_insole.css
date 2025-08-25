@@ -1,7 +1,132 @@
+ /* 
+  * ORPHE INSOLE CSS - Shared styles for examples
+  * This CSS file provides common styling for ORPHE INSOLE examples
+  * 
+  * Layout Structure:
+  * - .main-content: Main container with flexible layout options
+  * - .connection-controls: Device connection button container
+  * - .device-connection-button: Individual device connection buttons
+  * - .sensor-display-container: Container for sensor data display
+  */
+
+ /* Main content container - can be flexbox or block based on use case */
  .main-content {
      display: flex;
      gap: 40px;
      align-items: flex-start;
+ }
+
+ /* Override main-content to block layout for dashboard-style layouts */
+ .main-content.dashboard-layout {
+     display: block !important;
+ }
+
+ /* Ensure sensor display container can use flex regardless of parent layout */
+ .main-content.dashboard-layout .sensor-display-container {
+     display: flex !important;
+     gap: 40px;
+     justify-content: center;
+     align-items: flex-start;
+ }
+
+ /* Device connection controls container - vertical stack of connection buttons */
+ .connection-controls {
+     display: flex;
+     flex-direction: column;
+     gap: 15px;
+     margin-bottom: 30px;
+     align-items: center;
+ }
+
+ /* Individual device connection button - compact, informative button design */
+ .device-connection-button {
+     width: 350px;
+     height: 60px;
+     background-color: #333;
+     color: white;
+     border: 1px solid #555;
+     border-radius: 5px;
+     font-size: 14px;
+     cursor: pointer;
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     justify-content: center;
+     gap: 5px;
+     text-align: center;
+     padding: 0;
+     margin: 0;
+     transition: background-color 0.3s;
+ }
+
+ /* Device connection button in connected state - green background */
+ .device-connection-button.connected {
+     background-color: #2d5a2d;
+ }
+
+ /* Device connection button on hover - darker shade of current state */
+ .device-connection-button:hover {
+     background-color: #444;
+     color: white;
+     /* Ensure text stays white on hover */
+ }
+
+ .device-connection-button.connected:hover {
+     background-color: #1e3e1e;
+     color: white;
+     /* Ensure text stays white on hover */
+ }
+
+ /* Device name display within connection button - bold, centered with status indicator */
+ .device-name-display {
+     font-weight: bold;
+     font-size: 16px;
+     position: relative;
+     text-align: center;
+     width: 100%;
+     color: white;
+     /* Explicit white color for device name */
+ }
+
+ /* Status indicator positioning within device name - absolute positioned circle */
+ .device-name-display .status-indicator {
+     position: absolute;
+     left: 20px;
+     top: 50%;
+     transform: translateY(-50%);
+     margin: 0;
+ }
+
+ /* Connection status text - secondary information about connection state */
+ .connection-status-text {
+     font-size: 12px;
+     color: #aaa;
+     text-align: center;
+     width: 100%;
+ }
+
+ /* Ensure connection status text stays the same color on hover */
+ .device-connection-button:hover .connection-status-text {
+     color: #aaa;
+ }
+
+ /* Device position info - tertiary information about left/right foot assignment */
+ .device-position-info {
+     font-size: 11px;
+     color: #888;
+     display: none;
+     text-align: center;
+     width: 100%;
+ }
+
+ /* Ensure device position info stays the same color on hover */
+ .device-connection-button:hover .device-position-info {
+     color: #888;
+ }
+
+ /* Show device position info when device is connected */
+ .device-position-info.visible {
+     display: block;
  }
 
  .device-column {
@@ -157,11 +282,33 @@
 
  .sensor-grid {
      display: grid;
-     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+     grid-template-columns: repeat(2, 1fr);
      gap: 20px;
      margin-top: 20px;
  }
 
+ /* Ensure the last card (STATUS) spans full width if it's alone in the last row */
+ .sensor-grid .sensor-card:last-child:nth-child(odd) {
+     grid-column: 1 / -1;
+ }
+
+ /* 
+  * Sensor Card Design - Unified structure for all sensor types
+  * All sensor cards follow this structure:
+  * <div class="sensor-card">
+  *   <div class="sensor-title">SENSOR_NAME</div>
+  *   <div class="values">
+  *     <div class="value-row">
+  *       <span class="value-label">LABEL</span>
+  *       <span class="value-number">VALUE</span>
+  *     </div>
+  *   </div>
+  *   <div class="meta-info">
+  *     <div>Timestamp: <span id="...">—</span></div>
+  *     <div>Packet: <span id="...">—</span></div>
+  *   </div>
+  * </div>
+  */
  .sensor-card {
      background-color: #111;
      border: 1px solid #333;
@@ -191,6 +338,13 @@
      gap: 15px;
  }
 
+ /* Alias for unified naming - all sensor types use .values */
+ .values {
+     display: flex;
+     flex-direction: column;
+     gap: 15px;
+ }
+
  .value-row {
      display: flex;
      justify-content: space-between;
@@ -213,12 +367,6 @@
      color: #fff;
      min-width: 80px;
      text-align: right;
- }
-
- .quaternion-values {
-     display: flex;
-     flex-direction: column;
-     gap: 15px;
  }
 
  .meta-info {
@@ -429,6 +577,19 @@
      color: #f00 !important;
  }
 
+ /* Medium screen responsive design */
+ @media (max-width: 1000px) {
+     .sensor-display-container {
+         flex-direction: column;
+         align-items: center;
+     }
+
+     .sensor-side {
+         max-width: 800px;
+         width: 100%;
+     }
+ }
+
  @media (max-width: 768px) {
      .terminal-main {
          grid-template-columns: 1fr;
@@ -438,4 +599,131 @@
      .terminal-full {
          grid-column: span 1;
      }
+
+     .connection-controls {
+         flex-direction: column;
+         align-items: center;
+     }
+
+     .sensor-display-container {
+         flex-direction: column;
+         align-items: center;
+     }
+
+     .sensor-side {
+         max-width: 100%;
+         width: 100%;
+         min-width: 0;
+     }
+
+     /* Single column layout for sensor cards on mobile */
+     .sensor-grid {
+         grid-template-columns: 1fr !important;
+     }
+
+     .sensor-grid .sensor-card:last-child:nth-child(odd) {
+         grid-column: 1;
+     }
+ }
+
+ /* Vertical layout styles for sensor dashboard */
+ .connection-controls {
+     display: flex;
+     gap: 20px;
+     justify-content: center;
+     margin-bottom: 40px;
+     flex-wrap: wrap;
+ }
+
+ .device-connection {
+     background-color: #111;
+     border: 1px solid #333;
+     padding: 20px;
+     text-align: center;
+     min-width: 250px;
+     transition: all 0.3s ease;
+ }
+
+ .device-connection:hover {
+     border-color: #555;
+     background-color: #1a1a1a;
+ }
+
+ /* Sensor Display Container - 2-column layout for left/right foot comparison */
+ .sensor-display-container {
+     display: flex !important;
+     gap: 40px;
+     justify-content: center;
+     align-items: flex-start;
+     flex-wrap: wrap;
+ }
+
+ /* Individual sensor side - contains all sensor cards for one foot */
+ .sensor-side {
+     flex: 1;
+     max-width: 600px;
+     min-width: 320px;
+     /* Increased minimum width for better visibility */
+ }
+
+ .side-title {
+     font-size: 1.5rem;
+     font-weight: 300;
+     text-align: center;
+     margin-bottom: 30px;
+     color: #fff;
+     text-transform: uppercase;
+     letter-spacing: 2px;
+ }
+
+ .device-placeholder {
+     text-align: center;
+     padding: 40px;
+     color: #666;
+     border: 2px dashed #333;
+     margin-bottom: 20px;
+     transition: all 0.3s ease;
+ }
+
+ .device-placeholder:hover {
+     border-color: #555;
+     color: #888;
+ }
+
+ /* Device Information Display Styles - for showing battery, mount position, and sensor ranges in status cards */
+ .device-info-section {
+     padding: 10px;
+     background-color: rgba(255, 255, 255, 0.05);
+     border-radius: 3px;
+     border: 1px solid #333;
+ }
+
+ .info-title {
+     font-size: 12px;
+     font-weight: bold;
+     color: #fff;
+     margin-bottom: 8px;
+     text-align: center;
+ }
+
+ .info-row {
+     display: flex;
+     justify-content: space-between;
+     align-items: center;
+     margin-bottom: 4px;
+     font-size: 11px;
+ }
+
+ .info-row:last-child {
+     margin-bottom: 0;
+ }
+
+ .info-label {
+     color: #bbb;
+     font-weight: normal;
+ }
+
+ .info-value {
+     color: #fff;
+     font-weight: bold;
  }
