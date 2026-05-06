@@ -5,6 +5,24 @@
     <meta charset="utf-8">
     <title>ORPHE CORE JS DEMO</title>
     <link rel="stylesheet" href="../assets/css/orphe_insole.css">
+    <style>
+        .side-selector {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 8px 12px;
+            font-size: 14px;
+            cursor: pointer;
+            min-width: 120px;
+        }
+        .side-selector:hover {
+            background-color: #444;
+        }
+        .side-selector option {
+            background-color: #333;
+        }
+    </style>
 </head>
 
 <body>
@@ -17,29 +35,41 @@
         <div class="main-content dashboard-layout">
             <!-- Connection Controls - Top Section (Compact Buttons) -->
             <div class="connection-controls">
-                <button onclick="connectDevice(0);" id="connect-btn-0" class="device-connection-button"
-                    onmouseover="handleButtonHover(0, true)" onmouseout="handleButtonHover(0, false)">
-                    <div class="device-name-display">
-                        <span class="status-indicator" id="status-indicator-0"></span>
-                        <span>DEVICE 1</span>
-                    </div>
-                    <div id="connection-status-info-0" class="connection-status-text">Not Connected</div>
-                    <div id="device-side-info-0" class="device-position-info">
-                        Position: <span id="device-position-0">—</span>
-                    </div>
-                </button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button onclick="connectDevice(0);" id="connect-btn-0" class="device-connection-button"
+                        onmouseover="handleButtonHover(0, true)" onmouseout="handleButtonHover(0, false)">
+                        <div class="device-name-display">
+                            <span class="status-indicator" id="status-indicator-0"></span>
+                            <span>DEVICE 1</span>
+                        </div>
+                        <div id="connection-status-info-0" class="connection-status-text">Not Connected</div>
+                        <div id="device-side-info-0" class="device-position-info">
+                            Position: <span id="device-position-0">—</span>
+                        </div>
+                    </button>
+                    <select id="side-selector-0" class="side-selector" onchange="updateDeviceSide(0, this.value)">
+                        <option value="0">Left Foot</option>
+                        <option value="1">Right Foot</option>
+                    </select>
+                </div>
 
-                <button onclick="connectDevice(1);" id="connect-btn-1" class="device-connection-button"
-                    onmouseover="handleButtonHover(1, true)" onmouseout="handleButtonHover(1, false)">
-                    <div class="device-name-display">
-                        <span class="status-indicator" id="status-indicator-1"></span>
-                        <span>DEVICE 2</span>
-                    </div>
-                    <div id="connection-status-info-1" class="connection-status-text">Not Connected</div>
-                    <div id="device-side-info-1" class="device-position-info">
-                        Position: <span id="device-position-1">—</span>
-                    </div>
-                </button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button onclick="connectDevice(1);" id="connect-btn-1" class="device-connection-button"
+                        onmouseover="handleButtonHover(1, true)" onmouseout="handleButtonHover(1, false)">
+                        <div class="device-name-display">
+                            <span class="status-indicator" id="status-indicator-1"></span>
+                            <span>DEVICE 2</span>
+                        </div>
+                        <div id="connection-status-info-1" class="connection-status-text">Not Connected</div>
+                        <div id="device-side-info-1" class="device-position-info">
+                            Position: <span id="device-position-1">—</span>
+                        </div>
+                    </button>
+                    <select id="side-selector-1" class="side-selector" onchange="updateDeviceSide(1, this.value)">
+                        <option value="0">Left Foot</option>
+                        <option value="1">Right Foot</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Sensor Display - Bottom Section (2 Columns: Left/Right) -->
@@ -332,9 +362,12 @@
         const isConnected = [false, false];
 
         // mount_positionとデバイスインデックスのマッピング
-        // mount_position: 0=left, 1=right
+        // mount_position bit0: 0=left, 1=right
         // deviceIndex: どのデバイス（0または1）がどちら側（0または1）にマップされるかを管理
         const deviceToSideMapping = {};
+        
+        // 手動で設定された左右情報を保持（優先される）
+        const manualSideMapping = {};
 
         // 初期化関数
         function init() {
@@ -421,7 +454,8 @@
             } else {
                 insole[deviceIndex].begin()
                     .then(() => {
-                        console.log(`Device ${deviceIndex + 1} connected`);
+                        const deviceName = insole[deviceIndex].bluetoothDevice ? insole[deviceIndex].bluetoothDevice.name : 'Unknown';
+                        console.log(`Device ${deviceIndex + 1} connected: ${deviceName}`);
 
                         // begin()実行後、device_information.mount_positionを参照
                         setupDeviceMapping(deviceIndex);
@@ -446,18 +480,42 @@
                 // device_informationを直接参照
                 const deviceInfo = insole[deviceIndex].device_information;
                 console.log(`Device ${deviceIndex} info:`, deviceInfo);
+                console.log(`Device ${deviceIndex} raw data:`, deviceInfo.raw);
+                
+                // 生データを16進数で表示
+                if (deviceInfo.raw) {
+                    let hexString = '';
+                    for (let i = 0; i < deviceInfo.raw.byteLength; i++) {
+                        hexString += deviceInfo.raw.getUint8(i).toString(16).padStart(2, '0').toUpperCase() + ' ';
+                    }
+                    console.log(`Device ${deviceIndex} raw hex: ${hexString}`);
+                }
 
                 if (!deviceInfo) {
                     console.error(`Device information not available for device ${deviceIndex}`);
                     return;
                 }
 
-                // mount_positionから左右判定 (0=left, 1=right)
-                const mountPosition = deviceInfo.mount_position;
-                const side = mountPosition === 0 ? 0 : 1; // 0=left, 1=right
+                // 手動設定が優先、なければmount_positionから自動判定
+                let side;
+                if (manualSideMapping[deviceIndex] !== undefined) {
+                    side = manualSideMapping[deviceIndex];
+                    console.log(`Device ${deviceIndex} using manual side setting: ${side} (${side === 0 ? 'left' : 'right'})`);
+                } else {
+                    // mount_positionから左右判定
+                    // mount_position bit0が左右を表す: bit0=0は左足、bit0=1は右足
+                    const mountPosition = deviceInfo.mount_position;
+                    side = mountPosition & 1; // bit0を取り出し: 0=left, 1=right
+                    console.log(`Device ${deviceIndex} auto-detected side ${side} (${side === 0 ? 'left' : 'right'}) based on mount_position: ${mountPosition} (bit0=${side})`);
+                }
 
                 deviceToSideMapping[deviceIndex] = side;
-                console.log(`Device ${deviceIndex} mapped to side ${side} (${side === 0 ? 'left' : 'right'}) based on mount_position: ${mountPosition}`);
+                
+                // セレクターの値を更新
+                const selector = document.getElementById(`side-selector-${deviceIndex}`);
+                if (selector) {
+                    selector.value = side;
+                }
 
                 // UIに左右情報を表示
                 updateDevicePositionInfo(deviceIndex, side);
@@ -467,6 +525,30 @@
 
             } catch (error) {
                 console.error(`Error setting up device mapping for device ${deviceIndex}:`, error);
+            }
+        }
+
+        // 手動で左右を変更する関数
+        function updateDeviceSide(deviceIndex, newSide) {
+            newSide = parseInt(newSide);
+            console.log(`Manually setting device ${deviceIndex} to side ${newSide} (${newSide === 0 ? 'left' : 'right'})`);
+            
+            manualSideMapping[deviceIndex] = newSide;
+            
+            // デバイスが接続されている場合のみマッピングを更新
+            if (isConnected[deviceIndex]) {
+                const oldSide = deviceToSideMapping[deviceIndex];
+                deviceToSideMapping[deviceIndex] = newSide;
+                
+                // UIを更新
+                updateDevicePositionInfo(deviceIndex, newSide);
+                
+                const deviceInfo = insole[deviceIndex].device_information;
+                if (deviceInfo) {
+                    updateDeviceInformation(deviceIndex, deviceInfo, newSide);
+                }
+                
+                console.log(`Device ${deviceIndex} remapped from side ${oldSide} to ${newSide}`);
             }
         }
 
@@ -490,7 +572,9 @@
                 // マウントポジション
                 const mountPositionElement = document.getElementById(`mount-position-${side}`);
                 if (mountPositionElement && deviceInfo.mount_position !== undefined) {
-                    const positionText = deviceInfo.mount_position === 0 ? 'Left Foot' : 'Right Foot';
+                    const isLeft = (deviceInfo.mount_position & 1) === 0; // bit0で左右判定
+                    const isTopMount = (deviceInfo.mount_position & 2) !== 0; // bit1で足底/足背判定
+                    const positionText = `${isLeft ? 'Left' : 'Right'} Foot${isTopMount ? ' (Top)' : ''}`;
                     mountPositionElement.textContent = positionText;
                 }
 
