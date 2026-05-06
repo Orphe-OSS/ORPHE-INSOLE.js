@@ -50,6 +50,38 @@ https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
 ### API Document
   * https://orphe-oss.github.io/ORPHE-INSOLE.js/docs/
 
+## Usage policy and commercial use
+
+ORPHE-INSOLE.js is developed as a JavaScript library for people using ORPHE INSOLE.
+
+Following the current ORPHE-CORE.js policy, ORPHE-INSOLE.js v1.0.0 and later is free to use, modify, and study for:
+
+* education and workshops
+* academic and non-commercial research
+* personal creative projects
+* prototypes and internal experiments
+* free apps and non-commercial services built with ORPHE INSOLE
+
+If you use ORPHE-INSOLE.js to build a paid app, paid service, commercial SDK integration, commissioned product, or business service, please contact ORPHE for a separate commercial agreement.
+
+This usage policy follows the ORPHE-CORE.js v1.4.0 and later policy for this repository.
+
+## 利用方針と商用利用について
+
+ORPHE-INSOLE.js は、ORPHE INSOLEを使う人のためのJavaScriptライブラリです。
+
+現在のORPHE-CORE.jsの方針に従い、ORPHE-INSOLE.js v1.0.0以降では、以下の用途について、改変を含めて無償で利用できます。
+
+* 教育・ワークショップ
+* 大学・研究機関などでの非商用研究
+* 個人制作
+* 試作・社内検証
+* ORPHE INSOLEを使った無償アプリ・非商用サービス
+
+ORPHE-INSOLE.jsを使って、有料アプリ、有料サービス、商用SDK連携、受託開発、事業として提供するサービスを作る場合は、別途ORPHEとの商用契約が必要です。
+
+この利用方針は、ORPHE-CORE.js v1.4.0以降の利用方針をこのリポジトリで踏襲するものです。
+
 ## 開発者向け情報
 ### 環境構築
 必要なパッケージはnpmで事前にインストールしておきます。
@@ -107,4 +139,5 @@ insole.begin({ streamingMode: 3 }); // gyro, acc, pressure at 200Hz
  * quaternion.js, https://github.com/infusion/Quaternion.js
 
 ## Copyright and licensing
- * Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc under the MIT License.
+ * Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc.
+ * See the usage policy above for ORPHE-INSOLE.js v1.0.0 and later.
