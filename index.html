@@ -1,0 +1,1675 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORPHE-INSOLE.js | JavaScript SDK for Smart Insole Prototyping</title>
+  <meta name="description"
+    content="ORPHE-INSOLE.js connects ORPHE INSOLE devices to browser apps through Web Bluetooth for pressure, motion, and orientation prototyping.">
+  <meta property="og:title" content="ORPHE-INSOLE.js">
+  <meta property="og:description"
+    content="Build browser prototypes with ORPHE INSOLE pressure and motion data.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/images/orphe.svg" type="image/svg+xml">
+  <style>
+    @font-face {
+      font-family: "Roboto";
+      font-weight: 300;
+      src: url("assets/fonts/Roboto/Roboto-Light.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Roboto";
+      font-weight: 400;
+      src: url("assets/fonts/Roboto/Roboto-Regular.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Roboto";
+      font-weight: 700;
+      src: url("assets/fonts/Roboto/Roboto-Bold.ttf") format("truetype");
+    }
+
+    :root {
+      color-scheme: light;
+      --ink: #151719;
+      --muted: #59636f;
+      --line: #dce2e8;
+      --paper: #ffffff;
+      --soft: #f4f7f9;
+      --charcoal: #101417;
+      --cyan: #45e6e6;
+      --orange: #ff6040;
+      --green: #70c46f;
+      --blue: #3b6ea8;
+      --max: 1160px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Roboto", Arial, sans-serif;
+      font-size: 16px;
+      font-weight: 300;
+      line-height: 1.6;
+      letter-spacing: 0;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img,
+    video {
+      max-width: 100%;
+      display: block;
+    }
+
+    main {
+      overflow: hidden;
+    }
+
+    code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.94);
+      border-bottom: 1px solid rgba(16, 20, 23, 0.08);
+      backdrop-filter: blur(10px);
+    }
+
+    .nav {
+      width: min(100% - 32px, var(--max));
+      min-height: 72px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .brand img {
+      width: 94px;
+      height: auto;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      color: #37414c;
+      font-size: 14px;
+      font-weight: 400;
+    }
+
+    .nav-links a {
+      padding: 8px 0;
+      border-bottom: 2px solid transparent;
+    }
+
+    .nav-links a:hover {
+      border-color: var(--cyan);
+    }
+
+    .language-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f7fafb;
+    }
+
+    .language-switch button {
+      min-width: 44px;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 0;
+      border-radius: 999px;
+      color: #4d5964;
+      background: transparent;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .language-switch button.active {
+      color: #051314;
+      background: var(--cyan);
+    }
+
+    .language-switch button:focus-visible {
+      outline: 2px solid var(--orange);
+      outline-offset: 2px;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 680px;
+      overflow: hidden;
+      color: white;
+      background: var(--charcoal);
+    }
+
+    .hero-media {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+    }
+
+    .hero-media video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.72;
+    }
+
+    .hero-media::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(8, 11, 13, 0.56);
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      width: min(100% - 32px, var(--max));
+      min-height: 680px;
+      margin: 0 auto;
+      padding: 92px 0 54px;
+      display: grid;
+      align-content: end;
+      gap: 42px;
+    }
+
+    .eyebrow {
+      margin: 0 0 16px;
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+      overflow-wrap: break-word;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin-bottom: 20px;
+      font-size: 64px;
+      line-height: 1.03;
+      font-weight: 700;
+    }
+
+    .hero-copy {
+      max-width: 780px;
+      margin-bottom: 28px;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 20px;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+    }
+
+    .hero-copy span {
+      display: block;
+    }
+
+    .hero-actions,
+    .section-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      max-width: 100%;
+      min-height: 44px;
+      padding: 10px 18px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .button.primary {
+      background: var(--cyan);
+      color: #051314;
+    }
+
+    .button.secondary {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.42);
+      color: white;
+    }
+
+    .button.light {
+      background: var(--ink);
+      color: white;
+    }
+
+    .button.line {
+      border-color: var(--line);
+      color: var(--ink);
+      background: white;
+    }
+
+    .hero-facts {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      background: rgba(255, 255, 255, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+
+    .hero-fact {
+      min-height: 104px;
+      padding: 18px;
+      background: rgba(7, 10, 12, 0.58);
+    }
+
+    .hero-fact strong {
+      display: block;
+      color: white;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .hero-fact span {
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 13px;
+    }
+
+    .section {
+      padding: 88px 0;
+    }
+
+    .section.alt {
+      background: var(--soft);
+    }
+
+    .section.dark {
+      background: var(--charcoal);
+      color: white;
+    }
+
+    .section-inner {
+      width: min(100% - 32px, var(--max));
+      margin: 0 auto;
+    }
+
+    .section-head {
+      max-width: 760px;
+      margin-bottom: 38px;
+    }
+
+    h2 {
+      margin-bottom: 16px;
+      font-size: 40px;
+      line-height: 1.15;
+      font-weight: 700;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 20px;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.8;
+    }
+
+    .dark .lead {
+      color: rgba(255, 255, 255, 0.74);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1.02fr) minmax(320px, 0.98fr);
+      gap: 54px;
+      align-items: center;
+    }
+
+    .feature-list {
+      display: grid;
+      gap: 18px;
+      margin-top: 26px;
+    }
+
+    .feature-item {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 14px;
+    }
+
+    .feature-item::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      margin-top: 8px;
+      border-radius: 50%;
+      background: var(--orange);
+    }
+
+    .feature-item:nth-child(2)::before {
+      background: var(--cyan);
+    }
+
+    .feature-item:nth-child(3)::before {
+      background: var(--green);
+    }
+
+    .feature-item p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .insole-visual {
+      position: relative;
+      min-height: 440px;
+      display: grid;
+      place-items: center;
+      background: #eef3f6;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .insole-shape {
+      position: relative;
+      width: 230px;
+      height: 360px;
+      border-radius: 54% 46% 42% 48% / 30% 28% 72% 70%;
+      background: #fdfefe;
+      box-shadow: 0 18px 44px rgba(15, 28, 34, 0.16);
+      transform: rotate(-7deg);
+    }
+
+    .insole-shape::before {
+      content: "";
+      position: absolute;
+      inset: 20px 28px;
+      border: 1px solid rgba(49, 70, 80, 0.16);
+      border-radius: 54% 46% 42% 48% / 30% 28% 72% 70%;
+    }
+
+    .sensor-dot {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--cyan);
+      border: 6px solid rgba(69, 230, 230, 0.28);
+      background-clip: padding-box;
+    }
+
+    .sensor-dot.orange {
+      background: var(--orange);
+      border-color: rgba(255, 96, 64, 0.28);
+    }
+
+    .sensor-dot.green {
+      background: var(--green);
+      border-color: rgba(112, 196, 111, 0.28);
+    }
+
+    .sensor-dot:nth-child(1) {
+      top: 62px;
+      left: 76px;
+    }
+
+    .sensor-dot:nth-child(2) {
+      top: 92px;
+      right: 54px;
+    }
+
+    .sensor-dot:nth-child(3) {
+      top: 150px;
+      left: 52px;
+    }
+
+    .sensor-dot:nth-child(4) {
+      top: 170px;
+      right: 62px;
+    }
+
+    .sensor-dot:nth-child(5) {
+      bottom: 96px;
+      left: 72px;
+    }
+
+    .sensor-dot:nth-child(6) {
+      bottom: 54px;
+      right: 74px;
+    }
+
+    .visual-caption {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: #43505b;
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .product-showcase {
+      display: grid;
+      grid-template-columns: minmax(300px, 0.86fr) minmax(0, 1.14fr);
+      gap: 54px;
+      align-items: center;
+    }
+
+    .product-media {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .product-media img {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: cover;
+      background: #f3f6f8;
+    }
+
+    .product-caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-top: 1px solid var(--line);
+      color: #43505b;
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 28px 0 22px;
+    }
+
+    .spec-item {
+      min-height: 164px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .spec-item span {
+      display: inline-flex;
+      margin-bottom: 10px;
+      color: var(--orange);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .spec-item strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+      line-height: 1.28;
+    }
+
+    .spec-item p,
+    .product-note {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .product-note {
+      padding: 16px 18px;
+      border-left: 4px solid var(--orange);
+      border-radius: 0 8px 8px 0;
+      background: white;
+      font-size: 14px;
+    }
+
+    .source-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .source-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: white;
+      color: #24303a;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .award-grid {
+      display: grid;
+      grid-template-columns: minmax(280px, 0.74fr) minmax(0, 1.26fr);
+      gap: 42px;
+      align-items: center;
+    }
+
+    .award-mark {
+      padding: 28px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .award-mark strong {
+      display: block;
+      color: var(--blue);
+      font-size: 44px;
+      font-weight: 700;
+      line-height: 1.06;
+    }
+
+    .award-mark span {
+      display: block;
+      margin-top: 12px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .data-grid,
+    .example-grid,
+    .build-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .tile {
+      min-height: 210px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .tile .tag {
+      display: inline-flex;
+      margin-bottom: 22px;
+      color: var(--orange);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .tile p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .dark .tile {
+      background: #181d21;
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .dark .tile p {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .quick-start {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(420px, 1.08fr);
+      gap: 34px;
+      align-items: start;
+    }
+
+    .code-block {
+      margin: 0;
+      padding: 24px;
+      max-width: 100%;
+      min-height: 420px;
+      overflow: auto;
+      color: #d8f7f7;
+      background: #11161a;
+      border: 1px solid #263239;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .code-block .comment {
+      color: #91a3ad;
+    }
+
+    .code-block .string {
+      color: #aeea9e;
+    }
+
+    .code-block .keyword {
+      color: #65d9ef;
+    }
+
+    .mode-table {
+      width: 100%;
+      margin-top: 24px;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 14px;
+    }
+
+    .mode-table th,
+    .mode-table td {
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .mode-table th {
+      color: var(--cyan);
+      font-weight: 700;
+    }
+
+    .example-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .example-link {
+      display: flex;
+      min-height: 250px;
+      padding: 24px;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    .example-link:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 40px rgba(15, 28, 34, 0.12);
+    }
+
+    .example-link span {
+      color: var(--orange);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .example-link p {
+      color: var(--muted);
+    }
+
+    .example-link strong {
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .notice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 30px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.16);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .notice p {
+      max-width: 740px;
+      margin-bottom: 0;
+      color: rgba(255, 255, 255, 0.75);
+    }
+
+    footer {
+      padding: 34px 0;
+      color: #697580;
+      background: white;
+      font-size: 14px;
+    }
+
+    .footer-inner {
+      width: min(100% - 32px, var(--max));
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 980px) {
+      .nav {
+        align-items: flex-start;
+        padding: 14px 0;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .nav-links {
+        width: 100%;
+        overflow-x: auto;
+        gap: 18px;
+        padding-bottom: 2px;
+      }
+
+      .hero,
+      .hero-inner {
+        min-height: 600px;
+      }
+
+      h1 {
+        font-size: 48px;
+      }
+
+      h2 {
+        font-size: 32px;
+      }
+
+      .hero-facts,
+      .data-grid,
+      .build-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .two-col,
+      .product-showcase,
+      .award-grid,
+      .quick-start,
+      .example-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-start {
+        gap: 26px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        font-size: 15px;
+      }
+
+      .nav {
+        width: min(100% - 24px, var(--max));
+      }
+
+      .brand {
+        font-size: 14px;
+      }
+
+      .brand img {
+        width: 82px;
+      }
+
+      .hero,
+      .hero-inner {
+        min-height: 560px;
+      }
+
+      .hero-inner {
+        width: calc(100vw - 24px);
+        max-width: var(--max);
+        padding: 66px 0 28px;
+      }
+
+      .hero-inner > div:first-child,
+      .hero-copy,
+      .hero-facts {
+        max-width: calc(100vw - 24px);
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .hero-copy,
+      .lead {
+        font-size: 16px;
+      }
+
+      .hero-media video {
+        opacity: 0.54;
+      }
+
+      .hero-media::after {
+        background: rgba(8, 11, 13, 0.66);
+      }
+
+      .hero-facts,
+      .data-grid,
+      .spec-grid,
+      .build-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-fact {
+        min-height: 84px;
+      }
+
+      .section {
+        padding: 62px 0;
+      }
+
+      .section-inner {
+        width: min(100% - 24px, var(--max));
+      }
+
+      .insole-visual {
+        min-height: 380px;
+      }
+
+      .insole-shape {
+        width: 190px;
+        height: 306px;
+      }
+
+      .visual-caption,
+      .notice,
+      .footer-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .code-block {
+        min-height: 360px;
+        padding: 18px;
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Main navigation" data-i18n-aria-label="navLabel">
+      <a class="brand" href="#">
+        <img src="assets/images/orphe_black.svg" alt="ORPHE">
+        <span>ORPHE-INSOLE.js</span>
+      </a>
+      <div class="nav-links">
+        <a href="#about" data-i18n="navAbout">About</a>
+        <a href="#product" data-i18n="navProduct">Product</a>
+        <a href="#data" data-i18n="navData">Data</a>
+        <a href="#quick-start" data-i18n="navQuickStart">Quick Start</a>
+        <a href="#examples" data-i18n="navExamples">Examples</a>
+        <a href="#terms" data-i18n="navTerms">Terms</a>
+        <a href="docs/">API</a>
+        <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js">GitHub</a>
+        <div class="language-switch" aria-label="Language" data-i18n-aria-label="languageLabel">
+          <button type="button" data-lang-button="en" aria-pressed="true">EN</button>
+          <button type="button" data-lang-button="ja" aria-pressed="false">日本語</button>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-media" aria-hidden="true">
+        <video src="assets/gettingstarted.mp4" autoplay muted loop playsinline></video>
+      </div>
+      <div class="hero-inner">
+        <div>
+          <p class="eyebrow" data-i18n="heroEyebrow">Web Bluetooth SDK for ORPHE INSOLE</p>
+          <h1 id="hero-title">ORPHE-INSOLE.js</h1>
+          <p class="hero-copy">
+            <span data-i18n="heroCopy1">Build browser prototypes with ORPHE INSOLE pressure, motion, and orientation data.</span>
+            <span data-i18n="heroCopy2">ORPHE INSOLEをWeb Bluetooth経由で扱い、足裏圧とモーションを使ったWebアプリを作れます。</span>
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="examples/sensor-dashboard/" data-i18n="heroDashboard">Open Sensor Dashboard</a>
+            <a class="button secondary" href="#quick-start" data-i18n="heroStart">Start in 3 minutes</a>
+            <a class="button secondary" href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js" data-i18n="heroGithub">View GitHub</a>
+          </div>
+        </div>
+
+        <div class="hero-facts" aria-label="Key capabilities" data-i18n-aria-label="heroFactsLabel">
+          <div class="hero-fact">
+            <strong data-i18n="factPressureTitle">6 pressure sensors</strong>
+            <span data-i18n="factPressureBody">Pressure points per foot</span>
+          </div>
+          <div class="hero-fact">
+            <strong>IMU</strong>
+            <span data-i18n="factImuBody">3-axis acceleration and 3-axis gyroscope</span>
+          </div>
+          <div class="hero-fact">
+            <strong>100/200 Hz</strong>
+            <span data-i18n="factSamplingBody">Store-listed sampling options</span>
+          </div>
+          <div class="hero-fact">
+            <strong>BLE</strong>
+            <span data-i18n="factBleBody">Web Bluetooth browser workflow</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="about">
+      <div class="section-inner two-col">
+        <div>
+          <p class="eyebrow" data-i18n="aboutEyebrow">What is ORPHE INSOLE?</p>
+          <h2 data-i18n="aboutTitle">Smart insole data, ready for web prototypes.</h2>
+          <p class="lead" data-i18n="aboutLead">
+            ORPHE INSOLE is a smart insole with pressure sensors and an IMU for real-time foot movement measurement.
+            ORPHE-INSOLE.js connects that stream to browser apps through Web Bluetooth.
+          </p>
+          <div class="feature-list">
+            <div class="feature-item">
+              <div>
+                <h3 data-i18n="feature1Title">Foot pressure and motion in one stream</h3>
+                <p data-i18n="feature1Body">Use pressure values together with converted acceleration and gyroscope values for gait, balance, sports, and rehabilitation experiments.</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div>
+                <h3 data-i18n="feature2Title">No native app setup for early tests</h3>
+                <p data-i18n="feature2Body">Open the examples in Chrome or Edge, connect with Web Bluetooth, and start inspecting live packets.</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div>
+                <h3 data-i18n="feature3Title">Compatible with existing ORPHE style APIs</h3>
+                <p data-i18n-html="feature3Body">Use <code>new Orphe(...)</code> or the clearer <code>new OrpheInsole(...)</code> alias while keeping familiar callbacks.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="insole-visual" aria-label="Pressure sensor layout illustration" data-i18n-aria-label="insoleVisualLabel">
+          <div class="insole-shape">
+            <span class="sensor-dot orange"></span>
+            <span class="sensor-dot"></span>
+            <span class="sensor-dot green"></span>
+            <span class="sensor-dot"></span>
+            <span class="sensor-dot orange"></span>
+            <span class="sensor-dot green"></span>
+          </div>
+          <div class="visual-caption">
+            <span data-i18n="visualCaption1">Pressure map concept</span>
+            <span>INSOLE SENSOR_VALUES</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt" id="product">
+      <div class="section-inner product-showcase">
+        <div class="product-media">
+          <img src="https://shop.orphe.io/cdn/shop/files/ORPHEINSOLE__02_1200x1200.png?v=1775089587"
+            alt="ORPHE INSOLE beta evaluation kit">
+          <div class="product-caption">
+            <span>ORPHE INSOLE β</span>
+            <span data-i18n="productImageCaption">Evaluation Kit</span>
+          </div>
+        </div>
+        <div>
+          <p class="eyebrow" data-i18n="productEyebrow">Official product details</p>
+          <h2 data-i18n="productTitle">A pressure and motion platform inside the insole.</h2>
+          <p class="lead" data-i18n="productLead">
+            The official ORPHE INSOLE pages describe a replaceable smart insole that measures foot pressure and motion in real time, connects with apps or external devices, and supports smart-shoe prototyping.
+          </p>
+          <div class="spec-grid">
+            <div class="spec-item">
+              <span data-i18n="specSensorsTag">Sensors</span>
+              <strong data-i18n="specSensorsTitle">6 pressure sensors + 6-axis motion</strong>
+              <p data-i18n="specSensorsBody">Each foot includes six pressure sensors plus 3-axis acceleration and 3-axis gyroscope data.</p>
+            </div>
+            <div class="spec-item">
+              <span data-i18n="specRangeTag">Range</span>
+              <strong>±16G / ±2000dps / 0-148N</strong>
+              <p data-i18n="specRangeBody">Store-listed ranges for acceleration, gyroscope, and pressure measurement.</p>
+            </div>
+            <div class="spec-item">
+              <span data-i18n="specRateTag">Sampling</span>
+              <strong>100Hz / 200Hz</strong>
+              <p data-i18n="specRateBody">Sampling rate may vary depending on the application and mode.</p>
+            </div>
+            <div class="spec-item">
+              <span data-i18n="specBatteryTag">Battery</span>
+              <strong data-i18n="specBatteryTitle">Approx. 24 hours</strong>
+              <p data-i18n="specBatteryBody">The store lists magnetic connector charging and wireless charging with a separately sold ORPHE MAT.</p>
+            </div>
+            <div class="spec-item">
+              <span data-i18n="specFormTag">Form</span>
+              <strong data-i18n="specFormTitle">Approx. 87g per shoe</strong>
+              <p data-i18n="specFormBody">US Men's sizes 3.5 to 9.5 are listed, with 7.5 marked unavailable and more sizes planned.</p>
+            </div>
+            <div class="spec-item">
+              <span data-i18n="specDevTag">Developer</span>
+              <strong data-i18n="specDevTitle">Raw data workflows</strong>
+              <p data-i18n="specDevBody">The evaluation kit page mentions TestFlight app distribution, raw data recording, and open-source Python and JavaScript libraries.</p>
+            </div>
+          </div>
+          <p class="product-note" data-i18n="productNote">
+            The official store currently presents ORPHE INSOLE β as an Evaluation Kit for approved customers and research partners, including three pairs of insoles and an iOS application.
+          </p>
+          <div class="source-links">
+            <a href="https://orphe.io/insole" data-i18n="sourceOfficial">Official product page</a>
+            <a href="https://shop.orphe.io/en/products/orphe-insole-%CE%B2-evaluation-kit" data-i18n="sourceKit">Evaluation Kit</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="data">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="dataEyebrow">What data can I get?</p>
+          <h2 data-i18n="dataTitle">Pressure, motion, and orientation callbacks for browser apps.</h2>
+          <p class="lead" data-i18n="dataLead">
+            The library parses INSOLE SENSOR_VALUES packets and routes values into callbacks you can use directly in UI, games, visualization, and data logging tools.
+          </p>
+        </div>
+        <div class="data-grid">
+          <div class="tile">
+            <span class="tag">gotPress</span>
+            <h3 data-i18n="dataPressureTitle">Pressure values</h3>
+            <p data-i18n="dataPressureBody">Receive foot pressure samples and packet metadata for balance, loading, and contact timing.</p>
+          </div>
+          <div class="tile">
+            <span class="tag">gotConvertedAcc</span>
+            <h3 data-i18n="dataAccTitle">Acceleration</h3>
+            <p data-i18n="dataAccBody">Use converted XYZ acceleration values for movement intensity, step timing, and interaction design.</p>
+          </div>
+          <div class="tile">
+            <span class="tag">gotConvertedGyro</span>
+            <h3 data-i18n="dataGyroTitle">Angular velocity</h3>
+            <p data-i18n="dataGyroBody">Track rotational motion from the foot-mounted sensor without writing your own BLE parser.</p>
+          </div>
+          <div class="tile">
+            <span class="tag">gotQuat</span>
+            <h3 data-i18n="dataQuatTitle">Quaternion</h3>
+            <p data-i18n="dataQuatBody">In default mode 4, receive orientation values together with pressure and motion data.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-inner award-grid">
+        <div class="award-mark">
+          <strong data-i18n="awardMark">CES 2026 Best of Innovation</strong>
+          <span data-i18n="awardMarkBody">Sports & Fitness category announcement via PR TIMES</span>
+        </div>
+        <div>
+          <p class="eyebrow" data-i18n="awardEyebrow">Recognition and use cases</p>
+          <h2 data-i18n="awardTitle">Designed for real movement data, from sports to safety research.</h2>
+          <p class="lead" data-i18n="awardLead">
+            PR TIMES states that ORPHE INSOLE was selected for CES 2026 Best of Innovation and highlights sports and fitness, biomechanics and AI datasets, and industrial work-safety applications. This SDK page focuses on the browser layer for inspecting and prototyping with the raw pressure and motion stream.
+          </p>
+          <div class="source-links">
+            <a href="https://prtimes.jp/main/html/rd/p/000000065.000020411.html" data-i18n="sourcePress">Read press release</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section dark" id="quick-start">
+      <div class="section-inner quick-start">
+        <div>
+          <p class="eyebrow" data-i18n="quickEyebrow">Quick Start</p>
+          <h2 data-i18n="quickTitle">Connect one ORPHE INSOLE and print pressure data.</h2>
+          <p class="lead" data-i18n-html="quickLead">
+            Include the CDN build, create an <code>OrpheInsole</code> instance, call <code>setup()</code>, and start the default streaming mode with <code>begin()</code>.
+          </p>
+          <div class="section-actions">
+            <a class="button primary" href="examples/sensor-dashboard/" data-i18n="quickDashboard">Try Dashboard</a>
+            <a class="button secondary" href="examples/terminal/" data-i18n="quickTerminal">Open Terminal</a>
+          </div>
+          <table class="mode-table">
+            <thead>
+              <tr>
+                <th data-i18n="modeHeaderMode">Mode</th>
+                <th data-i18n="modeHeaderData">Data stream</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>4</code></td>
+                <td data-i18n-html="mode4Body">Gyro, acceleration, pressure, quaternion. Default for <code>begin()</code>.</td>
+              </tr>
+              <tr>
+                <td><code>3</code></td>
+                <td data-i18n-html="mode3Body">Gyro, acceleration, pressure. Use <code>begin({ streamingMode: 3 })</code>.</td>
+              </tr>
+              <tr>
+                <td><code>1</code></td>
+                <td data-i18n="mode1Body">Legacy real-time sensor values for compatibility tests.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <pre class="code-block"><code>&lt;button onclick="connectInsole()"&gt;Connect ORPHE INSOLE&lt;/button&gt;
+&lt;pre id="sensor-data"&gt;&lt;/pre&gt;
+
+&lt;script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/dist/orphe-insole.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  <span class="keyword">const</span> insole = <span class="keyword">new</span> OrpheInsole(0);
+
+  window.onload = () =&gt; {
+    insole.setup();
+
+    insole.gotPress = (press) =&gt; {
+      document.getElementById(<span class="string">"sensor-data"</span>).textContent =
+        JSON.stringify(press, <span class="keyword">null</span>, 2);
+    };
+
+    insole.gotConvertedAcc = (acc) =&gt; console.log(<span class="string">"acc"</span>, acc);
+    insole.gotConvertedGyro = (gyro) =&gt; console.log(<span class="string">"gyro"</span>, gyro);
+    insole.gotQuat = (quat) =&gt; console.log(<span class="string">"quat"</span>, quat);
+  };
+
+  <span class="keyword">async function</span> connectInsole() {
+    <span class="comment">// Default streamingMode is 4.</span>
+    <span class="keyword">await</span> insole.begin();
+  }
+&lt;/script&gt;</code></pre>
+      </div>
+    </section>
+
+    <section class="section" id="examples">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="examplesEyebrow">Start building</p>
+          <h2 data-i18n="examplesTitle">Choose the entry point that matches your test.</h2>
+          <p class="lead" data-i18n="examplesLead">
+            Use the dashboard for live inspection, the terminal for raw packet checks, and the API reference when you are ready to wire the data into your own app.
+          </p>
+        </div>
+        <div class="example-grid">
+          <a class="example-link" href="examples/sensor-dashboard/">
+            <span data-i18n="exampleDashboardTag">Live demo</span>
+            <div>
+              <h3>Sensor Dashboard</h3>
+              <p data-i18n="exampleDashboardBody">Connect one or two ORPHE INSOLE devices and inspect pressure, motion, quaternion, and left/right assignment.</p>
+            </div>
+            <strong data-i18n="exampleDashboardCta">Open example</strong>
+          </a>
+          <a class="example-link" href="examples/terminal/">
+            <span data-i18n="exampleTerminalTag">Raw stream</span>
+            <div>
+              <h3>Terminal</h3>
+              <p data-i18n="exampleTerminalBody">Read and write BLE characteristics, watch raw SENSOR_VALUES bytes, and export captured values.</p>
+            </div>
+            <strong data-i18n="exampleTerminalCta">Open terminal</strong>
+          </a>
+          <a class="example-link" href="docs/">
+            <span data-i18n="exampleDocsTag">Reference</span>
+            <div>
+              <h3 data-i18n="exampleDocsTitle">API Documentation</h3>
+              <p data-i18n="exampleDocsBody">Browse generated JSDoc for the ORPHE INSOLE class, callbacks, BLE methods, and parser helpers.</p>
+            </div>
+            <strong data-i18n="exampleDocsCta">Read docs</strong>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="buildEyebrow">What you can build</p>
+          <h2 data-i18n="buildTitle">Prototype around the use cases ORPHE INSOLE is built for.</h2>
+          <p class="lead" data-i18n="buildLead">
+            The product story centers on foot-pressure visualization, motion analysis, smart-shoe applications, and research-grade data collection. ORPHE-INSOLE.js gives web developers a direct way to explore those signals.
+          </p>
+        </div>
+        <div class="build-grid">
+          <div class="tile">
+            <span class="tag" data-i18n="buildSportsTag">Sports</span>
+            <h3 data-i18n="buildSportsTitle">Pressure and posture feedback</h3>
+            <p data-i18n="buildSportsBody">Inspect pressure and foot-motion changes for running, training, coaching tools, and performance experiments.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="buildResearchTag">Research</span>
+            <h3 data-i18n="buildResearchTitle">Biomechanics datasets</h3>
+            <p data-i18n="buildResearchBody">Record synchronized pressure and motion streams for validation, exploratory analysis, and AI dataset creation.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="buildSafetyTag">Safety</span>
+            <h3 data-i18n="buildSafetyTitle">Work-safety inspection</h3>
+            <p data-i18n="buildSafetyBody">Explore fall, slip, trip, and fatigue-related motion signals before connecting them to larger safety systems.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="buildToolsTag">Tools</span>
+            <h3 data-i18n="buildToolsTitle">Device inspection</h3>
+            <p data-i18n="buildToolsBody">Build dashboards for device state, packet health, left/right assignment, and data stream debugging.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section dark">
+      <div class="section-inner">
+        <div class="notice">
+          <div>
+            <p class="eyebrow" data-i18n="noticeEyebrow">Beta notice</p>
+            <h2 data-i18n="noticeTitle">ORPHE-INSOLE.js is currently provided as a beta library.</h2>
+            <p data-i18n="noticeBody">
+              Documentation and tutorials are still being improved. For hands-on validation, start with Chrome or Edge on a desktop environment and an ORPHE INSOLE device.
+            </p>
+          </div>
+          <a class="button primary" href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/issues" data-i18n="noticeCta">Send feedback</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="terms">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="termsEyebrow">Usage policy</p>
+          <h2 data-i18n="termsTitle">Free for education, research, prototypes, and non-commercial apps. Commercial use requires a separate agreement.</h2>
+          <p class="lead" data-i18n="termsLead">
+            Following the current ORPHE-CORE.js policy, ORPHE-INSOLE.js is free to use, modify, and study for education and workshops, academic and non-commercial research, personal creative projects, prototypes, internal experiments, and free non-commercial apps or services built with ORPHE INSOLE.
+          </p>
+        </div>
+        <div class="data-grid">
+          <div class="tile">
+            <span class="tag" data-i18n="termsFreeTag">Free use</span>
+            <h3 data-i18n="termsLicenseTitle">Free use</h3>
+            <p data-i18n="termsLicenseBody">Education/workshops, academic non-commercial research, personal creative projects, prototypes/internal experiments, and free non-commercial services are allowed.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="termsNoticeTag">Commercial agreement</span>
+            <h3 data-i18n="termsNoticeTitle">Commercial use</h3>
+            <p data-i18n="termsNoticeBody">Paid apps, paid services, commercial SDK integrations, commissioned products, or business services require a separate commercial agreement with ORPHE.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="termsWarrantyTag">Version scope</span>
+            <h3 data-i18n="termsWarrantyTitle">Version scope</h3>
+            <p data-i18n="termsWarrantyBody">This page follows the ORPHE-CORE.js v1.4.0 and later policy. ORPHE-INSOLE.js v1.0.0 and later should use the same usage policy for this repository.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="termsCopyrightTag">Copyright</span>
+            <h3 data-i18n="termsCopyrightTitle">Copyright and licensing</h3>
+            <p data-i18n="termsCopyrightBody">Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc. See the usage policy for allowed uses and commercial agreement requirements.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <span data-i18n="footerCopyright">Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc.</span>
+      <div class="footer-links">
+        <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js">GitHub</a>
+        <a href="https://orphe.io/">orphe.io</a>
+        <a href="README.md">README</a>
+      </div>
+    </div>
+  </footer>
+  <script>
+    const translations = {
+      en: {
+        metaTitle: "ORPHE-INSOLE.js | JavaScript SDK for Smart Insole Prototyping",
+        metaDescription: "ORPHE-INSOLE.js connects ORPHE INSOLE devices to browser apps through Web Bluetooth for pressure, motion, and orientation prototyping.",
+        navLabel: "Main navigation",
+        languageLabel: "Language",
+        navAbout: "About",
+        navProduct: "Product",
+        navData: "Data",
+        navQuickStart: "Quick Start",
+        navExamples: "Examples",
+        navTerms: "Terms",
+        heroEyebrow: "Web Bluetooth SDK for ORPHE INSOLE",
+        heroCopy1: "Build browser prototypes with ORPHE INSOLE pressure, motion, and orientation data.",
+        heroCopy2: "Connect from JavaScript through Web Bluetooth and create apps with foot pressure and motion.",
+        heroDashboard: "Open Sensor Dashboard",
+        heroStart: "Start in 3 minutes",
+        heroGithub: "View GitHub",
+        heroFactsLabel: "Key capabilities",
+        factPressureTitle: "6 pressure sensors",
+        factPressureBody: "Pressure points per foot",
+        factImuBody: "3-axis acceleration and 3-axis gyroscope",
+        factSamplingBody: "Store-listed sampling options",
+        factBleBody: "Web Bluetooth browser workflow",
+        aboutEyebrow: "What is ORPHE INSOLE?",
+        aboutTitle: "Smart insole data, ready for web prototypes.",
+        aboutLead: "ORPHE INSOLE is a smart insole with pressure sensors and an IMU for real-time foot movement measurement. ORPHE-INSOLE.js connects that stream to browser apps through Web Bluetooth.",
+        feature1Title: "Foot pressure and motion in one stream",
+        feature1Body: "Use pressure values together with converted acceleration and gyroscope values for gait, balance, sports, and rehabilitation experiments.",
+        feature2Title: "No native app setup for early tests",
+        feature2Body: "Open the examples in Chrome or Edge, connect with Web Bluetooth, and start inspecting live packets.",
+        feature3Title: "Compatible with existing ORPHE style APIs",
+        feature3Body: "Use <code>new Orphe(...)</code> or the clearer <code>new OrpheInsole(...)</code> alias while keeping familiar callbacks.",
+        insoleVisualLabel: "Pressure sensor layout illustration",
+        visualCaption1: "Pressure map concept",
+        productImageCaption: "Evaluation Kit",
+        productEyebrow: "Official product details",
+        productTitle: "A pressure and motion platform inside the insole.",
+        productLead: "The official ORPHE INSOLE pages describe a replaceable smart insole that measures foot pressure and motion in real time, connects with apps or external devices, and supports smart-shoe prototyping.",
+        specSensorsTag: "Sensors",
+        specSensorsTitle: "6 pressure sensors + 6-axis motion",
+        specSensorsBody: "Each foot includes six pressure sensors plus 3-axis acceleration and 3-axis gyroscope data.",
+        specRangeTag: "Range",
+        specRangeBody: "Store-listed ranges for acceleration, gyroscope, and pressure measurement.",
+        specRateTag: "Sampling",
+        specRateBody: "Sampling rate may vary depending on the application and mode.",
+        specBatteryTag: "Battery",
+        specBatteryTitle: "Approx. 24 hours",
+        specBatteryBody: "The store lists magnetic connector charging and wireless charging with a separately sold ORPHE MAT.",
+        specFormTag: "Form",
+        specFormTitle: "Approx. 87g per shoe",
+        specFormBody: "US Men's sizes 3.5 to 9.5 are listed, with 7.5 marked unavailable and more sizes planned.",
+        specDevTag: "Developer",
+        specDevTitle: "Raw data workflows",
+        specDevBody: "The evaluation kit page mentions TestFlight app distribution, raw data recording, and open-source Python and JavaScript libraries.",
+        productNote: "The official store currently presents ORPHE INSOLE β as an Evaluation Kit for approved customers and research partners, including three pairs of insoles and an iOS application.",
+        sourceOfficial: "Official product page",
+        sourceKit: "Evaluation Kit",
+        dataEyebrow: "What data can I get?",
+        dataTitle: "Pressure, motion, and orientation callbacks for browser apps.",
+        dataLead: "The library parses INSOLE SENSOR_VALUES packets and routes values into callbacks you can use directly in UI, games, visualization, and data logging tools.",
+        dataPressureTitle: "Pressure values",
+        dataPressureBody: "Receive foot pressure samples and packet metadata for balance, loading, and contact timing.",
+        dataAccTitle: "Acceleration",
+        dataAccBody: "Use converted XYZ acceleration values for movement intensity, step timing, and interaction design.",
+        dataGyroTitle: "Angular velocity",
+        dataGyroBody: "Track rotational motion from the foot-mounted sensor without writing your own BLE parser.",
+        dataQuatTitle: "Quaternion",
+        dataQuatBody: "In default mode 4, receive orientation values together with pressure and motion data.",
+        awardMark: "CES 2026 Best of Innovation",
+        awardMarkBody: "Sports & Fitness category announcement via PR TIMES",
+        awardEyebrow: "Recognition and use cases",
+        awardTitle: "Designed for real movement data, from sports to safety research.",
+        awardLead: "PR TIMES states that ORPHE INSOLE was selected for CES 2026 Best of Innovation and highlights sports and fitness, biomechanics and AI datasets, and industrial work-safety applications. This SDK page focuses on the browser layer for inspecting and prototyping with the raw pressure and motion stream.",
+        sourcePress: "Read press release",
+        quickEyebrow: "Quick Start",
+        quickTitle: "Connect one ORPHE INSOLE and print pressure data.",
+        quickLead: "Include the CDN build, create an <code>OrpheInsole</code> instance, call <code>setup()</code>, and start the default streaming mode with <code>begin()</code>.",
+        quickDashboard: "Try Dashboard",
+        quickTerminal: "Open Terminal",
+        modeHeaderMode: "Mode",
+        modeHeaderData: "Data stream",
+        mode4Body: "Gyro, acceleration, pressure, quaternion. Default for <code>begin()</code>.",
+        mode3Body: "Gyro, acceleration, pressure. Use <code>begin({ streamingMode: 3 })</code>.",
+        mode1Body: "Legacy real-time sensor values for compatibility tests.",
+        examplesEyebrow: "Start building",
+        examplesTitle: "Choose the entry point that matches your test.",
+        examplesLead: "Use the dashboard for live inspection, the terminal for raw packet checks, and the API reference when you are ready to wire the data into your own app.",
+        exampleDashboardTag: "Live demo",
+        exampleDashboardBody: "Connect one or two ORPHE INSOLE devices and inspect pressure, motion, quaternion, and left/right assignment.",
+        exampleDashboardCta: "Open example",
+        exampleTerminalTag: "Raw stream",
+        exampleTerminalBody: "Read and write BLE characteristics, watch raw SENSOR_VALUES bytes, and export captured values.",
+        exampleTerminalCta: "Open terminal",
+        exampleDocsTag: "Reference",
+        exampleDocsTitle: "API Documentation",
+        exampleDocsBody: "Browse generated JSDoc for the ORPHE INSOLE class, callbacks, BLE methods, and parser helpers.",
+        exampleDocsCta: "Read docs",
+        buildEyebrow: "What you can build",
+        buildTitle: "Prototype around the use cases ORPHE INSOLE is built for.",
+        buildLead: "The product story centers on foot-pressure visualization, motion analysis, smart-shoe applications, and research-grade data collection. ORPHE-INSOLE.js gives web developers a direct way to explore those signals.",
+        buildSportsTag: "Sports",
+        buildSportsTitle: "Pressure and posture feedback",
+        buildSportsBody: "Inspect pressure and foot-motion changes for running, training, coaching tools, and performance experiments.",
+        buildResearchTag: "Research",
+        buildResearchTitle: "Biomechanics datasets",
+        buildResearchBody: "Record synchronized pressure and motion streams for validation, exploratory analysis, and AI dataset creation.",
+        buildSafetyTag: "Safety",
+        buildSafetyTitle: "Work-safety inspection",
+        buildSafetyBody: "Explore fall, slip, trip, and fatigue-related motion signals before connecting them to larger safety systems.",
+        buildToolsTag: "Tools",
+        buildToolsTitle: "Device inspection",
+        buildToolsBody: "Build dashboards for device state, packet health, left/right assignment, and data stream debugging.",
+        noticeEyebrow: "Beta notice",
+        noticeTitle: "ORPHE-INSOLE.js is currently provided as a beta library.",
+        noticeBody: "Documentation and tutorials are still being improved. For hands-on validation, start with Chrome or Edge on a desktop environment and an ORPHE INSOLE device.",
+        noticeCta: "Send feedback",
+        termsEyebrow: "Usage policy",
+        termsTitle: "Free for education, research, prototypes, and non-commercial apps. Commercial use requires a separate agreement.",
+        termsLead: "Following the current ORPHE-CORE.js policy, ORPHE-INSOLE.js is free to use, modify, and study for education and workshops, academic and non-commercial research, personal creative projects, prototypes, internal experiments, and free non-commercial apps or services built with ORPHE INSOLE.",
+        termsFreeTag: "Free use",
+        termsLicenseTitle: "Free use",
+        termsLicenseBody: "Education/workshops, academic non-commercial research, personal creative projects, prototypes/internal experiments, and free non-commercial services are allowed.",
+        termsNoticeTag: "Commercial agreement",
+        termsNoticeTitle: "Commercial use",
+        termsNoticeBody: "Paid apps, paid services, commercial SDK integrations, commissioned products, or business services require a separate commercial agreement with ORPHE.",
+        termsWarrantyTag: "Version scope",
+        termsWarrantyTitle: "Version scope",
+        termsWarrantyBody: "This page follows the ORPHE-CORE.js v1.4.0 and later policy. ORPHE-INSOLE.js v1.0.0 and later should use the same usage policy for this repository.",
+        termsCopyrightTag: "Copyright",
+        termsCopyrightTitle: "Copyright and licensing",
+        termsCopyrightBody: "Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc. See the usage policy for allowed uses and commercial agreement requirements.",
+        footerCopyright: "Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc."
+      },
+      ja: {
+        metaTitle: "ORPHE-INSOLE.js | スマートインソール用JavaScript SDK",
+        metaDescription: "ORPHE-INSOLE.jsは、Web BluetoothでORPHE INSOLEの足裏圧、モーション、姿勢データをブラウザアプリへ接続するJavaScript SDKです。",
+        navLabel: "メインナビゲーション",
+        languageLabel: "言語",
+        navAbout: "概要",
+        navProduct: "製品",
+        navData: "取得データ",
+        navQuickStart: "クイックスタート",
+        navExamples: "サンプル",
+        navTerms: "利用規約",
+        heroEyebrow: "ORPHE INSOLE向けWeb Bluetooth SDK",
+        heroCopy1: "ORPHE INSOLEの足裏圧、モーション、姿勢データでブラウザプロトタイプを作れます。",
+        heroCopy2: "JavaScriptからWeb Bluetooth経由で接続し、計測、可視化、ゲーム、リハビリ用途の実験をすぐ始められます。",
+        heroDashboard: "Sensor Dashboardを開く",
+        heroStart: "3分で始める",
+        heroGithub: "GitHubを見る",
+        heroFactsLabel: "主な機能",
+        factPressureTitle: "6点圧力センサー",
+        factPressureBody: "片足あたりの圧力測定点",
+        factImuBody: "3軸加速度と3軸ジャイロ",
+        factSamplingBody: "ストア掲載のサンプリング設定",
+        factBleBody: "Web Bluetoothのブラウザワークフロー",
+        aboutEyebrow: "ORPHE INSOLEとは？",
+        aboutTitle: "スマートインソールのデータを、Webプロトタイプへ。",
+        aboutLead: "ORPHE INSOLEは、圧力センサーとIMUで足の動きをリアルタイムに計測するスマートインソールです。ORPHE-INSOLE.jsは、そのストリームをWeb Bluetooth経由でブラウザアプリへ接続します。",
+        feature1Title: "足裏圧とモーションを同時に扱う",
+        feature1Body: "足裏圧、変換済み加速度、ジャイロ値を組み合わせて、歩行、バランス、スポーツ、リハビリ実験に利用できます。",
+        feature2Title: "初期検証にネイティブアプリは不要",
+        feature2Body: "ChromeまたはEdgeでサンプルを開き、Web Bluetoothで接続すれば、ライブパケットをすぐ確認できます。",
+        feature3Title: "既存のORPHE APIスタイルと互換",
+        feature3Body: "<code>new Orphe(...)</code> でも、より分かりやすい <code>new OrpheInsole(...)</code> でも利用でき、既存のコールバック互換を保ちます。",
+        insoleVisualLabel: "圧力センサーレイアウトのイラスト",
+        visualCaption1: "圧力マップのイメージ",
+        productImageCaption: "Evaluation Kit",
+        productEyebrow: "公式製品情報",
+        productTitle: "インソール内の圧力・モーションプラットフォーム。",
+        productLead: "ORPHE INSOLEの公式ページでは、通常の中敷きと交換して使えるスマートインソールとして、足裏圧と足の動きをリアルタイムに計測し、アプリや外部機器と連携してスマートシューズ化できる製品として紹介されています。",
+        specSensorsTag: "センサー",
+        specSensorsTitle: "6点圧力 + 6軸IMU",
+        specSensorsBody: "片足6点の圧力と、3軸加速度/3軸ジャイロを扱えます。",
+        specRangeTag: "レンジ",
+        specRangeBody: "ストア掲載の加速度、ジャイロ、圧力の測定範囲です。",
+        specRateTag: "サンプリング",
+        specRateBody: "サンプリングレートはアプリケーションやモードによって変わる場合があります。",
+        specBatteryTag: "バッテリー",
+        specBatteryTitle: "約24時間",
+        specBatteryBody: "ストアでは、磁気コネクタ充電と別売のORPHE MATによるワイヤレス充電が記載されています。",
+        specFormTag: "形状",
+        specFormTitle: "片足約87g",
+        specFormBody: "US Men's 3.5から9.5までが掲載され、7.5はN/A、追加サイズは今後提供予定とされています。",
+        specDevTag: "開発者向け",
+        specDevTitle: "Raw data workflow",
+        specDevBody: "Evaluation Kitページでは、TestFlightでのiOSアプリ配布、raw data記録、Python/JavaScriptのオープンソースライブラリが案内されています。",
+        productNote: "公式ストアでは現在、ORPHE INSOLE βは承認済み顧客・研究パートナー向けのEvaluation Kitとして掲載され、3ペアのインソールとiOSアプリを含むと説明されています。",
+        sourceOfficial: "公式製品ページ",
+        sourceKit: "Evaluation Kit",
+        dataEyebrow: "何のデータが取れる？",
+        dataTitle: "足裏圧、モーション、姿勢をブラウザアプリのコールバックへ。",
+        dataLead: "ライブラリがINSOLE SENSOR_VALUES packetをパースし、UI、ゲーム、可視化、データロギングでそのまま使えるコールバックへ値を渡します。",
+        dataPressureTitle: "足裏圧値",
+        dataPressureBody: "バランス、荷重、接地タイミングのために、足裏圧サンプルとpacket情報を受け取れます。",
+        dataAccTitle: "加速度",
+        dataAccBody: "変換済みXYZ加速度を、動作強度、ステップタイミング、インタラクション設計に利用できます。",
+        dataGyroTitle: "角速度",
+        dataGyroBody: "BLE parserを自作せず、足部に装着したセンサーの回転運動を扱えます。",
+        dataQuatTitle: "クォータニオン",
+        dataQuatBody: "デフォルトのmode 4では、足裏圧とモーションに加えて姿勢値も受け取れます。",
+        awardMark: "CES 2026 Best of Innovation",
+        awardMarkBody: "PR TIMESで発表されたSports & Fitness部門の受賞情報",
+        awardEyebrow: "受賞とユースケース",
+        awardTitle: "スポーツから安全管理研究まで、実際の動作データを扱うための設計。",
+        awardLead: "PR TIMESでは、ORPHE INSOLEがCES 2026 Best of Innovationを受賞したこと、スポーツ・フィットネス、バイオメカニクスやAI研究用データセット、産業・労働安全での活用が紹介されています。このSDKページでは、rawな足裏圧・モーションストリームをブラウザで確認し、プロトタイプ化する層に絞って説明しています。",
+        sourcePress: "プレスリリースを読む",
+        quickEyebrow: "クイックスタート",
+        quickTitle: "1台のORPHE INSOLEに接続して足裏圧を表示する。",
+        quickLead: "CDN buildを読み込み、<code>OrpheInsole</code> インスタンスを作成し、<code>setup()</code> と <code>begin()</code> でデフォルトのストリーミングを開始します。",
+        quickDashboard: "Dashboardを試す",
+        quickTerminal: "Terminalを開く",
+        modeHeaderMode: "Mode",
+        modeHeaderData: "データストリーム",
+        mode4Body: "ジャイロ、加速度、足裏圧、クォータニオン。<code>begin()</code> のデフォルトです。",
+        mode3Body: "ジャイロ、加速度、足裏圧。<code>begin({ streamingMode: 3 })</code> で指定します。",
+        mode1Body: "互換性確認用の従来リアルタイムセンサー値です。",
+        examplesEyebrow: "開発を始める",
+        examplesTitle: "目的に合う入口を選ぶ。",
+        examplesLead: "ライブ確認にはDashboard、raw packet確認にはTerminal、自分のアプリへ組み込む段階ではAPI referenceを使います。",
+        exampleDashboardTag: "ライブデモ",
+        exampleDashboardBody: "1台または2台のORPHE INSOLEを接続し、足裏圧、モーション、クォータニオン、左右割当を確認できます。",
+        exampleDashboardCta: "サンプルを開く",
+        exampleTerminalTag: "Raw stream",
+        exampleTerminalBody: "BLE characteristicのread/write、raw SENSOR_VALUES byteの監視、取得値のエクスポートができます。",
+        exampleTerminalCta: "Terminalを開く",
+        exampleDocsTag: "リファレンス",
+        exampleDocsTitle: "APIドキュメント",
+        exampleDocsBody: "ORPHE INSOLE class、callback、BLE method、parser helperの生成済みJSDocを確認できます。",
+        exampleDocsCta: "Docsを読む",
+        buildEyebrow: "作れるもの",
+        buildTitle: "ORPHE INSOLEが想定する用途の周辺をプロトタイプ化できます。",
+        buildLead: "製品ストーリーの中心は、足裏圧の可視化、動作分析、スマートシューズアプリケーション、研究グレードのデータ収集です。ORPHE-INSOLE.jsは、それらの信号をWeb開発者が直接試せる入口を提供します。",
+        buildSportsTag: "スポーツ",
+        buildSportsTitle: "足圧と姿勢のフィードバック",
+        buildSportsBody: "ランニング、トレーニング、コーチングツール、パフォーマンス実験向けに足裏圧と足部モーションの変化を確認できます。",
+        buildResearchTag: "研究",
+        buildResearchTitle: "バイオメカニクスデータセット",
+        buildResearchBody: "検証、探索的分析、AIデータセット作成のために、足裏圧とモーションの同期ストリームを記録できます。",
+        buildSafetyTag: "安全管理",
+        buildSafetyTitle: "作業安全の検証",
+        buildSafetyBody: "転倒、滑り、躓き、疲労に関わるモーション信号を、大きな安全管理システムへ接続する前に探索できます。",
+        buildToolsTag: "ツール",
+        buildToolsTitle: "デバイス検証",
+        buildToolsBody: "デバイス状態、packet health、左右割当、データストリームのデバッグ用Dashboardを作れます。",
+        noticeEyebrow: "Beta notice",
+        noticeTitle: "ORPHE-INSOLE.jsは現在ベータ版として提供しています。",
+        noticeBody: "ドキュメントとチュートリアルは整備中です。実機検証は、デスクトップ環境のChromeまたはEdgeとORPHE INSOLEデバイスから始めてください。",
+        noticeCta: "フィードバックを送る",
+        termsEyebrow: "利用方針",
+        termsTitle: "教育・研究・試作・非商用アプリは無償利用。有料・商用利用は別途契約が必要です。",
+        termsLead: "現在のORPHE-CORE.jsの方針に従い、ORPHE-INSOLE.jsは教育・ワークショップ、大学・研究機関などでの非商用研究、個人制作、試作・社内検証、ORPHE INSOLEを使った無償アプリ・非商用サービスについて、改変を含めて無償で利用できる方針です。",
+        termsFreeTag: "無償利用",
+        termsLicenseTitle: "無償で利用できる用途",
+        termsLicenseBody: "教育・ワークショップ、非商用研究、個人制作、試作・社内検証、無償アプリ・非商用サービスで利用できます。",
+        termsNoticeTag: "商用契約",
+        termsNoticeTitle: "商用利用",
+        termsNoticeBody: "有料アプリ、有料サービス、商用SDK連携、受託開発、事業として提供するサービスは、別途ORPHEとの商用契約が必要です。",
+        termsWarrantyTag: "適用範囲",
+        termsWarrantyTitle: "適用範囲",
+        termsWarrantyBody: "このページでは、ORPHE-CORE.js v1.4.0以降の利用方針を踏襲します。ORPHE-INSOLE.js v1.0.0以降も同じ方針をこのリポジトリに適用する想定です。",
+        termsCopyrightTag: "著作権",
+        termsCopyrightTitle: "著作権と利用方針",
+        termsCopyrightBody: "Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc. 利用可能範囲と商用契約の要否は上記の利用方針に従います。",
+        footerCopyright: "Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc."
+      }
+    };
+
+    let lang = "ja";
+
+    function setLanguage(language) {
+      const nextLanguage = translations[language] ? language : "en";
+      lang = nextLanguage;
+      const strings = translations[nextLanguage];
+      document.documentElement.lang = nextLanguage;
+      document.title = strings.metaTitle;
+
+      const description = document.querySelector('meta[name="description"]');
+      const ogDescription = document.querySelector('meta[property="og:description"]');
+      if (description) description.setAttribute("content", strings.metaDescription);
+      if (ogDescription) ogDescription.setAttribute("content", strings.metaDescription);
+
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        const key = element.dataset.i18n;
+        if (strings[key]) element.textContent = strings[key];
+      });
+
+      document.querySelectorAll("[data-i18n-html]").forEach((element) => {
+        const key = element.dataset.i18nHtml;
+        if (strings[key]) element.innerHTML = strings[key];
+      });
+
+      document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+        const key = element.dataset.i18nAriaLabel;
+        if (strings[key]) element.setAttribute("aria-label", strings[key]);
+      });
+
+      document.querySelectorAll("[data-lang-button]").forEach((button) => {
+        const isActive = button.dataset.langButton === nextLanguage;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", String(isActive));
+      });
+    }
+
+    function toggleLanguage(nextLanguage) {
+      setLanguage(nextLanguage || (lang === "ja" ? "en" : "ja"));
+    }
+
+    const requestedLanguage = new URLSearchParams(window.location.search).get("lang");
+    setLanguage(translations[requestedLanguage] ? requestedLanguage : lang);
+
+    document.querySelectorAll("[data-lang-button]").forEach((button) => {
+      button.addEventListener("click", () => toggleLanguage(button.dataset.langButton));
+    });
+  </script>
+</body>
+
+</html>
