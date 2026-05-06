@@ -13,6 +13,15 @@ Class形式で記述を変更したバージョン
 
 // 外部スクリプトを読み込む関数
 function loadScript(src) {
+  if (typeof document === 'undefined') return;
+  const fileName = src.split('/').pop();
+  if (fileName) {
+    const already = Array.from(document.scripts).some(s => {
+      if (!s.src) return false;
+      return s.src === src || s.src.endsWith('/' + fileName);
+    });
+    if (already) return;
+  }
   const script = document.createElement('script');
   script.src = src;
   script.type = 'text/javascript';
@@ -21,8 +30,17 @@ function loadScript(src) {
 }
 
 // 外部スクリプトの読み込み
-loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/float16.min.js');
-loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/quaternion.js');
+function _orpheInsoleAutoLoadOptionalLibs() {
+  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/float16.min.js');
+  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/quaternion.js');
+}
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _orpheInsoleAutoLoadOptionalLibs, { once: true });
+  } else {
+    _orpheInsoleAutoLoadOptionalLibs();
+  }
+}
 
 
 /**
@@ -85,6 +103,161 @@ class OrpheTimestamp {
   }
 }
 
+function _orpheInsoleTimestampToday(hours, minutes, seconds, milliseconds) {
+  const now = new Date();
+  now.setHours(hours);
+  now.setMinutes(minutes);
+  now.setSeconds(seconds);
+  now.setMilliseconds(milliseconds);
+  return now.getTime();
+}
+
+/**
+ * ORPHE INSOLE SENSOR_VALUES packet parser.
+ * @param {DataView} data
+ * @param {object} options
+ * @param {number} [options.gyroRange=2000]
+ * @param {number} [options.accRange=16]
+ * @returns {object|null}
+ */
+function parseInsoleSensorValues(data, options = {}) {
+  if (!data || typeof data.getUint8 !== 'function') {
+    throw new TypeError('parseInsoleSensorValues expects a DataView');
+  }
+  if (data.byteLength !== 104) return null;
+
+  const header = data.getUint8(0);
+  const serial_number = data.getUint16(1);
+  const gyroRange = Number.isFinite(Number(options.gyroRange)) ? Number(options.gyroRange) : 2000;
+  const accRange = Number.isFinite(Number(options.accRange)) ? Number(options.accRange) : 16;
+  const t_start = _orpheInsoleTimestampToday(
+    data.getUint8(3),
+    data.getUint8(4),
+    data.getUint8(5),
+    data.getUint16(6)
+  );
+  const samples = [];
+
+  function vector3(x, y, z, timestamp, packet_number) {
+    return {
+      x: data.getInt16(x) / 32768,
+      y: data.getInt16(y) / 32768,
+      z: data.getInt16(z) / 32768,
+      timestamp,
+      serial_number,
+      packet_number
+    };
+  }
+
+  function quat(w, x, y, z, timestamp, packet_number) {
+    return {
+      w: data.getInt16(w) / 32768,
+      x: data.getInt16(x) / 32768,
+      y: data.getInt16(y) / 32768,
+      z: data.getInt16(z) / 32768,
+      timestamp,
+      serial_number,
+      packet_number
+    };
+  }
+
+  function withConverted(sample) {
+    if (sample.gyro) {
+      sample.converted_gyro = {
+        x: sample.gyro.x * gyroRange,
+        y: sample.gyro.y * gyroRange,
+        z: sample.gyro.z * gyroRange,
+        timestamp: sample.timestamp,
+        serial_number,
+        packet_number: sample.packet_number
+      };
+    }
+    if (sample.acc) {
+      sample.converted_acc = {
+        x: sample.acc.x * accRange,
+        y: sample.acc.y * accRange,
+        z: sample.acc.z * accRange,
+        timestamp: sample.timestamp,
+        serial_number,
+        packet_number: sample.packet_number
+      };
+    }
+    return sample;
+  }
+
+  if (header === 50) {
+    let timestamp = t_start;
+    for (let i = 3; i >= 0; i--) {
+      if (i !== 3) timestamp += data.getUint8(28 + 21 * i);
+      samples.push(withConverted({
+        timestamp,
+        serial_number,
+        packet_number: 3 - i,
+        quat: quat(8 + 21 * i, 10 + 21 * i, 12 + 21 * i, 14 + 21 * i, timestamp, 3 - i),
+        gyro: vector3(16 + 21 * i, 18 + 21 * i, 20 + 21 * i, timestamp, 3 - i),
+        acc: vector3(22 + 21 * i, 24 + 21 * i, 26 + 21 * i, timestamp, 3 - i)
+      }));
+    }
+  } else if (header === 55) {
+    const offset = 24;
+    for (let i = 3; i >= 0; i--) {
+      const timestamp = t_start;
+      const packet_number = 3 - i;
+      samples.push(withConverted({
+        timestamp,
+        serial_number,
+        packet_number,
+        gyro: vector3(8 + offset * i, 10 + offset * i, 12 + offset * i, timestamp, packet_number),
+        acc: vector3(14 + offset * i, 16 + offset * i, 18 + offset * i, timestamp, packet_number),
+        press: {
+          values: [
+            data.getUint16(20 + offset * i),
+            data.getUint16(22 + offset * i),
+            data.getUint16(24 + offset * i),
+            data.getUint16(26 + offset * i),
+            data.getUint16(28 + offset * i),
+            data.getUint16(30 + offset * i)
+          ],
+          timestamp,
+          serial_number,
+          packet_number
+        }
+      }));
+    }
+  } else if (header === 56) {
+    const offset = 32;
+    for (let i = 1; i >= 0; i--) {
+      const timestamp = t_start;
+      const packet_number = 1 - i;
+      samples.push(withConverted({
+        timestamp,
+        serial_number,
+        packet_number,
+        quat: quat(8 + offset * i, 10 + offset * i, 12 + offset * i, 14 + offset * i, timestamp, packet_number),
+        gyro: vector3(16 + offset * i, 18 + offset * i, 20 + offset * i, timestamp, packet_number),
+        acc: vector3(22 + offset * i, 24 + offset * i, 26 + offset * i, timestamp, packet_number),
+        press: {
+          values: [
+            data.getUint16(28 + offset * i),
+            data.getUint16(30 + offset * i),
+            data.getUint16(32 + offset * i),
+            data.getUint16(34 + offset * i),
+            data.getUint16(36 + offset * i),
+            data.getUint16(38 + offset * i)
+          ],
+          timestamp,
+          serial_number,
+          packet_number
+        }
+      }));
+    }
+  } else {
+    return { header, serial_number, timestamp: t_start, samples: [] };
+  }
+
+  return { header, serial_number, timestamp: t_start, samples };
+}
+
 /**
  * ORPHE CORE Module Javascript class
 * @class
@@ -97,6 +270,16 @@ class OrpheTimestamp {
 * @property {string} ORPHE_STEP_ANALYSIS "4eb776dc-cf99-4af7-b2d3-ad0f791a79dd" CHARACTERISTIC_UUID
 */
 class Orphe {
+  /**
+   * SENSOR_VALUES の DataView を ORPHE INSOLE のサンプル列に変換する。
+   * @param {DataView} data
+   * @param {object} options
+   * @returns {object|null}
+   */
+  static parseSensorValues(data, options = {}) {
+    return parseInsoleSensorValues(data, options);
+  }
+
   /**
    * 初期化関数 
    * @param {number}[id=0] id コアの番号（0 or 1）を指定します。
@@ -368,7 +551,20 @@ class Orphe {
    * @return {Promise<string>} 
    * 
    */
-  async begin(str_type = 'SENSOR_VALUES') {
+  async begin(str_type = 'SENSOR_VALUES', options = {}) {
+    if (typeof str_type === 'object' && str_type !== null) {
+      options = str_type;
+      str_type = 'SENSOR_VALUES';
+    }
+    if (str_type == 'RAW') {
+      str_type = 'SENSOR_VALUES';
+      console.warn("RAW is deprecated. Please use SENSOR_VALUES instead.");
+    }
+    if (str_type != 'SENSOR_VALUES') {
+      console.warn(`${str_type} is not supported on ORPHE INSOLE. SENSOR_VALUES will be used instead.`);
+      str_type = 'SENSOR_VALUES';
+    }
+    const streamingMode = options.streamingMode ?? options.dataStreamingMode ?? 4;
 
     this.notification_type = str_type;
 
@@ -380,7 +576,7 @@ class Orphe {
     0x03 : リアルタイム(ジャイロ、加速度、圧力 200Hz相当)※インソールのみ対応
     0x04 : リアルタイム(ジャイロ、加速度、圧力、クォータニオン 100Hz相当)※インソールのみ対応
     */
-    await this.setDataStreamingMode(4);
+    await this.setDataStreamingMode(streamingMode);
 
     // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
     await this.syncCoreTime();
@@ -758,7 +954,12 @@ class Orphe {
    * @returns {Promise<void>}
    */
   async setDataStreamingMode(mode = 4) {
-    const data = new Uint8Array([0x0D, mode]);
+    const normalizedMode = Number(mode);
+    const supportedModes = [1, 3, 4];
+    if (!Number.isInteger(normalizedMode) || !supportedModes.includes(normalizedMode)) {
+      throw new Error(`Invalid ORPHE INSOLE data streaming mode: ${mode}. Use 1, 3, or 4.`);
+    }
+    const data = new Uint8Array([0x0D, normalizedMode]);
     await this.write('DEVICE_INFORMATION', data);
   }
 
@@ -874,283 +1075,73 @@ class Orphe {
     if (uuid == 'DEVICE_INFORMATION') {
     }
     else if (uuid == 'SENSOR_VALUES') {
-      let t_start = 0;
-      let timestamp;
-      // 一旦固定値
-      let gyroRange = 2000;
-      let accRange = 16;
+      const parsed = parseInsoleSensorValues(data);
+      if (!parsed) {
+        console.warn("SENSOR VALUES: Data length is not 104");
+        return;
+      }
 
       // データ欠損チェック
       if (this.serial_number) {
         const serial_number_prev = this.serial_number;
-        this.serial_number = data.getUint16(1);
+        this.serial_number = parsed.serial_number;
         if (this.serial_number - serial_number_prev != 1) {
           this.lostData(this.serial_number, serial_number_prev);
         }
       }
       else {
-        this.serial_number = data.getUint16(1);
+        this.serial_number = parsed.serial_number;
       }
 
-      // エラー処理
-      if (data.byteLength != 104) {
-        console.warn("SENSOR VALUES: Data length is not 104");
-        return
-      }
-
-
-      // COREから送られてきたタイムスタンプをUNIXタイムスタンプに変換
-      function toTimestamp(hours, minutes, seconds, milliseconds) {
-        // 現在の日付を取得
-        const now = new Date();
-
-        // Dateオブジェクトに時間を設定
-        now.setHours(hours);
-        now.setMinutes(minutes);
-        now.setSeconds(seconds);
-        now.setMilliseconds(milliseconds);
-
-        // タイムスタンプ（ミリ秒）を返す
-        return now.getTime();
-      }
-      timestamp = toTimestamp(
-        data.getUint8(3),
-        data.getUint8(4),
-        data.getUint8(5),
-        data.getUint16(6)
-      )
-
-      gyroRange = 2000;
-      accRange = 16;
-      t_start = timestamp;
-
-      if (data.getUint8(0) == 50) {
-        // それぞれの値は29毎で、4つ分ある。データの順番は古いデータから順番にpushされている。なので、最新が4番目、最古が1番目となる。
-        for (let i = 3; i >= 0; i--) {
-
-          // 2番目以降のtimestampは最初のタイムスタンプとの差分になっているため
-          // t_startに数値を足す処理を行って、各パケットのtimestampを算出する
-          if (i == 3) {
-            timestamp = t_start;
-          }
-          else {
-            timestamp = timestamp + data.getUint8(28 + 21 * i);
-          }
-          this.quat = {
-            w: data.getInt16(8 + 21 * i) / 32768,
-            x: data.getInt16(10 + 21 * i) / 32768,
-            y: data.getInt16(12 + 21 * i) / 32768,
-            z: data.getInt16(14 + 21 * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
+      for (const sample of parsed.samples) {
+        if (sample.quat) {
+          this.quat = sample.quat;
           this.history_sensor_values.quat.push(this.quat);
-
-          this.gyro = {
-            x: data.getInt16(16 + 21 * i) / 32768,
-            y: data.getInt16(18 + 21 * i) / 32768,
-            z: data.getInt16(20 + 21 * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
+        }
+        if (sample.gyro) {
+          this.gyro = sample.gyro;
           this.history_sensor_values.gyro.push(this.gyro);
-
-          this.acc = {
-            x: data.getInt16(22 + 21 * i) / 32768,
-            y: data.getInt16(24 + 21 * i) / 32768,
-            z: data.getInt16(26 + 21 * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
+        }
+        if (sample.acc) {
+          this.acc = sample.acc;
           this.history_sensor_values.acc.push(this.acc);
-
-          // ジャイロと加速度補正をかけたものを別途作成
-          this.converted_gyro = {
-            x: this.gyro.x * gyroRange,
-            y: this.gyro.y * gyroRange,
-            z: this.gyro.z * gyroRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
+        }
+        if (sample.press) {
+          this.press = sample.press;
+          this.history_sensor_values.press.push(this.press);
+        }
+        if (sample.converted_gyro) {
+          this.converted_gyro = sample.converted_gyro;
           this.history_sensor_values.converted_gyro.push(this.converted_gyro);
-
-          this.converted_acc = {
-            x: this.acc.x * accRange,
-            y: this.acc.y * accRange,
-            z: this.acc.z * accRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
+        }
+        if (sample.converted_acc) {
+          this.converted_acc = sample.converted_acc;
           this.history_sensor_values.converted_acc.push(this.converted_acc);
+        }
 
+        if (sample.quat && typeof Quaternion !== 'undefined') {
+          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
+          this.euler = q.toEuler();
+        }
+
+        if (parsed.header == 50) {
           this.gotAcc(this.acc);
           this.gotQuat(this.quat);
           this.gotGyro(this.gyro);
           this.gotConvertedAcc(this.converted_acc);
           this.gotConvertedGyro(this.converted_gyro);
-          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
-          this.euler = q.toEuler();
-          this.gotEuler(this.euler);
+          if (sample.quat && typeof Quaternion !== 'undefined') this.gotEuler(this.euler);
         }
-
-      }
-      // 200Hz：ジャイロ、加速度、圧力
-      else if (data.getUint8(0) == 55) {
-        // それぞれの値は34毎で、4つ分ある。データの順番は順番にpushされている。なので、最新が1番目、最古が4番目となる。
-        let offset = 24;
-        for (let i = 3; i >= 0; i--) {
-
-          timestamp = t_start;
-
-          this.gyro = {
-            x: data.getInt16(8 + offset * i) / 32768,
-            y: data.getInt16(10 + offset * i) / 32768,
-            z: data.getInt16(12 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
-          this.history_sensor_values.gyro.push(this.gyro);
-
-          this.acc = {
-            x: data.getInt16(14 + offset * i) / 32768,
-            y: data.getInt16(16 + offset * i) / 32768,
-            z: data.getInt16(18 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
-          this.history_sensor_values.acc.push(this.acc);
-
-          this.press = {
-            values: [
-              data.getUint16(20 + offset * i),
-              data.getUint16(22 + offset * i),
-              data.getUint16(24 + offset * i),
-              data.getUint16(26 + offset * i),
-              data.getUint16(28 + offset * i),
-              data.getUint16(30 + offset * i)
-            ],
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
-          this.history_sensor_values.press.push(this.press);
-
-          // ジャイロと加速度補正をかけたものを別途作成
-          this.converted_gyro = {
-            x: this.gyro.x * gyroRange,
-            y: this.gyro.y * gyroRange,
-            z: this.gyro.z * gyroRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
-          this.history_sensor_values.converted_gyro.push(this.converted_gyro);
-
-          this.converted_acc = {
-            x: this.acc.x * accRange,
-            y: this.acc.y * accRange,
-            z: this.acc.z * accRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
-          this.history_sensor_values.converted_acc.push(this.converted_acc);
-
+        else if (parsed.header == 55) {
           this.gotAcc(this.acc);
           this.gotGyro(this.gyro);
           this.gotConvertedAcc(this.converted_acc);
           this.gotConvertedGyro(this.converted_gyro);
           this.gotPress(this.press);
         }
-      }
-      // 100Hz：ジャイロ、加速度、圧力、クオータニオン
-      else if (data.getUint8(0) == 56) {
-        // それぞれの値は34毎で、2つ分ある。データの順番は順番にpushされている。なので、最新が1番目、最古が2番目となる。関数呼び出しは古いデータから順番に行いたいので逆順のループを利用する。
-        let offset = 32;
-        for (let i = 1; i >= 0; i--) {
-          timestamp = t_start;
-
-          this.quat = {
-            w: data.getInt16(8 + offset * i) / 32768,
-            x: data.getInt16(10 + offset * i) / 32768,
-            y: data.getInt16(12 + offset * i) / 32768,
-            z: data.getInt16(14 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.quat.push(this.quat);
-
-
-          this.gyro = {
-            x: data.getInt16(16 + offset * i) / 32768,
-            y: data.getInt16(18 + offset * i) / 32768,
-            z: data.getInt16(20 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.gyro.push(this.gyro);
-
-          this.acc = {
-            x: data.getInt16(22 + offset * i) / 32768,
-            y: data.getInt16(24 + offset * i) / 32768,
-            z: data.getInt16(26 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.acc.push(this.acc);
-
-          this.press = {
-            values: [
-              data.getUint16(28 + offset * i),
-              data.getUint16(30 + offset * i),
-              data.getUint16(32 + offset * i),
-              data.getUint16(34 + offset * i),
-              data.getUint16(36 + offset * i),
-              data.getUint16(38 + offset * i)
-            ],
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.press.push(this.press);
-
-
-
-          // ジャイロと加速度補正をかけたものを別途作成
-          this.converted_gyro = {
-            x: this.gyro.x * gyroRange,
-            y: this.gyro.y * gyroRange,
-            z: this.gyro.z * gyroRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          };
-          this.history_sensor_values.converted_gyro.push(this.converted_gyro);
-
-          this.converted_acc = {
-            x: this.acc.x * accRange,
-            y: this.acc.y * accRange,
-            z: this.acc.z * accRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          };
-          this.history_sensor_values.converted_acc.push(this.converted_acc);
-
+        else if (parsed.header == 56) {
           this.gotQuat(this.quat);
-          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
-          this.euler = q.toEuler();
-          this.gotEuler(this.euler);
+          if (sample.quat && typeof Quaternion !== 'undefined') this.gotEuler(this.euler);
           this.gotAcc(this.acc);
           this.gotGyro(this.gyro);
           this.gotConvertedAcc(this.converted_acc);
@@ -1400,4 +1391,18 @@ class Orphe {
 
   //一般開発ユーザからアクセス可能な関数の定義ここまで
   //--------------------------------------------------
+}
+
+var OrpheInsole = Orphe;
+if (typeof globalThis !== 'undefined' && typeof globalThis.OrpheInsole === 'undefined') {
+  globalThis.OrpheInsole = OrpheInsole;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    Orphe,
+    OrpheInsole,
+    FixedSizeArray,
+    OrpheTimestamp,
+    parseInsoleSensorValues
+  };
 }
