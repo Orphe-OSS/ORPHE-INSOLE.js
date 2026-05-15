@@ -405,6 +405,28 @@
       margin-top: 14px;
     }
 
+    .audio-master-control {
+      flex: 1 1 220px;
+      min-height: 42px;
+      display: grid;
+      grid-template-columns: auto minmax(100px, 1fr) 44px;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: #fbfdfe;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .audio-master-control output {
+      color: var(--ink);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
     .dashboard-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.06fr) minmax(360px, 0.84fr);
@@ -1434,11 +1456,21 @@
       }
 
       .top-actions button,
+      .audio-master-control,
       .status-pills .pill {
         flex: 1 1 100%;
         min-width: 0;
         text-align: center;
         overflow-wrap: anywhere;
+      }
+
+      .audio-master-control {
+        grid-template-columns: 1fr;
+        justify-items: stretch;
+      }
+
+      .audio-master-control output {
+        text-align: left;
       }
 
       .status-line > *,
@@ -1536,6 +1568,11 @@
 
         <div class="top-actions">
           <button id="enable-audio" type="button" class="warning">音を有効化</button>
+          <label class="audio-master-control" for="master-volume">
+            出力音量
+            <input id="master-volume" type="range" min="0" max="100" step="1" value="82">
+            <output id="master-volume-value">82%</output>
+          </label>
           <button id="start-recording" type="button">JSON記録開始</button>
           <button id="stop-recording" type="button" class="secondary">記録停止</button>
           <button id="download-session" type="button" class="dark">JSON保存</button>

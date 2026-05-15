@@ -404,8 +404,10 @@
   const $ = (id) => document.getElementById(id);
   const DEBUG_PREFIX = "[HulaMotionSonifier]";
   const SETTINGS_KEY = "orphe-hula-motion-sonifier-settings-v1";
-  const AUDIO_MASTER_HEADROOM = 0.62;
-  const AUDIO_OUTPUT_GAIN = 0.86;
+  const AUDIO_DEFAULT_MASTER_VOLUME = 0.82;
+  const AUDIO_INPUT_GAIN = 1.45;
+  const AUDIO_MAKEUP_GAIN = 1.35;
+  const AUDIO_OUTPUT_GAIN = 0.92;
   const MAX_SIGNAL_HISTORY = 120;
 
   const state = {
@@ -497,7 +499,7 @@
     return {
       presetId: audio.presetId,
       presetLabel: preset.label,
-      masterVolume: Number($("master-volume") ? $("master-volume").value : 52) / 100,
+      masterVolume: Number($("master-volume") ? $("master-volume").value : AUDIO_DEFAULT_MASTER_VOLUME * 100) / 100,
       ambienceAmount: Number($("ambience-amount") ? $("ambience-amount").value : 36) / 100,
       demoTempoBpm: Number($("demo-tempo") ? $("demo-tempo").value : 88),
     };
@@ -551,6 +553,8 @@
     constructor() {
       this.context = null;
       this.master = null;
+      this.compressor = null;
+      this.makeup = null;
       this.limiter = null;
       this.output = null;
       this.ambienceDelay = null;
@@ -572,16 +576,26 @@
         }
         this.context = new AudioContextClass();
         this.master = this.context.createGain();
-        this.master.gain.value = 0.52 * AUDIO_MASTER_HEADROOM;
+        this.master.gain.value = AUDIO_DEFAULT_MASTER_VOLUME * AUDIO_INPUT_GAIN;
+        this.compressor = this.context.createDynamicsCompressor();
+        this.compressor.threshold.value = -28;
+        this.compressor.knee.value = 24;
+        this.compressor.ratio.value = 3.4;
+        this.compressor.attack.value = 0.008;
+        this.compressor.release.value = 0.16;
+        this.makeup = this.context.createGain();
+        this.makeup.gain.value = AUDIO_MAKEUP_GAIN;
         this.limiter = this.context.createDynamicsCompressor();
-        this.limiter.threshold.value = -18;
-        this.limiter.knee.value = 16;
-        this.limiter.ratio.value = 12;
-        this.limiter.attack.value = 0.003;
-        this.limiter.release.value = 0.18;
+        this.limiter.threshold.value = -7;
+        this.limiter.knee.value = 0;
+        this.limiter.ratio.value = 20;
+        this.limiter.attack.value = 0.002;
+        this.limiter.release.value = 0.08;
         this.output = this.context.createGain();
         this.output.gain.value = AUDIO_OUTPUT_GAIN;
-        this.master.connect(this.limiter);
+        this.master.connect(this.compressor);
+        this.compressor.connect(this.makeup);
+        this.makeup.connect(this.limiter);
         this.limiter.connect(this.output);
         this.output.connect(this.context.destination);
         this.ambienceDelay = this.context.createDelay(1.6);
@@ -605,7 +619,7 @@
     setMasterVolume(value) {
       const volume = clamp(Number(value), 0, 1);
       if (this.master) {
-        this.master.gain.setTargetAtTime(volume * AUDIO_MASTER_HEADROOM, this.context.currentTime, 0.025);
+        this.master.gain.setTargetAtTime(volume * AUDIO_INPUT_GAIN, this.context.currentTime, 0.025);
       }
     }
 
@@ -2298,6 +2312,7 @@
   async function enableAudio() {
     try {
       await audio.enable();
+      updateAudioControls();
       $("audio-state").textContent = "音声オン";
       $("audio-state").classList.add("is-on");
       setGlobalStatus("音声を有効化しました。Kāholo/Hela/ʻAmiのフェイズ音が鳴ります。");
@@ -2314,7 +2329,7 @@
     const volumeControl = $("master-volume");
     const ambienceControl = $("ambience-amount");
     const demoTempoControl = $("demo-tempo");
-    const volume = Number(volumeControl ? volumeControl.value : 52) / 100;
+    const volume = Number(volumeControl ? volumeControl.value : AUDIO_DEFAULT_MASTER_VOLUME * 100) / 100;
     const ambience = Number(ambienceControl ? ambienceControl.value : 36) / 100;
     audio.setMasterVolume(volume);
     audio.setAmbience(ambience);
