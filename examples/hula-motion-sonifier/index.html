@@ -1,0 +1,1828 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORPHE フラ・モーション・ソニファイア</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #62707d;
+      --line: #dbe4ea;
+      --panel: #ffffff;
+      --soft: #f3f7f9;
+      --aqua: #37d3d2;
+      --coral: #f2664b;
+      --yellow: #f3c84b;
+      --green: #5eb36b;
+      --blue: #2f6fab;
+      --shadow: 0 18px 42px rgba(15, 33, 42, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #edf3f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      min-width: 0;
+      min-height: 42px;
+      border: 0;
+      border-radius: 6px;
+      padding: 9px 14px;
+      color: #071618;
+      background: var(--aqua);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      color: var(--ink);
+      background: #e6edf1;
+    }
+
+    button.dark {
+      color: white;
+      background: var(--ink);
+    }
+
+    button.warning {
+      color: #221006;
+      background: var(--yellow);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .app-header {
+      padding: 22px 28px;
+      color: white;
+      background: #121a20;
+    }
+
+    .app-header h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .app-header h1 span {
+      display: inline;
+    }
+
+    .app-header p {
+      max-width: 960px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.74);
+      overflow-wrap: anywhere;
+    }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 12px 28px;
+      border-bottom: 1px solid var(--line);
+      background: white;
+      color: #31404a;
+    }
+
+    .status-line.is-error,
+    .is-error {
+      color: #9f2d1f;
+    }
+
+    .status-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .pill.is-on {
+      color: #082211;
+      border-color: rgba(94, 179, 107, 0.35);
+      background: rgba(94, 179, 107, 0.18);
+    }
+
+    main {
+      width: min(100% - 32px, 1240px);
+      margin: 24px auto 48px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-head h2,
+    .panel-head h3 {
+      margin: 0 0 4px;
+      line-height: 1.2;
+    }
+
+    .panel-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .panel-body {
+      padding: 20px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .core-toolkit-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .core-toolkit {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+      min-height: 126px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .core-toolkit.is-connected {
+      border-color: rgba(94, 179, 107, 0.55);
+      box-shadow: 0 0 0 4px rgba(94, 179, 107, 0.12);
+    }
+
+    .toolkit-main {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .toolkit-switch-row {
+      display: inline-grid;
+      grid-template-columns: auto auto 1fr;
+      gap: 10px;
+      align-items: center;
+      width: fit-content;
+      color: var(--ink);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .toolkit-switch-row input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .toolkit-switch {
+      position: relative;
+      width: 46px;
+      height: 26px;
+      border-radius: 999px;
+      background: #c5d0d8;
+      transition: background 140ms ease;
+    }
+
+    .toolkit-switch::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 4px rgba(23, 32, 38, 0.28);
+      transition: transform 140ms ease;
+    }
+
+    .toolkit-switch-row input:checked + .toolkit-switch {
+      background: var(--green);
+    }
+
+    .toolkit-switch-row input:checked + .toolkit-switch::after {
+      transform: translateX(20px);
+    }
+
+    .toolkit-number {
+      display: inline-flex;
+      min-width: 34px;
+      min-height: 28px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: #121a20;
+      color: white;
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+
+    .toolkit-title {
+      white-space: nowrap;
+    }
+
+    .toolkit-status {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .toolkit-icons {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      align-items: center;
+      min-height: 54px;
+      color: var(--muted);
+      visibility: hidden;
+    }
+
+    .toolkit-icons.is-visible {
+      visibility: visible;
+    }
+
+    .toolkit-icon {
+      display: grid;
+      gap: 2px;
+      min-height: 46px;
+      align-content: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: white;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .toolkit-icon.is-on {
+      color: #0a3a1a;
+      border-color: rgba(94, 179, 107, 0.42);
+      background: rgba(94, 179, 107, 0.15);
+    }
+
+    .toolkit-icon strong,
+    .toolkit-icon small {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .toolkit-icon small {
+      color: var(--muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toolkit-side {
+      display: grid;
+      gap: 6px;
+      min-width: 112px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .device-control {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+      min-height: 138px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+    }
+
+    .device-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-weight: 800;
+    }
+
+    .device-light {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #a8b3bc;
+    }
+
+    .device-light.is-on {
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(94, 179, 107, 0.18);
+    }
+
+    .device-meta,
+    .device-status {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .device-actions {
+      display: grid;
+      gap: 8px;
+      min-width: 180px;
+    }
+
+    .device-actions label,
+    .label-controls label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    select,
+    input {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: white;
+      color: var(--ink);
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.06fr) minmax(360px, 0.84fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .dashboard-grid > .panel > .panel-head {
+      padding: 18px 20px 12px;
+    }
+
+    .dashboard-grid > .panel > .panel-body {
+      padding: 14px 18px 18px;
+    }
+
+    .feet-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .foot-card h3 {
+      margin: 0;
+    }
+
+    .foot-card {
+      overflow: hidden;
+    }
+
+    .foot-card .panel-head {
+      padding: 14px 16px 8px;
+    }
+
+    .foot-card .panel-body {
+      padding: 12px 16px 16px;
+    }
+
+    .foot-body {
+      display: grid;
+      grid-template-columns: minmax(130px, 150px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .insole-map {
+      position: relative;
+      width: min(100%, 150px);
+      aspect-ratio: 0.411 / 1;
+      margin: 0 auto;
+      border: 0;
+      border-radius: 0;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      filter: drop-shadow(0 14px 22px rgba(13, 24, 30, 0.16));
+    }
+
+    .insole-map.is-left {
+      background-image: url("./assets/orphe-insole-left.png");
+    }
+
+    .insole-map.is-right {
+      background-image: url("./assets/orphe-insole-right.png");
+    }
+
+    .sensor-dot {
+      position: absolute;
+      z-index: 1;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.92);
+      display: grid;
+      place-items: center;
+      grid-template-rows: 22px 1fr;
+      transform: translate(-50%, -50%);
+      color: #1d252a;
+      background: #ffffff;
+      font-weight: 800;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.24), 0 0 0 3px rgba(255, 255, 255, 0.3);
+    }
+
+    .sensor-label {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      color: #071618;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .sensor-value {
+      color: rgba(7, 22, 24, 0.7);
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    .cop-dot {
+      position: absolute;
+      z-index: 2;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 3px solid white;
+      background: var(--blue);
+      transform: translate(-50%, -50%);
+      box-shadow: var(--shadow);
+      transition: left 90ms linear, top 90ms linear;
+    }
+
+    .foot-stats,
+    .motion-readout {
+      display: grid;
+      gap: 8px;
+    }
+
+    .foot-stats {
+      grid-template-columns: 1fr;
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: minmax(78px, 1fr) 52px;
+      gap: 6px;
+      align-items: center;
+      border-bottom: 1px solid #edf2f5;
+      padding-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .stat-row span:first-child {
+      color: var(--muted);
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .stat-row strong {
+      justify-self: end;
+      min-width: 54px;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .motion-readout {
+      grid-template-columns: 1fr;
+      margin-top: 8px;
+    }
+
+    .motion-readout div {
+      padding: 8px;
+      border-radius: 6px;
+      background: var(--soft);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .motion-readout strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .axis-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(42px, 1fr));
+      gap: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .axis-grid span {
+      display: grid;
+      gap: 2px;
+      min-height: 34px;
+      align-content: center;
+      border-radius: 5px;
+      background: white;
+      color: #24323b;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .axis-grid small {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .capture-recorder {
+      display: grid;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+    }
+
+    .capture-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .capture-grid label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .capture-actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .capture-actions button {
+      width: 100%;
+    }
+
+    .capture-gesture-buttons {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .capture-gesture-buttons button {
+      min-height: 50px;
+      background: #e6edf1;
+    }
+
+    .capture-gesture-buttons button.is-active {
+      background: var(--aqua);
+      box-shadow: 0 0 0 4px rgba(55, 211, 210, 0.18);
+    }
+
+    .capture-status {
+      min-height: 52px;
+      padding: 10px;
+      border: 1px solid #dbe6eb;
+      border-radius: 6px;
+      background: white;
+      color: #354853;
+      font-size: 13px;
+      line-height: 1.45;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .capture-status.is-active {
+      border-color: color-mix(in srgb, var(--coral) 50%, #dbe6eb);
+      background: rgba(242, 102, 75, 0.08);
+    }
+
+    .capture-stats {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .capture-stats div {
+      display: grid;
+      gap: 3px;
+      border: 1px solid #edf2f5;
+      border-radius: 7px;
+      padding: 9px;
+      background: white;
+    }
+
+    .capture-stats small {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .capture-stats strong {
+      color: var(--ink);
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .capture-steps {
+      margin: 0;
+      padding-left: 18px;
+      color: #344650;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .load-panel {
+      display: grid;
+      gap: 14px;
+    }
+
+    .load-row {
+      display: grid;
+      grid-template-columns: 48px 1fr 48px;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+    }
+
+    .bar-track {
+      height: 18px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #e7eef2;
+    }
+
+    .bar-fill {
+      width: 50%;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--aqua);
+      transition: width 80ms linear;
+    }
+
+    #right-load-bar {
+      background: var(--coral);
+    }
+
+    .event-cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .event-card {
+      --gesture-color: var(--aqua);
+      --gesture-bg: rgba(55, 211, 210, 0.08);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+      overflow: hidden;
+      transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+    }
+
+    .event-card[data-gesture-card="kaholo"] {
+      --gesture-color: var(--aqua);
+      --gesture-bg: rgba(55, 211, 210, 0.16);
+    }
+
+    .event-card[data-gesture-card="hela"] {
+      --gesture-color: var(--coral);
+      --gesture-bg: rgba(242, 102, 75, 0.16);
+    }
+
+    .event-card[data-gesture-card="ami"] {
+      --gesture-color: #8b6bd6;
+      --gesture-bg: rgba(139, 107, 214, 0.16);
+    }
+
+    .event-card.is-ready {
+      border-color: rgba(94, 179, 107, 0.7);
+    }
+
+    .event-card.is-current {
+      border-color: var(--gesture-color);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--gesture-color) 20%, transparent);
+    }
+
+    .event-card.is-fired {
+      border-color: var(--gesture-color);
+      background: linear-gradient(135deg, var(--gesture-bg), #ffffff 72%);
+      box-shadow: 0 0 0 5px color-mix(in srgb, var(--gesture-color) 28%, transparent), 0 16px 32px color-mix(in srgb, var(--gesture-color) 20%, transparent);
+      transform: translateY(-1px);
+      animation: gesture-panel-hit 520ms ease-out;
+    }
+
+    @keyframes gesture-panel-hit {
+      0% {
+        filter: saturate(1.28) brightness(1.05);
+      }
+      100% {
+        filter: saturate(1) brightness(1);
+      }
+    }
+
+    .event-card header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px;
+      border-bottom: 1px solid #edf2f5;
+    }
+
+    .event-card h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .event-card-kicker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+
+    .event-card small {
+      color: var(--muted);
+    }
+
+    .event-card p {
+      margin: 0;
+      min-height: 48px;
+      padding: 8px 10px 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .gesture-state {
+      display: inline-flex;
+      min-height: 26px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: var(--soft);
+      color: #344650;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .event-card.is-ready .gesture-state {
+      background: rgba(94, 179, 107, 0.16);
+      color: #0a3a1a;
+    }
+
+    .gesture-state.is-sounding {
+      background: var(--gesture-color);
+      color: #071618;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--gesture-color) 24%, transparent);
+    }
+
+    .gesture-summary-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px 10px 0;
+    }
+
+    .gesture-summary-strip div {
+      display: grid;
+      gap: 3px;
+      min-height: 42px;
+      border: 1px solid #edf2f5;
+      border-radius: 7px;
+      padding: 6px;
+      background: white;
+    }
+
+    .gesture-summary-strip small {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .gesture-summary-strip strong {
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gesture-phase-rail {
+      display: grid;
+      grid-template-columns: repeat(var(--phase-count, 4), minmax(0, 1fr));
+      gap: 5px;
+      padding: 8px 10px 10px;
+    }
+
+    .phase-cell {
+      display: grid;
+      min-height: 32px;
+      place-items: center;
+      border: 1px solid #e3edf2;
+      border-radius: 6px;
+      background: white;
+      color: #52636f;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1.1;
+      transition: background 100ms ease, border-color 100ms ease, color 100ms ease, transform 100ms ease;
+    }
+
+    .phase-cell small {
+      color: inherit;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .phase-cell.is-current {
+      border-color: var(--gesture-color);
+      background: color-mix(in srgb, var(--gesture-color) 18%, white);
+      color: var(--ink);
+    }
+
+    .phase-cell.is-sounding {
+      border-color: var(--gesture-color);
+      background: var(--gesture-color);
+      color: #071618;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 18px color-mix(in srgb, var(--gesture-color) 32%, transparent);
+    }
+
+    .gesture-details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      padding: 0 14px 14px;
+    }
+
+    .gesture-details span {
+      min-height: 34px;
+      border: 1px solid #edf2f5;
+      border-radius: 6px;
+      padding: 7px 8px;
+      background: white;
+      color: #344650;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .gesture-algorithm {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0 14px 14px;
+      list-style: none;
+      counter-reset: gesture-step;
+    }
+
+    .gesture-section-title {
+      margin: 0;
+      padding: 12px 14px 7px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .gesture-algorithm li {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      align-items: start;
+      color: #344650;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .gesture-algorithm li::before {
+      counter-increment: gesture-step;
+      content: counter(gesture-step);
+      display: grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--gesture-color) 16%, white);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .gesture-metrics {
+      display: grid;
+      gap: 8px;
+      padding: 0 14px 14px;
+    }
+
+    .gesture-metric {
+      display: grid;
+      gap: 5px;
+      border: 1px solid #edf2f5;
+      border-radius: 7px;
+      padding: 8px;
+      background: white;
+    }
+
+    .gesture-metric.is-pass {
+      border-color: color-mix(in srgb, var(--gesture-color) 42%, #edf2f5);
+      background: color-mix(in srgb, var(--gesture-color) 8%, white);
+    }
+
+    .gesture-metric.is-fail {
+      background: #fbfdfe;
+    }
+
+    .gesture-metric-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: baseline;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .gesture-metric-head strong {
+      color: var(--ink);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .gesture-pass-label {
+      min-width: 42px;
+      border-radius: 999px;
+      padding: 3px 7px;
+      background: #edf3f6;
+      color: var(--muted);
+      text-align: center;
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+
+    .gesture-metric.is-pass .gesture-pass-label {
+      background: color-mix(in srgb, var(--gesture-color) 20%, white);
+      color: #143021;
+    }
+
+    .gesture-metric-threshold {
+      color: var(--muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gesture-meter {
+      position: relative;
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e7eef2;
+    }
+
+    .gesture-meter-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--gesture-color);
+      transition: width 90ms linear, opacity 90ms linear;
+    }
+
+    .gesture-meter-threshold {
+      position: absolute;
+      top: -2px;
+      bottom: -2px;
+      width: 2px;
+      background: rgba(23, 32, 38, 0.55);
+    }
+
+    .gesture-overview {
+      --gesture-color: var(--aqua);
+      --gesture-bg: rgba(55, 211, 210, 0.08);
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfdfe;
+      transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .gesture-overview.is-sounding {
+      border-color: var(--gesture-color);
+      background: linear-gradient(135deg, var(--gesture-bg), #ffffff 70%);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--gesture-color) 18%, transparent);
+    }
+
+    .gesture-overview.is-kaholo {
+      --gesture-color: var(--aqua);
+      --gesture-bg: rgba(55, 211, 210, 0.17);
+    }
+
+    .gesture-overview.is-hela {
+      --gesture-color: var(--coral);
+      --gesture-bg: rgba(242, 102, 75, 0.17);
+    }
+
+    .gesture-overview.is-ami {
+      --gesture-color: #8b6bd6;
+      --gesture-bg: rgba(139, 107, 214, 0.17);
+    }
+
+    .gesture-overview-main {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .gesture-overview-main div,
+    .gesture-signal-grid span {
+      display: grid;
+      gap: 3px;
+      border: 1px solid #edf2f5;
+      border-radius: 6px;
+      padding: 7px;
+      background: white;
+    }
+
+    .gesture-overview small,
+    .gesture-signal-grid small {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .gesture-overview strong,
+    .gesture-signal-grid strong {
+      color: var(--ink);
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gesture-overview p {
+      margin: 0;
+      color: #344650;
+      font-size: 12px;
+      line-height: 1.45;
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .gesture-signal-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .score-track {
+      height: 7px;
+      background: #e8eef2;
+    }
+
+    .score-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--green);
+      transition: width 100ms linear;
+    }
+
+    .threshold-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .step-toggle-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .step-toggle {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+    }
+
+    .step-toggle strong,
+    .step-toggle small {
+      display: block;
+    }
+
+    .step-toggle small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mapping-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .mapping-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfdfe;
+    }
+
+    .mapping-card h3 {
+      margin: 0 0 10px;
+    }
+
+    .mapping-selects {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .map-select {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .map-note {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .raw-signal-readout {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 12px;
+      color: #364550;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .raw-signal-readout span {
+      border: 1px solid #edf2f5;
+      border-radius: 6px;
+      padding: 5px 7px;
+      background: white;
+    }
+
+    .threshold-grid label {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    input[type="range"] {
+      padding: 0;
+      min-height: 28px;
+    }
+
+    .event-log {
+      display: grid;
+      gap: 10px;
+      max-height: 430px;
+      overflow: auto;
+    }
+
+    .event-row {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) 150px minmax(180px, 0.8fr);
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--aqua);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .event-row.event-hela {
+      border-left-color: var(--coral);
+    }
+
+    .event-row.event-uwehe {
+      border-left-color: var(--yellow);
+    }
+
+    .event-row.event-lele {
+      border-left-color: var(--blue);
+    }
+
+    .event-row.event-ami,
+    .event-row.event-leleUwehe {
+      border-left-color: #8b6bd6;
+    }
+
+    .event-row span,
+    .event-row small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .event-row label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .empty-state {
+      padding: 24px;
+      border: 1px dashed #c8d5dd;
+      border-radius: 8px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .label-controls {
+      display: grid;
+      grid-template-columns: 170px 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .dev-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    .dev-links a {
+      display: inline-flex;
+      min-height: 36px;
+      align-items: center;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      padding: 7px 10px;
+      background: white;
+      color: #283743;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    @media (max-width: 980px) {
+      .controls-grid,
+      .core-toolkit-grid,
+      .dashboard-grid,
+      .feet-grid,
+      .threshold-grid,
+      .step-toggle-grid,
+      .mapping-grid,
+      .capture-grid,
+      .capture-actions,
+      .capture-gesture-buttons,
+      .capture-stats,
+      .label-controls {
+        grid-template-columns: 1fr;
+      }
+
+      .device-control,
+      .core-toolkit,
+      .event-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .app-header,
+      .status-line,
+      main {
+        width: 100vw;
+        max-width: 100vw;
+      }
+
+      .app-header {
+        padding: 20px 22px;
+      }
+
+      main {
+        width: calc(100vw - 16px);
+        margin: 18px auto 36px;
+      }
+
+      .app-header h1 {
+        font-size: 23px;
+        word-break: break-all;
+        line-break: anywhere;
+      }
+
+      .app-header h1 span {
+        display: block;
+      }
+
+      .status-line,
+      .panel-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .foot-body {
+        grid-template-columns: 1fr;
+      }
+
+      .gesture-details,
+      .gesture-summary-strip,
+      .gesture-overview-main,
+      .gesture-signal-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .event-card header {
+        flex-direction: column;
+      }
+
+      .event-card-kicker {
+        justify-content: flex-start;
+        min-width: 0;
+      }
+
+      .top-actions,
+      .status-pills {
+        display: flex;
+        flex-wrap: wrap;
+      }
+
+      .top-actions button,
+      .status-pills .pill {
+        flex: 1 1 100%;
+        min-width: 0;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+
+      .status-line > *,
+      .panel,
+      .device-control,
+      .core-toolkit {
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="app-header">
+    <h1>ORPHE <span>フラ・モーション</span><span>ソニファイア</span></h1>
+    <p>ORPHE INSOLE 2台で、足裏圧ヒートマップ、IMU、CoP、Kāholo / Hela / ʻAmi のリアルタイムフェイズ推定、音生成、JSONセッション保存を試すプロトタイプです。</p>
+  </header>
+
+  <div class="status-line">
+    <div id="global-status">読み込み中...</div>
+    <div class="status-pills">
+      <span class="pill" id="audio-state">音声オフ</span>
+      <span class="pill" id="recording-state">停止中</span>
+    </div>
+  </div>
+
+  <main>
+    <section class="panel" aria-labelledby="connection-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="connection-heading">接続</h2>
+          <p>2台のインソールを接続し、左右を割り当てます。自動割当は利用可能な場合に <code>mount_position</code> のbit0を使います。</p>
+        </div>
+        <div class="dev-links">
+          <a href="./test.html">シミュレータテストを開く</a>
+          <a href="../../docs/">APIドキュメント</a>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="core-toolkit-grid" aria-label="ORPHE INSOLE接続">
+          <article class="core-toolkit" id="toolkit-card-0">
+            <div class="toolkit-main">
+              <label class="toolkit-switch-row" for="connect-0">
+                <input id="connect-0" type="checkbox" role="switch" aria-describedby="device-status-0">
+                <span class="toolkit-switch" aria-hidden="true"></span>
+                <span class="toolkit-number">01</span>
+                <span class="toolkit-title">ORPHE INSOLE</span>
+              </label>
+              <div class="toolkit-status" id="device-status-0">未接続</div>
+              <div class="device-meta" id="device-meta-0">デバイス情報待ち</div>
+              <div class="device-meta">割り当て: <strong id="device-side-0">未割当</strong></div>
+              <div class="toolkit-icons" id="toolkit-ui-0" aria-label="デバイス1の状態">
+                <span class="toolkit-icon" id="device-light-0" title="Bluetooth接続"><strong>Bluetooth</strong><small>未接続</small></span>
+                <span class="toolkit-icon" id="activity-icon-0" title="SENSOR_VALUES通知"><strong>センサー受信</strong><small>待機中</small></span>
+                <span class="toolkit-icon" id="battery-icon-0" title="バッテリー"><strong>バッテリー</strong><small>不明</small></span>
+                <span class="toolkit-icon" id="stream-icon-0" title="streamingMode 4"><strong>通信モード</strong><small>Mode 4</small></span>
+              </div>
+            </div>
+            <label class="toolkit-side">LEFT/RIGHT
+              <select id="side-0">
+                <option value="left">左</option>
+                <option value="right">右</option>
+              </select>
+            </label>
+          </article>
+
+          <article class="core-toolkit" id="toolkit-card-1">
+            <div class="toolkit-main">
+              <label class="toolkit-switch-row" for="connect-1">
+                <input id="connect-1" type="checkbox" role="switch" aria-describedby="device-status-1">
+                <span class="toolkit-switch" aria-hidden="true"></span>
+                <span class="toolkit-number">02</span>
+                <span class="toolkit-title">ORPHE INSOLE</span>
+              </label>
+              <div class="toolkit-status" id="device-status-1">未接続</div>
+              <div class="device-meta" id="device-meta-1">デバイス情報待ち</div>
+              <div class="device-meta">割り当て: <strong id="device-side-1">未割当</strong></div>
+              <div class="toolkit-icons" id="toolkit-ui-1" aria-label="デバイス2の状態">
+                <span class="toolkit-icon" id="device-light-1" title="Bluetooth接続"><strong>Bluetooth</strong><small>未接続</small></span>
+                <span class="toolkit-icon" id="activity-icon-1" title="SENSOR_VALUES通知"><strong>センサー受信</strong><small>待機中</small></span>
+                <span class="toolkit-icon" id="battery-icon-1" title="バッテリー"><strong>バッテリー</strong><small>不明</small></span>
+                <span class="toolkit-icon" id="stream-icon-1" title="streamingMode 4"><strong>通信モード</strong><small>Mode 4</small></span>
+              </div>
+            </div>
+            <label class="toolkit-side">LEFT/RIGHT
+              <select id="side-1">
+                <option value="right">右</option>
+                <option value="left">左</option>
+              </select>
+            </label>
+          </article>
+        </div>
+
+        <div class="top-actions">
+          <button id="enable-audio" type="button" class="warning">音を有効化</button>
+          <button id="start-recording" type="button">JSON記録開始</button>
+          <button id="stop-recording" type="button" class="secondary">記録停止</button>
+          <button id="download-session" type="button" class="dark">JSON保存</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>足裏圧とCoP</h2>
+            <p>片足6点の圧力を表示します。青い点は推定Center of Pressureです。</p>
+          </div>
+        </div>
+        <div class="panel-body feet-grid">
+          <article class="foot-card">
+            <div class="panel-head">
+              <div>
+                <h3>左足</h3>
+                <p>リアルタイム足裏圧ヒートマップ</p>
+              </div>
+            </div>
+            <div class="panel-body foot-body">
+              <div class="insole-map is-left" aria-label="左足の足裏圧マップ">
+                <span id="left-sensor-0" class="sensor-dot sensor-0">0</span>
+                <span id="left-sensor-1" class="sensor-dot sensor-1">0</span>
+                <span id="left-sensor-2" class="sensor-dot sensor-2">0</span>
+                <span id="left-sensor-3" class="sensor-dot sensor-3">0</span>
+                <span id="left-sensor-4" class="sensor-dot sensor-4">0</span>
+                <span id="left-sensor-5" class="sensor-dot sensor-5">0</span>
+                <span id="left-cop-dot" class="cop-dot"></span>
+              </div>
+              <div>
+                <div class="foot-stats">
+                  <div class="stat-row"><span>合計圧</span><strong id="left-total">0</strong></div>
+                  <div class="stat-row"><span>前足 1-4</span><strong id="left-forefoot">0%</strong></div>
+                  <div class="stat-row"><span>前+中 1-5</span><strong id="left-nonheel">0%</strong></div>
+                  <div class="stat-row"><span>踵 6</span><strong id="left-heel">0%</strong></div>
+                </div>
+                <div class="motion-readout">
+                  <div><strong>加速度</strong><span class="axis-grid"><span><small>x</small><b id="left-acc-x">--</b></span><span><small>y</small><b id="left-acc-y">--</b></span><span><small>z</small><b id="left-acc-z">--</b></span></span></div>
+                  <div><strong>ジャイロ</strong><span class="axis-grid"><span><small>x</small><b id="left-gyro-x">--</b></span><span><small>y</small><b id="left-gyro-y">--</b></span><span><small>z</small><b id="left-gyro-z">--</b></span></span></div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="foot-card">
+            <div class="panel-head">
+              <div>
+                <h3>右足</h3>
+                <p>リアルタイム足裏圧ヒートマップ</p>
+              </div>
+            </div>
+            <div class="panel-body foot-body">
+              <div class="insole-map is-right" aria-label="右足の足裏圧マップ">
+                <span id="right-sensor-0" class="sensor-dot sensor-0">0</span>
+                <span id="right-sensor-1" class="sensor-dot sensor-1">0</span>
+                <span id="right-sensor-2" class="sensor-dot sensor-2">0</span>
+                <span id="right-sensor-3" class="sensor-dot sensor-3">0</span>
+                <span id="right-sensor-4" class="sensor-dot sensor-4">0</span>
+                <span id="right-sensor-5" class="sensor-dot sensor-5">0</span>
+                <span id="right-cop-dot" class="cop-dot"></span>
+              </div>
+              <div>
+                <div class="foot-stats">
+                  <div class="stat-row"><span>合計圧</span><strong id="right-total">0</strong></div>
+                  <div class="stat-row"><span>前足 1-4</span><strong id="right-forefoot">0%</strong></div>
+                  <div class="stat-row"><span>前+中 1-5</span><strong id="right-nonheel">0%</strong></div>
+                  <div class="stat-row"><span>踵 6</span><strong id="right-heel">0%</strong></div>
+                </div>
+                <div class="motion-readout">
+                  <div><strong>加速度</strong><span class="axis-grid"><span><small>x</small><b id="right-acc-x">--</b></span><span><small>y</small><b id="right-acc-y">--</b></span><span><small>z</small><b id="right-acc-z">--</b></span></span></div>
+                  <div><strong>ジャイロ</strong><span class="axis-grid"><span><small>x</small><b id="right-gyro-x">--</b></span><span><small>y</small><b id="right-gyro-y">--</b></span><span><small>z</small><b id="right-gyro-z">--</b></span></span></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>ジェスチャとフェイズ</h2>
+            <p>現在のジェスチャ、フェイズ、判定に使うIMU/CoP特徴量を表示します。</p>
+          </div>
+        </div>
+        <div class="panel-body load-panel">
+          <div class="load-row">
+            <span>左</span>
+            <div class="bar-track"><div class="bar-fill" id="left-load-bar"></div></div>
+            <span id="left-load-value">50%</span>
+          </div>
+          <div class="load-row">
+            <span>右</span>
+            <div class="bar-track"><div class="bar-fill" id="right-load-bar"></div></div>
+            <span id="right-load-value">50%</span>
+          </div>
+
+          <div class="gesture-overview">
+            <div class="gesture-overview-main">
+              <div><small>現在</small><strong id="current-gesture-name">なし</strong></div>
+              <div><small>フェイズ</small><strong id="current-gesture-phase">--</strong></div>
+              <div><small>信頼度</small><strong id="current-gesture-confidence">0%</strong></div>
+            </div>
+            <p id="current-gesture-reason">IMUとCoPの変化を待っています。</p>
+            <div class="gesture-signal-grid" id="current-gesture-signals"></div>
+          </div>
+
+          <div class="event-cards">
+            <article class="event-card" id="kaholo-card" data-gesture-card="kaholo">
+              <header>
+                <div>
+                  <h3>Kāholo</h3>
+                  <small>8フェイズ / フットフラット + IMU主軸変化</small>
+                </div>
+                <div class="event-card-kicker">
+                  <small id="kaholo-sequence">待機中</small>
+                </div>
+              </header>
+              <div class="score-track"><div class="score-fill" id="kaholo-score"></div></div>
+              <p id="kaholo-reason">待機中</p>
+            </article>
+
+            <article class="event-card" id="hela-card" data-gesture-card="hela">
+              <header>
+                <div>
+                  <h3>Hela</h3>
+                  <small>4フェイズ / フットフラット + IMU 2軸変化</small>
+                </div>
+                <div class="event-card-kicker">
+                  <small>候補: <span id="hela-candidate">なし</span></small>
+                </div>
+              </header>
+              <div class="score-track"><div class="score-fill" id="hela-score"></div></div>
+              <p id="hela-reason">待機中</p>
+            </article>
+
+            <article class="event-card" id="ami-card" data-gesture-card="ami">
+              <header>
+                <div>
+                  <h3>ʻAmi</h3>
+                  <small>IMU静止 + CoP前後左右変化</small>
+                </div>
+              </header>
+              <div class="score-track"><div class="score-fill" id="ami-score"></div></div>
+              <p id="ami-reason">待機中</p>
+            </article>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="panel" aria-labelledby="threshold-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="threshold-heading">見える閾値</h2>
+          <p>ダンサーと実機テストしながら調整できます。後で学習モデルを作る前に、まずはシンプルで説明できる判定にしています。</p>
+        </div>
+      </div>
+      <div class="panel-body threshold-grid">
+        <label>接地とみなす圧 <strong id="threshold-contact-value">40</strong>
+          <input id="threshold-contact" type="range" min="10" max="220" step="5" value="40">
+        </label>
+        <label>IMU移動閾値 <strong id="threshold-imu-move-value">0.045</strong>
+          <input id="threshold-imu-move" type="range" min="10" max="120" step="1" value="45">
+        </label>
+        <label>CoP横閾値 <strong id="threshold-cop-lateral-value">0.070</strong>
+          <input id="threshold-cop-lateral" type="range" min="20" max="250" step="5" value="70">
+        </label>
+        <label>CoP前後閾値 <strong id="threshold-cop-forward-value">0.140</strong>
+          <input id="threshold-cop-forward" type="range" min="40" max="320" step="5" value="140">
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="vocabulary-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="vocabulary-heading">検出語彙</h2>
+          <p>まずは確実に区別したい3ジェスチャだけに絞ります。過検出する候補はここでOFFにできます。</p>
+        </div>
+      </div>
+      <div class="panel-body step-toggle-grid" id="step-toggle-grid"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="mapping-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="mapping-heading">センサー信号の割り当て</h2>
+          <p>白丸の図番号は物理位置です。実機の <code>press.values</code> の順番が図と違う場合は、ここで対応する信号番号を入れ替えてください。</p>
+        </div>
+      </div>
+      <div class="panel-body mapping-grid">
+        <article class="mapping-card">
+          <h3>左足</h3>
+          <div class="mapping-selects" id="sensor-map-left"></div>
+          <div class="raw-signal-readout" id="raw-signals-left" aria-label="左足の生信号値"></div>
+          <p class="map-note" id="sensor-map-warning-left">図の番号ごとに、対応する実機の信号番号を選べます。</p>
+        </article>
+        <article class="mapping-card">
+          <h3>右足</h3>
+          <div class="mapping-selects" id="sensor-map-right"></div>
+          <div class="raw-signal-readout" id="raw-signals-right" aria-label="右足の生信号値"></div>
+          <p class="map-note" id="sensor-map-warning-right">図の番号ごとに、対応する実機の信号番号を選べます。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="labels-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="labels-heading">検出イベントと教師ラベル</h2>
+          <p>テイク後にダンサー/教師のラベルとメモを追加できます。ラベルはエクスポートするJSONに含まれます。</p>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="label-controls">
+          <label>手動ラベル
+            <select id="manual-label">
+              <option value="kaholo">Kāholo</option>
+            </select>
+          </label>
+          <label>メモ
+            <input id="manual-note" placeholder="例: 先生が半速のHelaとしてマーク">
+          </label>
+          <button id="add-manual-label" type="button" class="secondary">手動ラベル追加</button>
+        </div>
+        <div class="event-log" id="event-log"></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="capture-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="capture-heading">ジェスチャ収録データセット</h2>
+          <p>判定アルゴリズムを作り直すために、3つのジェスチャを教師ラベル付きで収録します。圧力、CoP、加速度、ジャイロ、試行ID、区間ラベルを1つのJSONに保存します。</p>
+        </div>
+      </div>
+      <div class="panel-body capture-recorder">
+        <div class="capture-grid">
+          <label>試行メモ
+            <input id="capture-note" placeholder="例: 通常テンポ / 右始まり / 失敗含む">
+          </label>
+          <label>テイク名
+            <input id="capture-trial-name" placeholder="自動採番">
+          </label>
+        </div>
+
+        <div class="capture-actions">
+          <button id="start-capture-trial" type="button" class="warning">連続収録開始</button>
+          <button id="stop-capture-trial" type="button" class="secondary">収録停止</button>
+          <button id="mark-capture-note" type="button" class="secondary">注釈マーク</button>
+          <button id="download-capture-dataset" type="button" class="dark">収録JSON保存</button>
+        </div>
+
+        <div class="capture-gesture-buttons" aria-label="収録中のジェスチャ区間マーク">
+          <button type="button" data-capture-gesture="kaholo">Kāholo区間</button>
+          <button type="button" data-capture-gesture="hela">Hela区間</button>
+          <button type="button" data-capture-gesture="ami">ʻAmi区間</button>
+          <button type="button" data-capture-gesture="unlabeled">区切り/未ラベル</button>
+        </div>
+
+        <div class="capture-stats" aria-label="収録データ数">
+          <div><small>区間</small><strong id="capture-trial-count">0</strong></div>
+          <div><small>圧力</small><strong id="capture-pressure-count">0</strong></div>
+          <div><small>IMU</small><strong id="capture-motion-count">0</strong></div>
+          <div><small>マーク</small><strong id="capture-mark-count">0</strong></div>
+          <div><small>経過</small><strong id="capture-elapsed">0s</strong></div>
+        </div>
+
+        <div class="capture-status" id="capture-status">「連続収録開始」を押してから踊り、動きが変わるタイミングでKāholo/Hela/ʻAmi区間ボタンを押してください。</div>
+        <ol class="capture-steps">
+          <li>「連続収録開始」を押して、Kāholo / Hela / ʻAmi を好きな順番で何回か繰り返す。</li>
+          <li>ジェスチャが切り替わるタイミングで、該当する区間ボタンを押す。フェイズ指定は不要です。</li>
+          <li>休止や分からない動きは「区切り/未ラベル」、特徴的な瞬間は「注釈マーク」。</li>
+          <li>終わったら「収録停止」して「収録JSON保存」。</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <script src="../../src/ORPHE-INSOLE.js?v=name-prefix-ble"></script>
+  <script src="./hula-detector.js?v=three-gestures"></script>
+  <script src="./app.js?v=steel-sixth"></script>
+</body>
+
+</html>
