@@ -611,9 +611,16 @@ class Orphe {
     this.write('DEVICE_INFORMATION', data);
   }
   scan(uuid, options = {}) {
+    console.info('[ORPHE-INSOLE] scan()', {
+      uuid,
+      hasBluetoothDevice: !!this.bluetoothDevice,
+      hasNavigatorBluetooth: typeof navigator !== 'undefined' && !!navigator.bluetooth,
+      options
+    });
     return (this.bluetoothDevice ? Promise.resolve() : this.requestDevice(uuid))
       .catch(error => {
         this.onError(error);
+        throw error;
       });
   }
   /**
@@ -621,29 +628,46 @@ class Orphe {
    * @param {string} uuid 
    * 
    */
-  async requestDevice(uuid) {
+  requestDevice(uuid) {
     let options = {
+      /*
+      ORPHE insole module name: INS
+      一部のINSOLE firmwareはadvertisementにservice UUIDを載せないため、
+      chooserではINSのnamePrefixで候補を絞り、optionalServicesで接続後に必要なserviceへアクセスします。
+      */
       filters: [
-        {
-          services: ['01a9d6b5-ff6e-444a-b266-0be75e85c064', 'db1b7aca-cda5-4453-a49b-33a53d3f0833']
-        },
-        { namePrefix: ['INS'] }
+        { namePrefix: 'INS' }
       ],
-      optionalServices: [this.hashUUID[uuid].serviceUUID],
+      acceptAllDevices: false,
+      optionalServices: [
+        this.ORPHE_INFORMATION,
+        this.ORPHE_OTHER_SERVICE
+      ],
       optionalManufacturerData: [
         0x0000
       ]
     };
 
-    try {
-      const device = await navigator.bluetooth.requestDevice(options);
-      this.bluetoothDevice = device;
-      this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
+    console.info('[ORPHE-INSOLE] requestDevice() before navigator.bluetooth.requestDevice', {
+      uuid,
+      options,
+      hasNavigatorBluetooth: typeof navigator !== 'undefined' && !!navigator.bluetooth,
+      isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : undefined,
+      href: typeof window !== 'undefined' ? window.location.href : undefined
+    });
+    return navigator.bluetooth.requestDevice(options)
+      .then(device => {
+        this.bluetoothDevice = device;
+        this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
+        console.info('[ORPHE-INSOLE] requestDevice() selected device', {
+          uuid,
+          deviceName: this.bluetoothDevice.name,
+          deviceId: this.bluetoothDevice.id
+        });
+        this.onScan(this.bluetoothDevice.name);
 
-      // await this.autoStartWatchingAdvertisements();
-    } catch (error) {
-      console.warn('Failed requestDevice:', error);
-    }
+        // await this.autoStartWatchingAdvertisements();
+      });
   }
 
   /**
@@ -773,10 +797,17 @@ class Orphe {
    *
    */
   connectGATT(uuid) {
+    console.info('[ORPHE-INSOLE] connectGATT() start', {
+      uuid,
+      hasBluetoothDevice: !!this.bluetoothDevice,
+      gattConnected: !!(this.bluetoothDevice && this.bluetoothDevice.gatt && this.bluetoothDevice.gatt.connected),
+      hasDataCharacteristic: !!this.dataCharacteristic,
+      lastConnected: this.hashUUID_lastConnected
+    });
     if (!this.bluetoothDevice) {
       var error = "No Bluetooth Device";
       this.onError(error);
-      return;
+      return Promise.reject(error);
     }
     if (this.bluetoothDevice.gatt.connected && this.dataCharacteristic) {
       if (this.hashUUID_lastConnected == uuid)
@@ -801,6 +832,7 @@ class Orphe {
       })
       .catch(error => {
         this.onError(error);
+        throw error;
       });
   }
   /**
@@ -852,6 +884,7 @@ class Orphe {
       })
       .catch(error => {
         this.onError(error);
+        throw error;
       });
   }
   /**
@@ -871,6 +904,7 @@ class Orphe {
       .catch(error => {
         console.error('startNotify: Error : ' + error);
         this.onError(error);
+        throw error;
       });
   }
   /**
@@ -1187,7 +1221,12 @@ class Orphe {
         };
         resolve(this.date_time);
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
-        console.log('Error: ' + error);
+        const message = error && error.message ? error.message : String(error);
+        if (error && error.name === 'NotFoundError') {
+          console.info('[ORPHE-INSOLE] requestDevice chooser cancelled', { message });
+        } else {
+          console.log('Error: ' + error);
+        }
         this.onError(error);
         reject(error);
       });
@@ -1220,7 +1259,12 @@ class Orphe {
         }
         resolve(this.device_information);
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
-        console.log('Error: ' + error);
+        const message = error && error.message ? error.message : String(error);
+        if (error && error.name === 'NotFoundError') {
+          console.info('[ORPHE-INSOLE] requestDevice chooser cancelled', { message });
+        } else {
+          console.log('Error: ' + error);
+        }
         this.onError(error);
         reject(error);
       });
@@ -1394,6 +1438,9 @@ class Orphe {
 }
 
 var OrpheInsole = Orphe;
+if (typeof globalThis !== 'undefined' && typeof globalThis.Orphe === 'undefined') {
+  globalThis.Orphe = Orphe;
+}
 if (typeof globalThis !== 'undefined' && typeof globalThis.OrpheInsole === 'undefined') {
   globalThis.OrpheInsole = OrpheInsole;
 }
