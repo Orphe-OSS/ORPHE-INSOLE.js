@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>フラ・モーション検出シミュレータ</title>
+  <style>
+    :root {
+      --ink: #172026;
+      --muted: #62707d;
+      --line: #dbe4ea;
+      --aqua: #37d3d2;
+      --coral: #f2664b;
+      --yellow: #f3c84b;
+      --green: #5eb36b;
+      --soft: #f3f7f9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #edf3f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    header {
+      padding: 22px 28px;
+      color: white;
+      background: #121a20;
+    }
+
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 26px;
+    }
+
+    header p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    main {
+      width: min(100% - 32px, 1080px);
+      margin: 24px auto 48px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-head h2 {
+      margin: 0 0 4px;
+    }
+
+    .panel-head p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button,
+    a.button {
+      min-height: 42px;
+      border: 0;
+      border-radius: 6px;
+      padding: 9px 14px;
+      color: #071618;
+      background: var(--aqua);
+      font: inherit;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    button.secondary,
+    a.secondary {
+      background: #e6edf1;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .status-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--soft);
+    }
+
+    .status-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 20px;
+    }
+
+    .status-card.pass {
+      border-color: rgba(94, 179, 107, 0.55);
+      background: rgba(94, 179, 107, 0.12);
+    }
+
+    .log {
+      display: grid;
+      gap: 8px;
+      max-height: 420px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+    }
+
+    .log-row {
+      padding: 10px;
+      border-left: 5px solid var(--line);
+      border-radius: 6px;
+      background: #fbfdfe;
+    }
+
+    .log-row.kaholo {
+      border-left-color: var(--aqua);
+    }
+
+    .log-row.hela {
+      border-left-color: var(--coral);
+    }
+
+    .log-row.ami {
+      border-left-color: #8b6bd6;
+    }
+
+    @media (max-width: 760px) {
+      .status {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>検出シミュレータ</h1>
+    <p>Web Bluetooth実機なしで、ORPHE フラ・モーション・ソニファイアと同じ純粋検出ロジックを実行します。</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>テスト操作</h2>
+        <p>各ボタンは合成した足裏圧フレームを流し、対象イベントが検出されるか確認します。</p>
+      </div>
+      <div class="panel-body">
+        <div class="button-row">
+          <button id="test-all" type="button">すべての検出テストを実行</button>
+          <button id="test-kaholo" type="button" class="secondary">Kāholoをシミュレート</button>
+          <button id="test-hela-left" type="button" class="secondary">左Helaをシミュレート</button>
+          <button id="test-ami" type="button" class="secondary">ʻAmiをシミュレート</button>
+          <a class="button secondary" href="./index.html">実機プロトタイプへ戻る</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="status">
+      <div class="status-card" id="status-kaholo"><strong>Kāholo</strong><span>未実行</span></div>
+      <div class="status-card" id="status-hela"><strong>Hela</strong><span>未実行</span></div>
+      <div class="status-card" id="status-ami"><strong>ʻAmi</strong><span>未実行</span></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>イベントログ</h2>
+        <p>検出理由も表示するので、実機テスト前に閾値のズレを確認できます。</p>
+      </div>
+      <div class="panel-body">
+        <div class="log" id="log"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./hula-detector.js?v=three-gestures"></script>
+  <script>
+    const detector = new HulaMotion.HulaEventDetector({
+      copLateralThreshold: 0.008,
+      copForwardThreshold: 0.02,
+      amiCopPath: 0.03,
+      amiMaxLoadDelta: 0.4,
+    });
+    let now = Date.now();
+    const log = document.getElementById("log");
+
+    const pressure = {
+      grounded: [34, 34, 34, 34, 54, 120],
+      light: [8, 8, 8, 8, 5, 5],
+      leftHeavy: [70, 70, 60, 60, 70, 100],
+      rightHeavy: [70, 70, 60, 60, 70, 100],
+      forefootPoint: [24, 24, 24, 24, 4, 0],
+      support: [74, 74, 66, 66, 70, 120],
+      heelsUp: [80, 80, 72, 72, 70, 5],
+      swayLeft: [78, 72, 58, 58, 72, 88],
+      swayRight: [52, 50, 46, 46, 58, 70],
+      amiMedial: [112, 104, 40, 44, 44, 48],
+      amiLateral: [42, 46, 112, 88, 96, 44],
+      amiFront: [112, 96, 108, 88, 42, 32],
+      amiBack: [42, 48, 42, 48, 78, 156],
+    };
+
+    function step(left, right, dt = 260) {
+      now += dt;
+      const a = detector.updatePressure("left", left, now);
+      const b = detector.updatePressure("right", right, now);
+      return [...a.events, ...b.events];
+    }
+
+    function reset() {
+      detector.reset();
+      now = Date.now();
+    }
+
+    function motion(side, from, to, dt = 40) {
+      now += dt;
+      detector.updateMotion(side, "acc", from, now);
+      now += dt;
+      return detector.updateMotion(side, "acc", to, now).events;
+    }
+
+    function landing(side, points) {
+      const events = [];
+      points.forEach((point, index) => {
+        now += index === 0 ? 40 : point.dt || 80;
+        const result = detector.updateMotion(side, "acc", point.acc, now);
+        events.push(...result.events);
+      });
+      return events;
+    }
+
+    function append(message, type = "") {
+      const row = document.createElement("div");
+      row.className = `log-row ${type}`;
+      row.textContent = message;
+      log.prepend(row);
+    }
+
+    function setStatus(type, pass, detail) {
+      const card = document.getElementById(`status-${type}`);
+      card.classList.toggle("pass", pass);
+      card.querySelector("span").textContent = pass ? `成功 - ${detail}` : `失敗 - ${detail}`;
+    }
+
+    function runKaholo() {
+      reset();
+      const events = [];
+      events.push(...step(pressure.leftHeavy, pressure.light));
+      events.push(...landing("left", [
+        { acc: { x: 0, y: 0, z: 1 } },
+        { acc: { x: 0.12, y: 0.01, z: 1 }, dt: 80 },
+        { acc: { x: 0.12, y: 0.01, z: 1 }, dt: 40 },
+        { acc: { x: 0.23, y: 0.02, z: 1 }, dt: 80 },
+      ]));
+      events.push(...step(pressure.light, pressure.rightHeavy));
+      events.push(...landing("right", [
+        { acc: { x: 0, y: 0, z: 1 }, dt: 460 },
+        { acc: { x: -0.12, y: 0.01, z: 1 }, dt: 80 },
+        { acc: { x: -0.12, y: 0.01, z: 1 }, dt: 40 },
+        { acc: { x: -0.23, y: 0.02, z: 1 }, dt: 80 },
+      ]));
+      events.push(...step(pressure.leftHeavy, pressure.light));
+      events.push(...step(pressure.light, pressure.rightHeavy));
+      const event = events.find((item) => item.type === "kaholo");
+      setStatus("kaholo", !!event, event ? event.reason : "イベントなし");
+      append(event ? `Kāholo: ${event.reason}` : "Kāholo 失敗", "kaholo");
+      return !!event;
+    }
+
+    function runHelaLeft() {
+      reset();
+      step(pressure.grounded, pressure.grounded);
+      step(pressure.forefootPoint, pressure.support);
+      const events = landing("left", [
+        { acc: { x: 0, y: 0, z: 1 } },
+        { acc: { x: 0.04, y: 0.11, z: 1 }, dt: 80 },
+        { acc: { x: 0.04, y: 0.11, z: 1 }, dt: 40 },
+        { acc: { x: 0.08, y: 0.23, z: 1 }, dt: 80 },
+      ]);
+      events.push(...step(pressure.grounded, pressure.support));
+      const event = events.find((item) => item.type === "hela" && item.side === "left");
+      setStatus("hela", !!event, event ? event.reason : "イベントなし");
+      append(event ? `Hela: ${event.reason}` : "Hela 失敗", "hela");
+      return !!event;
+    }
+
+    function runAmi() {
+      reset();
+      const events = [];
+      events.push(...step(pressure.amiMedial, pressure.amiLateral, 220));
+      events.push(...step(pressure.amiFront, pressure.amiFront, 220));
+      events.push(...step(pressure.amiLateral, pressure.amiMedial, 220));
+      events.push(...step(pressure.amiBack, pressure.amiBack, 220));
+      events.push(...step(pressure.amiMedial, pressure.amiLateral, 220));
+      events.push(...step(pressure.amiFront, pressure.amiFront, 220));
+      const event = events.find((item) => item.type === "ami");
+      setStatus("ami", !!event, event ? event.reason : "イベントなし");
+      append(event ? `ʻAmi: ${event.reason}` : "ʻAmi 失敗", "ami");
+      return !!event;
+    }
+
+    document.getElementById("test-kaholo").addEventListener("click", runKaholo);
+    document.getElementById("test-hela-left").addEventListener("click", runHelaLeft);
+    document.getElementById("test-ami").addEventListener("click", runAmi);
+    document.getElementById("test-all").addEventListener("click", () => {
+      const passed = [runKaholo(), runHelaLeft(), runAmi()].filter(Boolean).length;
+      append(`検出テスト結果: ${passed}/3 成功`);
+    });
+  </script>
+</body>
+
+</html>
