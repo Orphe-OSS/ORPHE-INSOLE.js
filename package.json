@@ -1,6 +1,6 @@
 {
     "name": "orphe-insole",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "JavaScript library for ORPHE insole devices",
     "main": "dist/orphe-insole.js",
     "jsdelivr": "dist/orphe-insole.min.js",
@@ -13,7 +13,7 @@
         "build:dev": "mkdir -p dist && cp src/ORPHE-INSOLE.js dist/orphe-insole.js",
         "build:min": "mkdir -p dist && terser src/ORPHE-INSOLE.js -o dist/orphe-insole.min.js --source-map --mangle --compress",
         "generate-docs": "jsdoc --configure jsdoc.json --verbose",
-        "test": "node --check src/ORPHE-INSOLE.js && node --check src/CoreToolkit.js && node --check examples/terminal/index.js && node --check examples/hula-motion-sonifier/app.js && node tests/insole-parser.test.js && node tests/hula-detector.test.js"
+        "test": "node --check src/ORPHE-INSOLE.js && node --check src/InsoleToolkit.js && node --check examples/terminal/index.js && node --check examples/hula-motion-sonifier/app.js && node tests/insole-parser.test.js && node tests/hula-detector.test.js && node tests/insole-stability.test.js && node tests/insole-coexistence.test.js"
     },
     "directories": {
         "doc": "docs",

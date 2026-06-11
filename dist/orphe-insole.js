@@ -1,12 +1,14 @@
 var orphe_js_version_date = `
-Last modified: 2025/08/26 00:40:25
+Last modified: 2026/06/10 00:00:00
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
 Class形式で記述を変更したバージョン
-@module Orphe
+v1.1.0 接続安定化（デバイス記憶・高速再接続・自動再接続）、クラス名を OrpheInsole に変更（Orphe はエイリアスとして維持）
+v0.9.0 ベータ版
+@module OrpheInsole
 @author Tetsuaki BABA
-@version 0.9.0
+@version 1.1.0
 
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
@@ -42,6 +44,12 @@ if (typeof document !== 'undefined') {
   }
 }
 
+// ── ライブラリ本体 ────────────────────────────────────────────────
+// ORPHE-CORE.js と同一ページで共存できるよう、クラス宣言
+// (FixedSizeArray, OrpheTimestamp など) をトップレベルに置かず IIFE で包む。
+// トップレベルの class 宣言はグローバルなレキシカル束縛を作るため、
+// CORE と INSOLE の両方を読み込むと SyntaxError で後勝ちスクリプト全体が死ぬ。
+(function (global) {
 
 /**
  * 自動的に決められた配列サイズでunshiftしてくれるクラス
@@ -71,7 +79,7 @@ class FixedSizeArray {
 
 
 /**
- * Orpheクラス内部で利用されるタイムスタンプクラスです。BLE通信のデータ取得タイミングにおける実測周波数を取得するために利用されます。Orpheクラス内部で本当は宣言したかったのですが、jsdoc がクラス内部クラス定義に対応していないため、外部に出しています。無念。  
+ * Orpheクラス内部で利用されるタイムスタンプクラスです。BLE通信のデータ取得タイミングにおける実測周波数を取得するために利用されます。Orpheクラス内部で本当は宣言したかったのですが、jsdoc がクラス内部クラス定義に対応していないため、外部に出しています。無念。
  * @class
  */
 class OrpheTimestamp {
@@ -259,17 +267,17 @@ function parseInsoleSensorValues(data, options = {}) {
 }
 
 /**
- * ORPHE CORE Module Javascript class
+ * ORPHE INSOLE Module Javascript class
 * @class
-* @type {Object} 
+* @type {Object}
 * @property {string} ORPHE_INFORMATION "01a9d6b5-ff6e-444a-b266-0be75e85c064" SERVICE_UUID
 * @property {string} ORPHE_DEVICE_INFORMATION "24354f22-1c46-430e-a4ab-a1eeabbcdfc0" CHARACTERISTIC_UUID
-* 
+*
 * @property {string} ORPHE_OTHER_SERVICE "db1b7aca-cda5-4453-a49b-33a53d3f0833" SERVICE_UUID
 * @property {string} ORPHE_SENSOR_VALUES "f3f9c7ce-46ee-4205-89ac-abe64e626c0f" CHARACTERISTIC_UUID
 * @property {string} ORPHE_STEP_ANALYSIS "4eb776dc-cf99-4af7-b2d3-ad0f791a79dd" CHARACTERISTIC_UUID
 */
-class Orphe {
+class OrpheInsole {
   /**
    * SENSOR_VALUES の DataView を ORPHE INSOLE のサンプル列に変換する。
    * @param {DataView} data
@@ -281,7 +289,7 @@ class Orphe {
   }
 
   /**
-   * 初期化関数 
+   * 初期化関数
    * @param {number}[id=0] id コアの番号（0 or 1）を指定します。
    */
   constructor(id = 0) {
@@ -307,6 +315,33 @@ class Orphe {
     this.array_device_information = new DataView(new ArrayBuffer(20));// device information用の配列
 
     /**
+     * デバッグログ（console.info）の出力を有効にするフラグです。
+     * 接続トラブル調査時に true にしてください。
+     */
+    this.debug = false;
+
+    // ── 接続安定化まわりの内部状態 ───────────────────────────────
+    // デバイス記憶: 一度接続したデバイスを localStorage に記憶し、
+    // navigator.bluetooth.getDevices() (Chrome flag: Web Bluetooth New Permissions Backend)
+    // が使える環境では選択ダイアログなしで再接続できる。
+    this._lastBluetoothDeviceStorageKey = `orphe_insole_last_bluetooth_device_${id}`;
+    this._usingRememberedBluetoothDevice = false;
+    this._rememberedBluetoothDeviceUnavailable = false;
+    // 自動再接続
+    this._autoReconnectEnabled = false;
+    this._autoReconnectInProgress = false;
+    this._autoReconnectOptions = {};
+    this._autoReconnectDevice = null;
+    this._autoReconnectDisconnectHandler = (event) => this._handleAutoReconnectDisconnect(event);
+    this._suppressAutoReconnectErrors = false;
+    this._lastAutoReconnectError = null;
+    // gattserverdisconnected 用 遅延バインドハンドラ。
+    // this.onDisconnect を直接 addEventListener すると、リスナー登録後に
+    // ユーザが onDisconnect を上書きしても古い関数が呼ばれ続けるため、
+    // 必ずこのラッパーを登録する。
+    this._onDisconnectHandler = (event) => this.onDisconnect(event);
+
+    /**
    * デバイスインフォメーションを取得して保存しておく連想配列です。begin()を呼び出すとデバイスから値を取得して初期化されます。
    * @property {Object} device_information - デバイス情報
    * @property {number} device_information.battery - バッテリー残量（少ない:0、普通:1、多い:2）
@@ -323,14 +358,9 @@ class Orphe {
 
     /**
      * 歩容解析のデータを保存しておく連想配列です。
+     * 注意: ORPHE INSOLE のファームウェアは現状 STEP_ANALYSIS 通知に未対応のため、
+     * この値が更新されることはありません（FW対応待ち）。
      * @property {Object} gait - 歩容解析のデータ
-     * @property {number} gait.type - 歩容のタイプ（0: 通常歩行, 1: 走行, 2: ランニング）
-     * @property {number} gait.direction - 歩容の向き（0: 前進, 1: 後退, 2: 左, 3: 右）
-     * @property {number} gait.calorie - 消費カロリー
-     * @property {number} gait.distance - 移動距離
-     * @property {number} gait.steps - 歩数
-     * @property {number} gait.standing_phase_duration - 立ち上がり時間
-     * @property {number} gait.swing_phase_duration - 振り出し時間
      */
     this.gait = {
       type: 0,
@@ -342,14 +372,7 @@ class Orphe {
       swing_phase_duration: 0
     }
     /**
-     * ストライドのデータを保存しておく連想配列です。
-     * @property {Object} stride - ストライドのデータ
-     * @property {number} stride.foot_angle - 足首の角度
-     * @property {number} stride.x - X軸方向のストライド
-     * @property {number} stride.y - Y軸方向のストライド
-     * @property {number} stride.z - Z軸方向のストライド
-     * @property {number} stride.steps - 歩数
-     * 
+     * ストライドのデータを保存しておく連想配列です。（STEP_ANALYSIS FW対応待ち）
      */
     this.stride = {
       foot_angle: 0,
@@ -359,13 +382,7 @@ class Orphe {
       steps: 0,
     }
     /**
-   * プロネーションのデータを保存しておく連想配列です。
-   * @property {Object} pronation - プロネーションのデータ
-   * @property {number} pronation.landing_impact - 着地衝撃
-   * @property {number} pronation.x - X軸方向のプロネーション
-   * @property {number} pronation.y - Y軸方向のプロネーション
-   * @property {number} pronation.z - Z軸方向のプロネーション
-   * @property {number} pronation.steps - 歩数
+   * プロネーションのデータを保存しておく連想配列です。（STEP_ANALYSIS FW対応待ち）
    */
     this.pronation = {
       landing_impact: 0,
@@ -386,7 +403,7 @@ class Orphe {
      * @property {number} quat.x - x
      * @property {number} quat.y - y
      * @property {number} quat.z - z
-     * 
+     *
      */
     this.quat = {
       w: 0.0, x: 0.0, y: 0.0, z: 0.0
@@ -395,10 +412,7 @@ class Orphe {
     /**
      * 加速度値から2回積分で基準フレーム間の移動距離を求めた変数です
      * @property {Object} delta - 距離
-     * @property {number} delta.x - X軸方向の距離
-     * @property {number} delta.y - Y軸方向の距離
-     * @property {number} delta.z - Z軸方向の距離
-     *    */
+     */
     this.delta = {
       x: 0.0, y: 0.0, z: 0.0
     }
@@ -419,9 +433,6 @@ class Orphe {
     /**
      * ジャイロセンサの値を保存する連想配列です。
      * @property {Object} gyro - ジャイロセンサの値
-     * @property {number} gyro.x - X軸方向のジャイロセンサの値
-     * @property {number} gyro.y - Y軸方向のジャイロセンサの値
-     * @property {number} gyro.z - Z軸方向のジャイロセンサの値
      */
     this.gyro = {
       x: 0.0, y: 0.0, z: 0.0
@@ -430,20 +441,22 @@ class Orphe {
     /**
      * 加速度センサの値を保存する連想配列です。
      * @property {Object} acc - 加速度センサの値
-     * @property {number} acc.x - X軸方向の加速度センサの値
-     * @property {number} acc.y - Y軸方向の加速度センサの値
-     * @property {number} acc.z - Z軸方向の加速度センサの値
      */
     this.acc = {
       x: 0.0, y: 0.0, z: 0.0
     }
 
     /**
+     * 圧力センサ（6ch）の最新値を保存する連想配列です。
+     * @property {Object} press - 圧力センサの値
+     * @property {number[]} press.values - 6チャネル分のADC生値
+     */
+    this.press = {
+      values: [0, 0, 0, 0, 0, 0]
+    }
+
+    /**
      * ジャイロレンジに合わせて変換したジャイロセンサの値を保存する連想配列です。
-     * @property {Object} converted_gyro - ジャイロセンサの値
-     * @property {number} converted_gyro.x - X軸方向のジャイロセンサの値
-     * @property {number} converted_gyro.y - Y軸方向のジャイロセンサの値
-     * @property {number} converted_gyro.z - Z軸方向のジャイロセンサの値
      */
     this.converted_gyro = {
       x: 0.0, y: 0.0, z: 0.0
@@ -451,10 +464,6 @@ class Orphe {
 
     /**
      * 加速度レンジに合わせて変換した加速度センサの値を保存する連想配列です。
-     * @property {Object} converted_acc - 加速度センサの値
-     * @property {number} converted_acc.x - X軸方向の加速度センサの値
-     * @property {number} converted_acc.y - Y軸方向の加速度センサの値
-     * @property {number} converted_acc.z - Z軸方向の加速度センサの値
      */
     this.converted_acc = {
       x: 0.0, y: 0.0, z: 0.0
@@ -462,10 +471,6 @@ class Orphe {
 
     /**
      * データ欠損時に線形補完をするかどうかのオプション設定（beginのオプションで設定可能）。この設定は200Hz sensor_valuesのacc, gyro, quatのみに適用されます。
-     * 
-     * @property {Object} interpolation - 線形補間の設定
-     * @property {boolean} interpolation.enabled - 線形補間の有効化/無効化　true: 有効, false: 無効
-     * @property {number} interpolation.max_consecutive_missing - 線形補間する最大の連続欠損数
      */
     this.interpolation = {
       enabled: false,
@@ -491,19 +496,23 @@ class Orphe {
 
   }
 
+  _log(...args) {
+    if (this.debug) console.info('[ORPHE-INSOLE]', ...args);
+  }
+
   /**
   * gotData()がユーザ側でオーバーライドされているかどうかを返す関数です。これを見て，デバッグモード（ORPHE TERMINAL）を有効にするかどうかを判断します。オーバーライドするとgotData()以外の関数はコールバックされません．
-  * 
+  *
  */
   isGotDataOverridden() {
     return this.gotData !== this.defaultGotData;
   }
   /**
    * UUIDを設定する関数です。UUIDはsetup()で利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS）の指定に利用されます。
-   * @param {string} name 
-   * @param {string} serviceUUID 
-   * @param {string} characteristicUUID 
-   * 
+   * @param {string} name
+   * @param {string} serviceUUID
+   * @param {string} characteristicUUID
+   *
    */
   setUUID(name, serviceUUID, characteristicUUID) {
     this.hashUUID[name] = { 'serviceUUID': serviceUUID, 'characteristicUUID': characteristicUUID };
@@ -544,12 +553,17 @@ class Orphe {
   }
 
   /**
-   *  begin BLE connection 
-   * SENSOR_VALUESまたはSTEP_ANALYSISのセンサー値の取得を開始します。
+   *  begin BLE connection
+   * SENSOR_VALUESのセンサー値の取得を開始します。
    * @param {string} [notification_type="SENSOR_VALUES"] SENSOR_VALUES
+   * @param {object} [options]
+   * @param {number} [options.streamingMode=4] データストリーミングモード（1, 3, 4）
+   * @param {boolean} [options.autoReconnect=false] 切断時の自動再接続を有効化
+   * @param {number} [options.reconnectIntervalMs=3000] 再接続試行の間隔
+   * @param {number} [options.reconnectMaxAttempts=120] 再接続の最大試行回数
    * @async
-   * @return {Promise<string>} 
-   * 
+   * @return {Promise<string>}
+   *
    */
   async begin(str_type = 'SENSOR_VALUES', options = {}) {
     if (typeof str_type === 'object' && str_type !== null) {
@@ -565,34 +579,41 @@ class Orphe {
       str_type = 'SENSOR_VALUES';
     }
     const streamingMode = options.streamingMode ?? options.dataStreamingMode ?? 4;
+    const autoReconnect = options.autoReconnect ?? false;
 
     this.notification_type = str_type;
+    if (autoReconnect) {
+      this._enableAutoReconnect(str_type, options);
+    } else if (!this._autoReconnectInProgress) {
+      this._disableAutoReconnect();
+    }
 
-    await this.getDeviceInformation();
+    try {
+      await this.getDeviceInformation();
 
-    // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
-    /*
-    0x01 : リアルタイム(クォータニオン、ジャイロ、加速度)
-    0x03 : リアルタイム(ジャイロ、加速度、圧力 200Hz相当)※インソールのみ対応
-    0x04 : リアルタイム(ジャイロ、加速度、圧力、クォータニオン 100Hz相当)※インソールのみ対応
-    */
-    await this.setDataStreamingMode(streamingMode);
+      // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
+      /*
+      0x01 : リアルタイム(クォータニオン、ジャイロ、加速度)
+      0x03 : リアルタイム(ジャイロ、加速度、圧力 200Hz相当)※インソールのみ対応
+      0x04 : リアルタイム(ジャイロ、加速度、圧力、クォータニオン 100Hz相当)※インソールのみ対応
+      */
+      await this.setDataStreamingMode(streamingMode);
 
-    // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
-    await this.syncCoreTime();
+      // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
+      await this.syncCoreTime();
 
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        this.startNotify('SENSOR_VALUES')
-          .then(() => {
-            resolve("done begin(); SENSOR VALUES");
-          })
-          .catch(error => {
-            this.onError(error);
-            reject(error);
-          });
-      }, 0);
-    });
+      await this.startNotify('SENSOR_VALUES');
+
+      // 接続成功: デバイスを記憶し、自動再接続用の切断検知を仕込む
+      if (this.bluetoothDevice) {
+        this._rememberBluetoothDevice(this.bluetoothDevice);
+        this._attachAutoReconnectDisconnectHandler(this.bluetoothDevice);
+      }
+      return "done begin(); SENSOR VALUES";
+    } catch (error) {
+      this._reportError(error);
+      throw error;
+    }
   }
 
   /**
@@ -603,6 +624,205 @@ class Orphe {
   }
 
 
+  // ── エラーレポート ───────────────────────────────────────────
+  // 自動再接続の試行中は onError を逐一発火させず、最後のエラーとして保持する
+  _reportError(error) {
+    if (this._suppressAutoReconnectErrors) {
+      this._lastAutoReconnectError = error;
+      return;
+    }
+    this.onError(error);
+  }
+
+  // ── 自動再接続 ──────────────────────────────────────────────
+  _enableAutoReconnect(str_type, options = {}) {
+    this._autoReconnectEnabled = true;
+    this._autoReconnectOptions = Object.assign({}, options, { autoReconnect: true });
+  }
+
+  _disableAutoReconnect() {
+    this._autoReconnectEnabled = false;
+    this._autoReconnectInProgress = false;
+    this._suppressAutoReconnectErrors = false;
+  }
+
+  _autoReconnectIntervalMs() {
+    const interval = Number(this._autoReconnectOptions.reconnectIntervalMs);
+    return Number.isFinite(interval) && interval >= 0 ? interval : 3000;
+  }
+
+  _autoReconnectMaxAttempts() {
+    const attempts = Number(this._autoReconnectOptions.reconnectMaxAttempts);
+    return Number.isFinite(attempts) && attempts > 0 ? attempts : 120;
+  }
+
+  _autoReconnectWait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  _attachAutoReconnectDisconnectHandler(device) {
+    if (!device?.addEventListener) return;
+    if (this._autoReconnectDevice === device) return;
+    if (this._autoReconnectDevice?.removeEventListener) {
+      try {
+        this._autoReconnectDevice.removeEventListener('gattserverdisconnected', this._autoReconnectDisconnectHandler);
+      } catch (_) { }
+    }
+    this._autoReconnectDevice = device;
+    device.addEventListener('gattserverdisconnected', this._autoReconnectDisconnectHandler);
+  }
+
+  async _restoreAutoReconnectDevice() {
+    if (this.bluetoothDevice) return true;
+    const rememberedDevice = await this._requestRememberedBluetoothDevice();
+    if (!rememberedDevice) return false;
+    this.bluetoothDevice = rememberedDevice;
+    this._usingRememberedBluetoothDevice = true;
+    this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
+    this._attachAutoReconnectDisconnectHandler(this.bluetoothDevice);
+    this.onScan(this.bluetoothDevice.name);
+    return true;
+  }
+
+  _handleAutoReconnectDisconnect() {
+    if (!this._autoReconnectEnabled || this._autoReconnectInProgress) return;
+    this._startAutoReconnect();
+  }
+
+  async _startAutoReconnect() {
+    if (!this._autoReconnectEnabled || this._autoReconnectInProgress) return;
+
+    this._autoReconnectInProgress = true;
+    const startedAt = Date.now();
+    const maxAttempts = this._autoReconnectMaxAttempts();
+    const intervalMs = this._autoReconnectIntervalMs();
+    let lastError = null;
+
+    for (let attempt = 1; this._autoReconnectEnabled && attempt <= maxAttempts; attempt++) {
+      this.onReconnectAttempt({ attempt, maxAttempts, intervalMs });
+
+      try {
+        const hasDevice = await this._restoreAutoReconnectDevice();
+        if (!hasDevice) throw new Error('Last connected Bluetooth device not found. Please reconnect manually.');
+
+        this._lastAutoReconnectError = null;
+        this._suppressAutoReconnectErrors = true;
+        const result = await this.begin(this.notification_type, this._autoReconnectOptions);
+        this._suppressAutoReconnectErrors = false;
+
+        if (result) {
+          this._autoReconnectInProgress = false;
+          this.onReconnectSuccess({
+            attempt,
+            maxAttempts,
+            elapsedMs: Date.now() - startedAt,
+            result,
+          });
+          return;
+        }
+
+        lastError = this._lastAutoReconnectError || new Error('Auto reconnect attempt failed.');
+      } catch (error) {
+        this._suppressAutoReconnectErrors = false;
+        lastError = error;
+      }
+
+      if (!this._autoReconnectEnabled || attempt >= maxAttempts) break;
+      await this._autoReconnectWait(intervalMs);
+    }
+
+    this._autoReconnectInProgress = false;
+    const error = lastError || new Error('Auto reconnect failed.');
+    this.onReconnectFailed({ maxAttempts, elapsedMs: Date.now() - startedAt, error });
+    this._reportError(error);
+  }
+
+  // ── デバイス記憶（選択ダイアログなしの再接続） ─────────────────
+  /**
+   * 前回デバイスの記憶を使わず、必ずブラウザのBLE選択ダイアログを表示する。
+   * 接続済みINSOLEから別INSOLEへ手動で切り替える場合に利用する。
+   * @param {string} uuid
+   */
+  selectBluetoothDevice(uuid = 'DEVICE_INFORMATION') {
+    this._disableAutoReconnect();
+    this.forgetLastBluetoothDevice();
+    if (this.bluetoothDevice?.gatt?.connected) {
+      try { this.bluetoothDevice.gatt.disconnect(); } catch (_) { }
+    }
+    this.bluetoothDevice = null;
+    this.dataCharacteristic = null;
+    this._usingRememberedBluetoothDevice = false;
+    this._rememberedBluetoothDeviceUnavailable = false;
+    return this.requestDevice(uuid);
+  }
+
+  /**
+   * 最後に接続成功した Bluetooth デバイス情報を忘れる。
+   * 次回 begin() 時に手動選択ダイアログから別デバイスへ切り替えたい場合に利用する。
+   */
+  forgetLastBluetoothDevice() {
+    this._rememberedBluetoothDeviceUnavailable = false;
+    try { localStorage.removeItem(this._lastBluetoothDeviceStorageKey); } catch (_) { }
+  }
+
+  _rememberBluetoothDevice(device) {
+    if (!device) return;
+    this._rememberedBluetoothDeviceUnavailable = false;
+    try {
+      localStorage.setItem(this._lastBluetoothDeviceStorageKey, JSON.stringify({
+        deviceId: this.id,
+        bluetoothId: device.id || '',
+        bluetoothName: device.name || '',
+        lastConnectedAt: Date.now(),
+      }));
+    } catch (_) { }
+  }
+
+  _getLastBluetoothDeviceInfo() {
+    try {
+      const raw = localStorage.getItem(this._lastBluetoothDeviceStorageKey);
+      if (!raw) return null;
+      const info = JSON.parse(raw);
+      if (!info || (!info.bluetoothId && !info.bluetoothName)) return null;
+      return info;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _findLastBluetoothDevice(devices) {
+    const info = this._getLastBluetoothDeviceInfo();
+    return this._findBluetoothDevice(devices, info);
+  }
+
+  _findBluetoothDevice(devices, info) {
+    if (!info || !Array.isArray(devices)) return null;
+    const bluetoothId = info.bluetoothId || info.id || '';
+    const bluetoothName = info.bluetoothName || info.name || '';
+
+    if (bluetoothId) {
+      const matchedById = devices.find(device => device.id === bluetoothId);
+      if (matchedById) return matchedById;
+    }
+
+    if (bluetoothName) {
+      const matchedByName = devices.filter(device => device.name === bluetoothName);
+      if (matchedByName.length === 1) return matchedByName[0];
+    }
+
+    return null;
+  }
+
+  async _requestRememberedBluetoothDevice() {
+    if (!navigator.bluetooth?.getDevices) return null;
+    try {
+      const devices = await navigator.bluetooth.getDevices();
+      return this._findLastBluetoothDevice(devices);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /**
    * Reset Analysis logs in the core module.
    */
@@ -611,22 +831,34 @@ class Orphe {
     this.write('DEVICE_INFORMATION', data);
   }
   scan(uuid, options = {}) {
-    console.info('[ORPHE-INSOLE] scan()', {
+    this._log('scan()', {
       uuid,
       hasBluetoothDevice: !!this.bluetoothDevice,
       hasNavigatorBluetooth: typeof navigator !== 'undefined' && !!navigator.bluetooth,
       options
     });
-    return (this.bluetoothDevice ? Promise.resolve() : this.requestDevice(uuid))
+    if (this.bluetoothDevice) return Promise.resolve();
+
+    const useRememberedDevice = !options.forceDeviceSelection &&
+      !this._rememberedBluetoothDeviceUnavailable &&
+      this._getLastBluetoothDeviceInfo();
+    return (useRememberedDevice ? this._requestRememberedBluetoothDevice() : Promise.resolve(null))
+      .then(device => {
+        if (!device) return this.requestDevice(uuid);
+        this.bluetoothDevice = device;
+        this._usingRememberedBluetoothDevice = true;
+        this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
+        this.onScan(this.bluetoothDevice.name);
+      })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
         throw error;
       });
   }
   /**
    * Execute requestDevice()
-   * @param {string} uuid 
-   * 
+   * @param {string} uuid
+   *
    */
   requestDevice(uuid) {
     let options = {
@@ -648,7 +880,7 @@ class Orphe {
       ]
     };
 
-    console.info('[ORPHE-INSOLE] requestDevice() before navigator.bluetooth.requestDevice', {
+    this._log('requestDevice() before navigator.bluetooth.requestDevice', {
       uuid,
       options,
       hasNavigatorBluetooth: typeof navigator !== 'undefined' && !!navigator.bluetooth,
@@ -658,8 +890,10 @@ class Orphe {
     return navigator.bluetooth.requestDevice(options)
       .then(device => {
         this.bluetoothDevice = device;
-        this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
-        console.info('[ORPHE-INSOLE] requestDevice() selected device', {
+        this._usingRememberedBluetoothDevice = false;
+        this._rememberedBluetoothDeviceUnavailable = false;
+        this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
+        this._log('requestDevice() selected device', {
           uuid,
           deviceName: this.bluetoothDevice.name,
           deviceId: this.bluetoothDevice.id
@@ -726,16 +960,14 @@ class Orphe {
 
   /**
    * アドバタイズメントデータ受信時のコールバック
-   * @param {BluetoothAdvertisingEvent} event 
+   * @param {BluetoothAdvertisingEvent} event
    */
   onAdvertisementReceived(event) {
-    console.log('=== Advertisement Received ===');
-    console.log('Device Name:', event.device.name);
-    console.log('RSSI:', event.rssi, 'dBm');
-    console.log('TX Power:', event.txPower);
-    console.log('==============================');
-    console.log(event);
-
+    this._log('Advertisement Received', {
+      name: event.device.name,
+      rssi: event.rssi,
+      txPower: event.txPower
+    });
 
     const dv = event.manufacturerData.get(0x0000);
 
@@ -757,31 +989,6 @@ class Orphe {
   }
 
   /**
-   * Notificationに接続する処理を実行
-   */
-  async connectToNotifications() {
-    try {
-      console.log('Connecting to notifications...');
-
-      // SENSOR_VALUESのnotificationを開始
-      await this.startNotify('SENSOR_VALUES');
-      console.log('Connected to SENSOR_VALUES notifications');
-
-      // STEP_ANALYSISのnotificationを開始（オプション）
-      try {
-        await this.startNotify('STEP_ANALYSIS');
-        console.log('Connected to STEP_ANALYSIS notifications');
-      } catch (error) {
-        console.warn('STEP_ANALYSIS notification not available:', error.message);
-      }
-
-    } catch (error) {
-      console.error('Failed to connect to notifications:', error);
-      throw error;
-    }
-  }
-
-  /**
    * アドバタイズメント監視を停止
    */
   stopWatchingAdvertisements() {
@@ -793,11 +1000,11 @@ class Orphe {
 
   /**
    * GATT通信を始めるための関数。read, write, startNotify, stopNotifyが呼び出されるとscanと一緒に呼び出されます。
-   * @param {string} uuid 
+   * @param {string} uuid
    *
    */
   connectGATT(uuid) {
-    console.info('[ORPHE-INSOLE] connectGATT() start', {
+    this._log('connectGATT() start', {
       uuid,
       hasBluetoothDevice: !!this.bluetoothDevice,
       gattConnected: !!(this.bluetoothDevice && this.bluetoothDevice.gatt && this.bluetoothDevice.gatt.connected),
@@ -806,7 +1013,7 @@ class Orphe {
     });
     if (!this.bluetoothDevice) {
       var error = "No Bluetooth Device";
-      this.onError(error);
+      this._reportError(error);
       return Promise.reject(error);
     }
     if (this.bluetoothDevice.gatt.connected && this.dataCharacteristic) {
@@ -831,15 +1038,23 @@ class Orphe {
         // this.autoStartWatchingAdvertisements();
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
+        // 記憶していたデバイスが見つからない/権限切れの場合は記憶経由の接続を
+        // 一旦諦め、次回 scan() でユーザに選択ダイアログを出す
+        if (this._usingRememberedBluetoothDevice) {
+          this._rememberedBluetoothDeviceUnavailable = true;
+          this._usingRememberedBluetoothDevice = false;
+          this.bluetoothDevice = null;
+          this.dataCharacteristic = null;
+        }
         throw error;
       });
   }
   /**
    * サーバからのデータを受信したときに呼び出される関数です。この関数は、characteristicvaluechangedイベントが発生したときに呼び出されます。
-   * @param {function} self 
-   * @param {string} uuid 
-   * 
+   * @param {function} self
+   * @param {string} uuid
+   *
    */
   dataChanged(self, uuid) {
     return function (event) {
@@ -849,7 +1064,7 @@ class Orphe {
   /**
    * サーバからデータを読み込む。notificationからはonReadで呼び出されるので、この関数を利用するのは DEVICE_INFORMATION characteristicのみです。
    * @param {string} uuid DEVICE_INFORMATION
-   * 
+   *
    */
   read(uuid) {
     return (this.scan(uuid))
@@ -860,7 +1075,7 @@ class Orphe {
         return this.dataCharacteristic.readValue();
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
         throw error; // エラーを再スローして、呼び出し側でキャッチできるようにする
       });
   }
@@ -868,7 +1083,7 @@ class Orphe {
    * write data to the BLE device。実際にwriteを利用するのは DEVICE_INFORMATION characteristicのみです。
    * @param {string} uuid DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS
    * @param {dataView} array_value write bytes
-   * 
+   *
    */
   write(uuid, array_value) {
     return (this.scan(uuid))
@@ -883,14 +1098,14 @@ class Orphe {
         this.onWrite(uuid);
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
         throw error;
       });
   }
   /**
    * Start Notification
-   * @param {string} uuid 
-   * 
+   * @param {string} uuid
+   *
    */
   startNotify(uuid) {
     return this.scan(uuid)
@@ -903,14 +1118,14 @@ class Orphe {
       })
       .catch(error => {
         console.error('startNotify: Error : ' + error);
-        this.onError(error);
+        this._reportError(error);
         throw error;
       });
   }
   /**
    * Stop Notification
-   * @param {string} uuid 
-   * 
+   * @param {string} uuid
+   *
    */
   stopNotify(uuid) {
     return this.scan(uuid) // BLEデバイスのスキャンを開始します。
@@ -923,8 +1138,6 @@ class Orphe {
         return this.dataCharacteristic.stopNotifications();
       })
       .then(() => {
-        // Notificationを停止した後のコールバック関数を呼び出します。
-        // this.dataCharacteristic.removeEventListener('characteristicvaluechanged', this.dataChanged(this, uuid));
         // イベントハンドラを解除
         if (this.dataChangedEventHandlerMap[uuid]) {
           this.dataCharacteristic.removeEventListener(
@@ -937,7 +1150,7 @@ class Orphe {
         this.onStopNotify(uuid);
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
       });
 
   }
@@ -950,12 +1163,12 @@ class Orphe {
 
   /**
    * BLEデバイスとの接続を切断します。デバイス接続をマニュアルで切断する場合には reset() を利用してください。切断だけでなくクラス内のメンバ変数もクリア初期化する必要があり、reset()を利用するとそれらの処理が行われます。
-   * 
+   *
    */
   disconnect() {
     if (!this.bluetoothDevice) {
       var error = "No Bluetooth Device";
-      this.onError(error);
+      this._reportError(error);
       return;
     }
 
@@ -966,19 +1179,22 @@ class Orphe {
       this.bluetoothDevice.gatt.disconnect();
     } else {
       var error = "Bluetooth Device is already disconnected";
-      this.onError(error);
+      this._reportError(error);
       return;
     }
   }
   /**
    * this.device_informationの連想配列形式でデータを渡すことで、コアモジュールのデバイス設定ができます。
-   * @param {object} obj 
+   * 注意: ORPHE INSOLE の現行ファームウェアでは未対応です。
+   * @param {object} obj
    */
   setDeviceInformation(obj) {
     // この機能は insole では未対応とします。
     // const senddata = new Uint8Array([0x01, obj.lr, obj.led_brightness, 0, obj.rec_auto_run, obj.time01, obj.time02, obj.range.acc, obj.range.gyro]);
     // this.write('DEVICE_INFORMATION', senddata);
-    alert("setDeviceInformation: not supported");
+    const error = new Error('setDeviceInformation is not supported on ORPHE INSOLE.');
+    console.warn(error.message);
+    this._reportError(error);
   }
 
   /**
@@ -995,12 +1211,13 @@ class Orphe {
     }
     const data = new Uint8Array([0x0D, normalizedMode]);
     await this.write('DEVICE_INFORMATION', data);
+    this.streaming_mode = normalizedMode;
   }
 
 
   /**
    * COREモジュールの時刻を PCの時刻 + random_trip_time/2 で同期します。
-   * 
+   *
    * @param {number}[n=3] n - 平均値算出のためのサンプル数
    * @return {object} {sum_round_trip_time, average_round_trip_time, standard_time, adjusted_time, round_trip_times}
    */
@@ -1052,8 +1269,10 @@ class Orphe {
   }
   /**
    * reset(disconnect & clear)
+   * マニュアル切断の意思表示とみなし、自動再接続も無効化します。
    */
   reset() {
+    this._disableAutoReconnect();
     this.disconnect(); //disconnect() is not Promise Object
     this.clear();
     this.onReset();
@@ -1067,7 +1286,7 @@ class Orphe {
   /**
    * Incoming byte callback function. コアモジュールから送信されるデータを受信するコールバック関数です。それぞれのUUIDに対応するデータを正しく整形して対応するコールバック関数に渡します。ユーザはコールバック関数を手元のコードでオーバーライドして利用します。gotData()がユーザによってオーバーライドされている場合は、gotData以外のnotifyに伴うコールバック関数はすべて呼び出されないことに注意してください。
    * @param {dataView} data incoming bytes
-   * @param {string} uuid 
+   * @param {string} uuid
    */
   onRead(data, uuid) {
     let ret = this.timestamp.getHz();
@@ -1078,7 +1297,7 @@ class Orphe {
       this.gotData(data, uuid);
       // データ欠損チェック
       if (uuid == 'SENSOR_VALUES') {
-        // 50,55,56がリアルタームデータ取得時の先頭ヘッダ 
+        // 50,55,56がリアルタームデータ取得時の先頭ヘッダ
         if (data.getUint8(0) == 50 || data.getUint8(0) == 55 || data.getUint8(0) == 56) {
           if (this.serial_number) {
             const serial_number_prev = this.serial_number;
@@ -1105,7 +1324,7 @@ class Orphe {
       return;
     }
 
-    // デバイス情報Readの場合    
+    // デバイス情報Readの場合
     if (uuid == 'DEVICE_INFORMATION') {
     }
     else if (uuid == 'SENSOR_VALUES') {
@@ -1190,13 +1409,13 @@ class Orphe {
   /**
    * Date Timeを取得する
    * 0	year	0-255	西暦から2000を引いた数
-   * 1	month		
-   * 2	day		
-   * 3	hour		
-   * 4	minute		
-   * 5	second		
+   * 1	month
+   * 2	day
+   * 3	hour
+   * 4	minute
+   * 5	second
    * 6	subsecond
-   * 
+   *
    * @returns {Promise<object>} date_timeを連想配列形式{timestamp, data,round_trip_time}で返す。dataにはCOREから直接送信されてきたdataviewが格納されている。round_trip_timeはデータを取得にかかった時間[ms]。
    */
   async getDateTime() {
@@ -1223,11 +1442,11 @@ class Orphe {
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
         const message = error && error.message ? error.message : String(error);
         if (error && error.name === 'NotFoundError') {
-          console.info('[ORPHE-INSOLE] requestDevice chooser cancelled', { message });
+          this._log('requestDevice chooser cancelled', { message });
         } else {
           console.log('Error: ' + error);
         }
-        this.onError(error);
+        this._reportError(error);
         reject(error);
       });
     });
@@ -1243,7 +1462,7 @@ class Orphe {
         if (!data) {
           const error = new Error('No data received from DEVICE_INFORMATION');
           console.error('Error: ' + error.message);
-          this.onError(error);
+          this._reportError(error);
           reject(error);
           return;
         }
@@ -1261,11 +1480,11 @@ class Orphe {
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
         const message = error && error.message ? error.message : String(error);
         if (error && error.name === 'NotFoundError') {
-          console.info('[ORPHE-INSOLE] requestDevice chooser cancelled', { message });
+          this._log('requestDevice chooser cancelled', { message });
         } else {
           console.log('Error: ' + error);
         }
-        this.onError(error);
+        this._reportError(error);
         reject(error);
       });
     });
@@ -1339,72 +1558,72 @@ class Orphe {
    */
   gotEuler(euler) { }
   /**
-   * 歩容解析の取得
+   * 歩容解析の取得（STEP_ANALYSIS FW対応待ちのため現状呼び出されません）
    * @param {Object} gait {type, direction, calorie, distance} 歩行解析の取得
    */
   gotGait(gait) { }
   /**
-   * 現在の歩容タイプを取得する
-   * @param {Object} type {value} 0:none, 1:walk, 2:run, 3:stand 
+   * 現在の歩容タイプを取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {Object} type {value} 0:none, 1:walk, 2:run, 3:stand
    */
   gotType(type) { }
   /**
-   * ランニングの方向を取得する
+   * ランニングの方向を取得する（STEP_ANALYSIS FW対応待ち）
    * @param {Object} direction {value} 0:none, 1:foward, 2:backward, 3:inside, 4:outside
    */
   gotDirection(direction) { }
   /**
-   * 総消費カロリーを取得する
+   * 総消費カロリーを取得する（STEP_ANALYSIS FW対応待ち）
    * @param {Object} calorie {value}
    */
   gotCalorie(calorie) { }
 
   /**
-   * 総移動距離を取得する
-   * @param {Object} distance {value} 
+   * 総移動距離を取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {Object} distance {value}
    */
   gotDistance(distance) { }
 
   /**
-   * 立脚期継続時間[s]を取得する
-   * @param {*} standing_phase_duration 
+   * 立脚期継続時間[s]を取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {*} standing_phase_duration
    */
   gotStandingPhaseDuration(standing_phase_duration) { }
 
   /**
-   * 遊脚期継続時間[s]を取得する
-   * @param {*} swing_phase_duration 
+   * 遊脚期継続時間[s]を取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {*} swing_phase_duration
    */
   gotSwingPhaseDuration(swing_phase_duration) { }
   /**
-   * ストライド[m]の取得
+   * ストライド[m]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} stride {x,y,z}
    */
   gotStride(stride) { }
   /**
-   * 着地角度[degree]の取得
+   * 着地角度[degree]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} foot_angle {value}
    */
   gotFootAngle(foot_angle) { }
 
   /**
-   * プロネーション[degree]の取得
+   * プロネーション[degree]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} pronation {x,y,z}
    */
   gotPronation(pronation) { }
   /**
-   * 着地衝撃力[kgf/weight]の取得
+   * 着地衝撃力[kgf/weight]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} landing_impact {value}
    */
   gotLandingImpact(landing_impact) { }
   /**
-   * 現在までの歩数を取得する
+   * 現在までの歩数を取得する（STEP_ANALYSIS FW対応待ち）
    * @param {Object} steps_number {value}
    */
   gotStepsNumber(steps_number) { }
 
   /**
-   * 以前来たデータとのシリアルナンバーの差が1でない場合に呼び出される。SENSOR_VALUESのcharacteristicを利用し、かつ、200Hzのデータ取得のモデル（CR-3）のみで利用可能。50Hzの加速度センサーのデータ取得モデル（CR-2）では利用できない。
+   * 以前来たデータとのシリアルナンバーの差が1でない場合に呼び出される。SENSOR_VALUESのcharacteristicを利用したリアルタイムデータ取得時に利用可能。
    * @param {number} serial_number - 現在のシリアルナンバー
    * @param {number} serial_number_prev - 一つ前に受診したデータのシリアルナンバー
    */
@@ -1419,6 +1638,22 @@ class Orphe {
   onDisconnect() { console.log("onDisconnect"); }
 
   /**
+   * 自動再接続の試行開始時に呼び出される
+   * @param {Object} info {attempt, maxAttempts, intervalMs}
+   */
+  onReconnectAttempt(info) { }
+  /**
+   * 自動再接続成功時に呼び出される
+   * @param {Object} info {attempt, maxAttempts, elapsedMs, result}
+   */
+  onReconnectSuccess(info) { }
+  /**
+   * 自動再接続が最大試行回数に達して失敗したときに呼び出される
+   * @param {Object} info {maxAttempts, elapsedMs, error}
+   */
+  onReconnectFailed(info) { }
+
+  /**
    * アドバタイズメントデータを受信した時に呼び出される
    * @param {BluetoothAdvertisingEvent} event - アドバタイズメントイベント
    */
@@ -1426,7 +1661,7 @@ class Orphe {
 
   /**
    * notification frequencyの実測値を取得する
-   * @param {float} frequency 
+   * @param {float} frequency
    */
   gotBLEFrequency(frequency) { }
   onClear() { console.log("onClear"); }
@@ -1437,19 +1672,37 @@ class Orphe {
   //--------------------------------------------------
 }
 
-var OrpheInsole = Orphe;
-if (typeof globalThis !== 'undefined' && typeof globalThis.Orphe === 'undefined') {
-  globalThis.Orphe = Orphe;
+// ── グローバル公開とエイリアス ─────────────────────────────────
+// 推奨クラス名は OrpheInsole。
+// 後方互換のため、同一ページに ORPHE-CORE.js が読み込まれていない場合に限り
+// `Orphe` というエイリアスも公開する（CORE と同時読み込み時は CORE 側の
+// `Orphe` が優先され、INSOLE は OrpheInsole で利用する）。
+if (typeof global.OrpheInsole === 'undefined') {
+  global.OrpheInsole = OrpheInsole;
 }
-if (typeof globalThis !== 'undefined' && typeof globalThis.OrpheInsole === 'undefined') {
-  globalThis.OrpheInsole = OrpheInsole;
+let hasLexicalOrphe = false;
+try {
+  // CORE.js が先に読み込まれている場合、class Orphe のレキシカル束縛が見える
+  hasLexicalOrphe = (typeof Orphe !== 'undefined');
+} catch (_) {
+  hasLexicalOrphe = true;
 }
+if (!hasLexicalOrphe && typeof global.Orphe === 'undefined') {
+  global.Orphe = OrpheInsole;
+}
+// 補助クラス/関数も衝突しない形で公開（既存コードの直接利用との互換のため）
+if (typeof global.FixedSizeArray === 'undefined') global.FixedSizeArray = FixedSizeArray;
+if (typeof global.OrpheTimestamp === 'undefined') global.OrpheTimestamp = OrpheTimestamp;
+if (typeof global.parseInsoleSensorValues === 'undefined') global.parseInsoleSensorValues = parseInsoleSensorValues;
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    Orphe,
+    Orphe: OrpheInsole,
     OrpheInsole,
     FixedSizeArray,
     OrpheTimestamp,
     parseInsoleSensorValues
   };
 }
+
+})(typeof globalThis !== 'undefined' ? globalThis : this);
