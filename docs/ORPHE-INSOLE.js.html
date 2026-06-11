@@ -1,20 +1,31 @@
 <!DOCTYPE html><html lang="en" style="font-size:16px"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source: ORPHE-INSOLE.js</title><!--[if lt IE 9]>
       <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
-    <![endif]--><script src="scripts/third-party/hljs.js" defer="defer"></script><script src="scripts/third-party/hljs-line-num.js" defer="defer"></script><script src="scripts/third-party/popper.js" defer="defer"></script><script src="scripts/third-party/tippy.js" defer="defer"></script><script src="scripts/third-party/tocbot.min.js"></script><script>var baseURL="/",locationPathname="";baseURL=(locationPathname=document.location.pathname).substr(0,locationPathname.lastIndexOf("/")+1)</script><link rel="stylesheet" href="styles/clean-jsdoc-theme.min.css"><svg aria-hidden="true" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none"><defs><symbol id="copy-icon" viewbox="0 0 488.3 488.3"><g><path d="M314.25,85.4h-227c-21.3,0-38.6,17.3-38.6,38.6v325.7c0,21.3,17.3,38.6,38.6,38.6h227c21.3,0,38.6-17.3,38.6-38.6V124    C352.75,102.7,335.45,85.4,314.25,85.4z M325.75,449.6c0,6.4-5.2,11.6-11.6,11.6h-227c-6.4,0-11.6-5.2-11.6-11.6V124    c0-6.4,5.2-11.6,11.6-11.6h227c6.4,0,11.6,5.2,11.6,11.6V449.6z"/><path d="M401.05,0h-227c-21.3,0-38.6,17.3-38.6,38.6c0,7.5,6,13.5,13.5,13.5s13.5-6,13.5-13.5c0-6.4,5.2-11.6,11.6-11.6h227    c6.4,0,11.6,5.2,11.6,11.6v325.7c0,6.4-5.2,11.6-11.6,11.6c-7.5,0-13.5,6-13.5,13.5s6,13.5,13.5,13.5c21.3,0,38.6-17.3,38.6-38.6    V38.6C439.65,17.3,422.35,0,401.05,0z"/></g></symbol><symbol id="search-icon" viewBox="0 0 512 512"><g><g><path d="M225.474,0C101.151,0,0,101.151,0,225.474c0,124.33,101.151,225.474,225.474,225.474    c124.33,0,225.474-101.144,225.474-225.474C450.948,101.151,349.804,0,225.474,0z M225.474,409.323    c-101.373,0-183.848-82.475-183.848-183.848S124.101,41.626,225.474,41.626s183.848,82.475,183.848,183.848    S326.847,409.323,225.474,409.323z"/></g></g><g><g><path d="M505.902,476.472L386.574,357.144c-8.131-8.131-21.299-8.131-29.43,0c-8.131,8.124-8.131,21.306,0,29.43l119.328,119.328    c4.065,4.065,9.387,6.098,14.715,6.098c5.321,0,10.649-2.033,14.715-6.098C514.033,497.778,514.033,484.596,505.902,476.472z"/></g></g></symbol><symbol id="font-size-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11.246 15H4.754l-2 5H.6L7 4h2l6.4 16h-2.154l-2-5zm-.8-2L8 6.885 5.554 13h4.892zM21 12.535V12h2v8h-2v-.535a4 4 0 1 1 0-6.93zM19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol><symbol id="add-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></symbol><symbol id="minus-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M5 11h14v2H5z"/></symbol><symbol id="dark-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></symbol><symbol id="light-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></symbol><symbol id="reset-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M18.537 19.567A9.961 9.961 0 0 1 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10c0 2.136-.67 4.116-1.81 5.74L17 12h3a8 8 0 1 0-2.46 5.772l.997 1.795z"/></symbol><symbol id="down-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.7803 6.21967C13.0732 6.51256 13.0732 6.98744 12.7803 7.28033L8.53033 11.5303C8.23744 11.8232 7.76256 11.8232 7.46967 11.5303L3.21967 7.28033C2.92678 6.98744 2.92678 6.51256 3.21967 6.21967C3.51256 5.92678 3.98744 5.92678 4.28033 6.21967L8 9.93934L11.7197 6.21967C12.0126 5.92678 12.4874 5.92678 12.7803 6.21967Z"></path></symbol><symbol id="codepen-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M16.5 13.202L13 15.535v3.596L19.197 15 16.5 13.202zM14.697 12L12 10.202 9.303 12 12 13.798 14.697 12zM20 10.869L18.303 12 20 13.131V10.87zM19.197 9L13 4.869v3.596l3.5 2.333L19.197 9zM7.5 10.798L11 8.465V4.869L4.803 9 7.5 10.798zM4.803 15L11 19.131v-3.596l-3.5-2.333L4.803 15zM4 13.131L5.697 12 4 10.869v2.262zM2 9a1 1 0 0 1 .445-.832l9-6a1 1 0 0 1 1.11 0l9 6A1 1 0 0 1 22 9v6a1 1 0 0 1-.445.832l-9 6a1 1 0 0 1-1.11 0l-9-6A1 1 0 0 1 2 15V9z"/></symbol><symbol id="close-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 10.586l4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/></symbol></defs></svg></head><body data-theme="dark"><div class="sidebar-container"><div class="sidebar" id="sidebar"><div class="sidebar-items-container"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-Orphe.html">Orphe</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-Orphe-FixedSizeArray.html">FixedSizeArray</a></div><div class="sidebar-section-children"><a href="module-Orphe-Orphe.html">Orphe</a></div><div class="sidebar-section-children"><a href="module-Orphe-OrpheTimestamp.html">OrpheTimestamp</a></div></div></div></div></div><div class="navbar-container" id="VuAckcnZhf"><nav class="navbar"><div class="navbar-left-items"></div><div class="navbar-right-items"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div><nav></nav></nav></div><div class="toc-container"><div class="toc-content"><span class="bold">On this page</span><div id="eed4d2a0bfd64539bb9df78095dec881"></div></div></div><div class="body-wrapper"><div class="main-content"><div class="main-wrapper"><section id="source-page" class="source-page"><header><h1 id="title" class="has-anchor">ORPHE-INSOLE.js</h1></header><article><pre class="prettyprint source lang-js"><code>var orphe_js_version_date = `
-Last modified: 2025/08/26 00:40:25
+    <![endif]--><script src="scripts/third-party/hljs.js" defer="defer"></script><script src="scripts/third-party/hljs-line-num.js" defer="defer"></script><script src="scripts/third-party/popper.js" defer="defer"></script><script src="scripts/third-party/tippy.js" defer="defer"></script><script src="scripts/third-party/tocbot.min.js"></script><script>var baseURL="/",locationPathname="";baseURL=(locationPathname=document.location.pathname).substr(0,locationPathname.lastIndexOf("/")+1)</script><link rel="stylesheet" href="styles/clean-jsdoc-theme.min.css"><svg aria-hidden="true" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none"><defs><symbol id="copy-icon" viewbox="0 0 488.3 488.3"><g><path d="M314.25,85.4h-227c-21.3,0-38.6,17.3-38.6,38.6v325.7c0,21.3,17.3,38.6,38.6,38.6h227c21.3,0,38.6-17.3,38.6-38.6V124    C352.75,102.7,335.45,85.4,314.25,85.4z M325.75,449.6c0,6.4-5.2,11.6-11.6,11.6h-227c-6.4,0-11.6-5.2-11.6-11.6V124    c0-6.4,5.2-11.6,11.6-11.6h227c6.4,0,11.6,5.2,11.6,11.6V449.6z"/><path d="M401.05,0h-227c-21.3,0-38.6,17.3-38.6,38.6c0,7.5,6,13.5,13.5,13.5s13.5-6,13.5-13.5c0-6.4,5.2-11.6,11.6-11.6h227    c6.4,0,11.6,5.2,11.6,11.6v325.7c0,6.4-5.2,11.6-11.6,11.6c-7.5,0-13.5,6-13.5,13.5s6,13.5,13.5,13.5c21.3,0,38.6-17.3,38.6-38.6    V38.6C439.65,17.3,422.35,0,401.05,0z"/></g></symbol><symbol id="search-icon" viewBox="0 0 512 512"><g><g><path d="M225.474,0C101.151,0,0,101.151,0,225.474c0,124.33,101.151,225.474,225.474,225.474    c124.33,0,225.474-101.144,225.474-225.474C450.948,101.151,349.804,0,225.474,0z M225.474,409.323    c-101.373,0-183.848-82.475-183.848-183.848S124.101,41.626,225.474,41.626s183.848,82.475,183.848,183.848    S326.847,409.323,225.474,409.323z"/></g></g><g><g><path d="M505.902,476.472L386.574,357.144c-8.131-8.131-21.299-8.131-29.43,0c-8.131,8.124-8.131,21.306,0,29.43l119.328,119.328    c4.065,4.065,9.387,6.098,14.715,6.098c5.321,0,10.649-2.033,14.715-6.098C514.033,497.778,514.033,484.596,505.902,476.472z"/></g></g></symbol><symbol id="font-size-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11.246 15H4.754l-2 5H.6L7 4h2l6.4 16h-2.154l-2-5zm-.8-2L8 6.885 5.554 13h4.892zM21 12.535V12h2v8h-2v-.535a4 4 0 1 1 0-6.93zM19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol><symbol id="add-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></symbol><symbol id="minus-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M5 11h14v2H5z"/></symbol><symbol id="dark-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></symbol><symbol id="light-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></symbol><symbol id="reset-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M18.537 19.567A9.961 9.961 0 0 1 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10c0 2.136-.67 4.116-1.81 5.74L17 12h3a8 8 0 1 0-2.46 5.772l.997 1.795z"/></symbol><symbol id="down-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.7803 6.21967C13.0732 6.51256 13.0732 6.98744 12.7803 7.28033L8.53033 11.5303C8.23744 11.8232 7.76256 11.8232 7.46967 11.5303L3.21967 7.28033C2.92678 6.98744 2.92678 6.51256 3.21967 6.21967C3.51256 5.92678 3.98744 5.92678 4.28033 6.21967L8 9.93934L11.7197 6.21967C12.0126 5.92678 12.4874 5.92678 12.7803 6.21967Z"></path></symbol><symbol id="codepen-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M16.5 13.202L13 15.535v3.596L19.197 15 16.5 13.202zM14.697 12L12 10.202 9.303 12 12 13.798 14.697 12zM20 10.869L18.303 12 20 13.131V10.87zM19.197 9L13 4.869v3.596l3.5 2.333L19.197 9zM7.5 10.798L11 8.465V4.869L4.803 9 7.5 10.798zM4.803 15L11 19.131v-3.596l-3.5-2.333L4.803 15zM4 13.131L5.697 12 4 10.869v2.262zM2 9a1 1 0 0 1 .445-.832l9-6a1 1 0 0 1 1.11 0l9 6A1 1 0 0 1 22 9v6a1 1 0 0 1-.445.832l-9 6a1 1 0 0 1-1.11 0l-9-6A1 1 0 0 1 2 15V9z"/></symbol><symbol id="close-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 10.586l4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/></symbol></defs></svg></head><body data-theme="dark"><div class="sidebar-container"><div class="sidebar" id="sidebar"><div class="sidebar-items-container"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-OrpheInsole.html">OrpheInsole</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-OrpheInsole-FixedSizeArray.html">FixedSizeArray</a></div><div class="sidebar-section-children"><a href="module-OrpheInsole-OrpheInsole.html">OrpheInsole</a></div><div class="sidebar-section-children"><a href="module-OrpheInsole-OrpheTimestamp.html">OrpheTimestamp</a></div></div></div></div></div><div class="navbar-container" id="VuAckcnZhf"><nav class="navbar"><div class="navbar-left-items"></div><div class="navbar-right-items"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div><nav></nav></nav></div><div class="toc-container"><div class="toc-content"><span class="bold">On this page</span><div id="eed4d2a0bfd64539bb9df78095dec881"></div></div></div><div class="body-wrapper"><div class="main-content"><div class="main-wrapper"><section id="source-page" class="source-page"><header><h1 id="title" class="has-anchor">ORPHE-INSOLE.js</h1></header><article><pre class="prettyprint source lang-js"><code>var orphe_js_version_date = `
+Last modified: 2026/06/10 00:00:00
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
 Class形式で記述を変更したバージョン
-@module Orphe
+v1.1.0 接続安定化（デバイス記憶・高速再接続・自動再接続）、クラス名を OrpheInsole に変更（Orphe はエイリアスとして維持）
+v0.9.0 ベータ版
+@module OrpheInsole
 @author Tetsuaki BABA
-@version 0.9.0
+@version 1.1.0
 
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
 
 // 外部スクリプトを読み込む関数
 function loadScript(src) {
+  if (typeof document === 'undefined') return;
+  const fileName = src.split('/').pop();
+  if (fileName) {
+    const already = Array.from(document.scripts).some(s => {
+      if (!s.src) return false;
+      return s.src === src || s.src.endsWith('/' + fileName);
+    });
+    if (already) return;
+  }
   const script = document.createElement('script');
   script.src = src;
   script.type = 'text/javascript';
@@ -23,9 +34,24 @@ function loadScript(src) {
 }
 
 // 外部スクリプトの読み込み
-loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/float16.min.js');
-loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/quaternion.js');
+function _orpheInsoleAutoLoadOptionalLibs() {
+  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/float16.min.js');
+  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/quaternion.js');
+}
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _orpheInsoleAutoLoadOptionalLibs, { once: true });
+  } else {
+    _orpheInsoleAutoLoadOptionalLibs();
+  }
+}
 
+// ── ライブラリ本体 ────────────────────────────────────────────────
+// ORPHE-CORE.js と同一ページで共存できるよう、クラス宣言
+// (FixedSizeArray, OrpheTimestamp など) をトップレベルに置かず IIFE で包む。
+// トップレベルの class 宣言はグローバルなレキシカル束縛を作るため、
+// CORE と INSOLE の両方を読み込むと SyntaxError で後勝ちスクリプト全体が死ぬ。
+(function (global) {
 
 /**
  * 自動的に決められた配列サイズでunshiftしてくれるクラス
@@ -55,7 +81,7 @@ class FixedSizeArray {
 
 
 /**
- * Orpheクラス内部で利用されるタイムスタンプクラスです。BLE通信のデータ取得タイミングにおける実測周波数を取得するために利用されます。Orpheクラス内部で本当は宣言したかったのですが、jsdoc がクラス内部クラス定義に対応していないため、外部に出しています。無念。  
+ * Orpheクラス内部で利用されるタイムスタンプクラスです。BLE通信のデータ取得タイミングにおける実測周波数を取得するために利用されます。Orpheクラス内部で本当は宣言したかったのですが、jsdoc がクラス内部クラス定義に対応していないため、外部に出しています。無念。
  * @class
  */
 class OrpheTimestamp {
@@ -87,20 +113,185 @@ class OrpheTimestamp {
   }
 }
 
+function _orpheInsoleTimestampToday(hours, minutes, seconds, milliseconds) {
+  const now = new Date();
+  now.setHours(hours);
+  now.setMinutes(minutes);
+  now.setSeconds(seconds);
+  now.setMilliseconds(milliseconds);
+  return now.getTime();
+}
+
 /**
- * ORPHE CORE Module Javascript class
+ * ORPHE INSOLE SENSOR_VALUES packet parser.
+ * @param {DataView} data
+ * @param {object} options
+ * @param {number} [options.gyroRange=2000]
+ * @param {number} [options.accRange=16]
+ * @returns {object|null}
+ */
+function parseInsoleSensorValues(data, options = {}) {
+  if (!data || typeof data.getUint8 !== 'function') {
+    throw new TypeError('parseInsoleSensorValues expects a DataView');
+  }
+  if (data.byteLength !== 104) return null;
+
+  const header = data.getUint8(0);
+  const serial_number = data.getUint16(1);
+  const gyroRange = Number.isFinite(Number(options.gyroRange)) ? Number(options.gyroRange) : 2000;
+  const accRange = Number.isFinite(Number(options.accRange)) ? Number(options.accRange) : 16;
+  const t_start = _orpheInsoleTimestampToday(
+    data.getUint8(3),
+    data.getUint8(4),
+    data.getUint8(5),
+    data.getUint16(6)
+  );
+  const samples = [];
+
+  function vector3(x, y, z, timestamp, packet_number) {
+    return {
+      x: data.getInt16(x) / 32768,
+      y: data.getInt16(y) / 32768,
+      z: data.getInt16(z) / 32768,
+      timestamp,
+      serial_number,
+      packet_number
+    };
+  }
+
+  function quat(w, x, y, z, timestamp, packet_number) {
+    return {
+      w: data.getInt16(w) / 32768,
+      x: data.getInt16(x) / 32768,
+      y: data.getInt16(y) / 32768,
+      z: data.getInt16(z) / 32768,
+      timestamp,
+      serial_number,
+      packet_number
+    };
+  }
+
+  function withConverted(sample) {
+    if (sample.gyro) {
+      sample.converted_gyro = {
+        x: sample.gyro.x * gyroRange,
+        y: sample.gyro.y * gyroRange,
+        z: sample.gyro.z * gyroRange,
+        timestamp: sample.timestamp,
+        serial_number,
+        packet_number: sample.packet_number
+      };
+    }
+    if (sample.acc) {
+      sample.converted_acc = {
+        x: sample.acc.x * accRange,
+        y: sample.acc.y * accRange,
+        z: sample.acc.z * accRange,
+        timestamp: sample.timestamp,
+        serial_number,
+        packet_number: sample.packet_number
+      };
+    }
+    return sample;
+  }
+
+  if (header === 50) {
+    let timestamp = t_start;
+    for (let i = 3; i >= 0; i--) {
+      if (i !== 3) timestamp += data.getUint8(28 + 21 * i);
+      samples.push(withConverted({
+        timestamp,
+        serial_number,
+        packet_number: 3 - i,
+        quat: quat(8 + 21 * i, 10 + 21 * i, 12 + 21 * i, 14 + 21 * i, timestamp, 3 - i),
+        gyro: vector3(16 + 21 * i, 18 + 21 * i, 20 + 21 * i, timestamp, 3 - i),
+        acc: vector3(22 + 21 * i, 24 + 21 * i, 26 + 21 * i, timestamp, 3 - i)
+      }));
+    }
+  } else if (header === 55) {
+    const offset = 24;
+    for (let i = 3; i >= 0; i--) {
+      const timestamp = t_start;
+      const packet_number = 3 - i;
+      samples.push(withConverted({
+        timestamp,
+        serial_number,
+        packet_number,
+        gyro: vector3(8 + offset * i, 10 + offset * i, 12 + offset * i, timestamp, packet_number),
+        acc: vector3(14 + offset * i, 16 + offset * i, 18 + offset * i, timestamp, packet_number),
+        press: {
+          values: [
+            data.getUint16(20 + offset * i),
+            data.getUint16(22 + offset * i),
+            data.getUint16(24 + offset * i),
+            data.getUint16(26 + offset * i),
+            data.getUint16(28 + offset * i),
+            data.getUint16(30 + offset * i)
+          ],
+          timestamp,
+          serial_number,
+          packet_number
+        }
+      }));
+    }
+  } else if (header === 56) {
+    const offset = 32;
+    for (let i = 1; i >= 0; i--) {
+      const timestamp = t_start;
+      const packet_number = 1 - i;
+      samples.push(withConverted({
+        timestamp,
+        serial_number,
+        packet_number,
+        quat: quat(8 + offset * i, 10 + offset * i, 12 + offset * i, 14 + offset * i, timestamp, packet_number),
+        gyro: vector3(16 + offset * i, 18 + offset * i, 20 + offset * i, timestamp, packet_number),
+        acc: vector3(22 + offset * i, 24 + offset * i, 26 + offset * i, timestamp, packet_number),
+        press: {
+          values: [
+            data.getUint16(28 + offset * i),
+            data.getUint16(30 + offset * i),
+            data.getUint16(32 + offset * i),
+            data.getUint16(34 + offset * i),
+            data.getUint16(36 + offset * i),
+            data.getUint16(38 + offset * i)
+          ],
+          timestamp,
+          serial_number,
+          packet_number
+        }
+      }));
+    }
+  } else {
+    return { header, serial_number, timestamp: t_start, samples: [] };
+  }
+
+  return { header, serial_number, timestamp: t_start, samples };
+}
+
+/**
+ * ORPHE INSOLE Module Javascript class
 * @class
-* @type {Object} 
+* @type {Object}
 * @property {string} ORPHE_INFORMATION "01a9d6b5-ff6e-444a-b266-0be75e85c064" SERVICE_UUID
 * @property {string} ORPHE_DEVICE_INFORMATION "24354f22-1c46-430e-a4ab-a1eeabbcdfc0" CHARACTERISTIC_UUID
-* 
+*
 * @property {string} ORPHE_OTHER_SERVICE "db1b7aca-cda5-4453-a49b-33a53d3f0833" SERVICE_UUID
 * @property {string} ORPHE_SENSOR_VALUES "f3f9c7ce-46ee-4205-89ac-abe64e626c0f" CHARACTERISTIC_UUID
 * @property {string} ORPHE_STEP_ANALYSIS "4eb776dc-cf99-4af7-b2d3-ad0f791a79dd" CHARACTERISTIC_UUID
 */
-class Orphe {
+class OrpheInsole {
   /**
-   * 初期化関数 
+   * SENSOR_VALUES の DataView を ORPHE INSOLE のサンプル列に変換する。
+   * @param {DataView} data
+   * @param {object} options
+   * @returns {object|null}
+   */
+  static parseSensorValues(data, options = {}) {
+    return parseInsoleSensorValues(data, options);
+  }
+
+  /**
+   * 初期化関数
    * @param {number}[id=0] id コアの番号（0 or 1）を指定します。
    */
   constructor(id = 0) {
@@ -126,6 +317,33 @@ class Orphe {
     this.array_device_information = new DataView(new ArrayBuffer(20));// device information用の配列
 
     /**
+     * デバッグログ（console.info）の出力を有効にするフラグです。
+     * 接続トラブル調査時に true にしてください。
+     */
+    this.debug = false;
+
+    // ── 接続安定化まわりの内部状態 ───────────────────────────────
+    // デバイス記憶: 一度接続したデバイスを localStorage に記憶し、
+    // navigator.bluetooth.getDevices() (Chrome flag: Web Bluetooth New Permissions Backend)
+    // が使える環境では選択ダイアログなしで再接続できる。
+    this._lastBluetoothDeviceStorageKey = `orphe_insole_last_bluetooth_device_${id}`;
+    this._usingRememberedBluetoothDevice = false;
+    this._rememberedBluetoothDeviceUnavailable = false;
+    // 自動再接続
+    this._autoReconnectEnabled = false;
+    this._autoReconnectInProgress = false;
+    this._autoReconnectOptions = {};
+    this._autoReconnectDevice = null;
+    this._autoReconnectDisconnectHandler = (event) => this._handleAutoReconnectDisconnect(event);
+    this._suppressAutoReconnectErrors = false;
+    this._lastAutoReconnectError = null;
+    // gattserverdisconnected 用 遅延バインドハンドラ。
+    // this.onDisconnect を直接 addEventListener すると、リスナー登録後に
+    // ユーザが onDisconnect を上書きしても古い関数が呼ばれ続けるため、
+    // 必ずこのラッパーを登録する。
+    this._onDisconnectHandler = (event) => this.onDisconnect(event);
+
+    /**
    * デバイスインフォメーションを取得して保存しておく連想配列です。begin()を呼び出すとデバイスから値を取得して初期化されます。
    * @property {Object} device_information - デバイス情報
    * @property {number} device_information.battery - バッテリー残量（少ない:0、普通:1、多い:2）
@@ -142,14 +360,9 @@ class Orphe {
 
     /**
      * 歩容解析のデータを保存しておく連想配列です。
+     * 注意: ORPHE INSOLE のファームウェアは現状 STEP_ANALYSIS 通知に未対応のため、
+     * この値が更新されることはありません（FW対応待ち）。
      * @property {Object} gait - 歩容解析のデータ
-     * @property {number} gait.type - 歩容のタイプ（0: 通常歩行, 1: 走行, 2: ランニング）
-     * @property {number} gait.direction - 歩容の向き（0: 前進, 1: 後退, 2: 左, 3: 右）
-     * @property {number} gait.calorie - 消費カロリー
-     * @property {number} gait.distance - 移動距離
-     * @property {number} gait.steps - 歩数
-     * @property {number} gait.standing_phase_duration - 立ち上がり時間
-     * @property {number} gait.swing_phase_duration - 振り出し時間
      */
     this.gait = {
       type: 0,
@@ -161,14 +374,7 @@ class Orphe {
       swing_phase_duration: 0
     }
     /**
-     * ストライドのデータを保存しておく連想配列です。
-     * @property {Object} stride - ストライドのデータ
-     * @property {number} stride.foot_angle - 足首の角度
-     * @property {number} stride.x - X軸方向のストライド
-     * @property {number} stride.y - Y軸方向のストライド
-     * @property {number} stride.z - Z軸方向のストライド
-     * @property {number} stride.steps - 歩数
-     * 
+     * ストライドのデータを保存しておく連想配列です。（STEP_ANALYSIS FW対応待ち）
      */
     this.stride = {
       foot_angle: 0,
@@ -178,13 +384,7 @@ class Orphe {
       steps: 0,
     }
     /**
-   * プロネーションのデータを保存しておく連想配列です。
-   * @property {Object} pronation - プロネーションのデータ
-   * @property {number} pronation.landing_impact - 着地衝撃
-   * @property {number} pronation.x - X軸方向のプロネーション
-   * @property {number} pronation.y - Y軸方向のプロネーション
-   * @property {number} pronation.z - Z軸方向のプロネーション
-   * @property {number} pronation.steps - 歩数
+   * プロネーションのデータを保存しておく連想配列です。（STEP_ANALYSIS FW対応待ち）
    */
     this.pronation = {
       landing_impact: 0,
@@ -205,7 +405,7 @@ class Orphe {
      * @property {number} quat.x - x
      * @property {number} quat.y - y
      * @property {number} quat.z - z
-     * 
+     *
      */
     this.quat = {
       w: 0.0, x: 0.0, y: 0.0, z: 0.0
@@ -214,10 +414,7 @@ class Orphe {
     /**
      * 加速度値から2回積分で基準フレーム間の移動距離を求めた変数です
      * @property {Object} delta - 距離
-     * @property {number} delta.x - X軸方向の距離
-     * @property {number} delta.y - Y軸方向の距離
-     * @property {number} delta.z - Z軸方向の距離
-     *    */
+     */
     this.delta = {
       x: 0.0, y: 0.0, z: 0.0
     }
@@ -238,9 +435,6 @@ class Orphe {
     /**
      * ジャイロセンサの値を保存する連想配列です。
      * @property {Object} gyro - ジャイロセンサの値
-     * @property {number} gyro.x - X軸方向のジャイロセンサの値
-     * @property {number} gyro.y - Y軸方向のジャイロセンサの値
-     * @property {number} gyro.z - Z軸方向のジャイロセンサの値
      */
     this.gyro = {
       x: 0.0, y: 0.0, z: 0.0
@@ -249,20 +443,22 @@ class Orphe {
     /**
      * 加速度センサの値を保存する連想配列です。
      * @property {Object} acc - 加速度センサの値
-     * @property {number} acc.x - X軸方向の加速度センサの値
-     * @property {number} acc.y - Y軸方向の加速度センサの値
-     * @property {number} acc.z - Z軸方向の加速度センサの値
      */
     this.acc = {
       x: 0.0, y: 0.0, z: 0.0
     }
 
     /**
+     * 圧力センサ（6ch）の最新値を保存する連想配列です。
+     * @property {Object} press - 圧力センサの値
+     * @property {number[]} press.values - 6チャネル分のADC生値
+     */
+    this.press = {
+      values: [0, 0, 0, 0, 0, 0]
+    }
+
+    /**
      * ジャイロレンジに合わせて変換したジャイロセンサの値を保存する連想配列です。
-     * @property {Object} converted_gyro - ジャイロセンサの値
-     * @property {number} converted_gyro.x - X軸方向のジャイロセンサの値
-     * @property {number} converted_gyro.y - Y軸方向のジャイロセンサの値
-     * @property {number} converted_gyro.z - Z軸方向のジャイロセンサの値
      */
     this.converted_gyro = {
       x: 0.0, y: 0.0, z: 0.0
@@ -270,10 +466,6 @@ class Orphe {
 
     /**
      * 加速度レンジに合わせて変換した加速度センサの値を保存する連想配列です。
-     * @property {Object} converted_acc - 加速度センサの値
-     * @property {number} converted_acc.x - X軸方向の加速度センサの値
-     * @property {number} converted_acc.y - Y軸方向の加速度センサの値
-     * @property {number} converted_acc.z - Z軸方向の加速度センサの値
      */
     this.converted_acc = {
       x: 0.0, y: 0.0, z: 0.0
@@ -281,10 +473,6 @@ class Orphe {
 
     /**
      * データ欠損時に線形補完をするかどうかのオプション設定（beginのオプションで設定可能）。この設定は200Hz sensor_valuesのacc, gyro, quatのみに適用されます。
-     * 
-     * @property {Object} interpolation - 線形補間の設定
-     * @property {boolean} interpolation.enabled - 線形補間の有効化/無効化　true: 有効, false: 無効
-     * @property {number} interpolation.max_consecutive_missing - 線形補間する最大の連続欠損数
      */
     this.interpolation = {
       enabled: false,
@@ -310,19 +498,23 @@ class Orphe {
 
   }
 
+  _log(...args) {
+    if (this.debug) console.info('[ORPHE-INSOLE]', ...args);
+  }
+
   /**
   * gotData()がユーザ側でオーバーライドされているかどうかを返す関数です。これを見て，デバッグモード（ORPHE TERMINAL）を有効にするかどうかを判断します。オーバーライドするとgotData()以外の関数はコールバックされません．
-  * 
+  *
  */
   isGotDataOverridden() {
     return this.gotData !== this.defaultGotData;
   }
   /**
    * UUIDを設定する関数です。UUIDはsetup()で利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS）の指定に利用されます。
-   * @param {string} name 
-   * @param {string} serviceUUID 
-   * @param {string} characteristicUUID 
-   * 
+   * @param {string} name
+   * @param {string} serviceUUID
+   * @param {string} characteristicUUID
+   *
    */
   setUUID(name, serviceUUID, characteristicUUID) {
     this.hashUUID[name] = { 'serviceUUID': serviceUUID, 'characteristicUUID': characteristicUUID };
@@ -363,43 +555,67 @@ class Orphe {
   }
 
   /**
-   *  begin BLE connection 
-   * SENSOR_VALUESまたはSTEP_ANALYSISのセンサー値の取得を開始します。
+   *  begin BLE connection
+   * SENSOR_VALUESのセンサー値の取得を開始します。
    * @param {string} [notification_type="SENSOR_VALUES"] SENSOR_VALUES
+   * @param {object} [options]
+   * @param {number} [options.streamingMode=4] データストリーミングモード（1, 3, 4）
+   * @param {boolean} [options.autoReconnect=false] 切断時の自動再接続を有効化
+   * @param {number} [options.reconnectIntervalMs=3000] 再接続試行の間隔
+   * @param {number} [options.reconnectMaxAttempts=120] 再接続の最大試行回数
    * @async
-   * @return {Promise&lt;string>} 
-   * 
+   * @return {Promise&lt;string>}
+   *
    */
-  async begin(str_type = 'SENSOR_VALUES') {
+  async begin(str_type = 'SENSOR_VALUES', options = {}) {
+    if (typeof str_type === 'object' &amp;&amp; str_type !== null) {
+      options = str_type;
+      str_type = 'SENSOR_VALUES';
+    }
+    if (str_type == 'RAW') {
+      str_type = 'SENSOR_VALUES';
+      console.warn("RAW is deprecated. Please use SENSOR_VALUES instead.");
+    }
+    if (str_type != 'SENSOR_VALUES') {
+      console.warn(`${str_type} is not supported on ORPHE INSOLE. SENSOR_VALUES will be used instead.`);
+      str_type = 'SENSOR_VALUES';
+    }
+    const streamingMode = options.streamingMode ?? options.dataStreamingMode ?? 4;
+    const autoReconnect = options.autoReconnect ?? false;
 
     this.notification_type = str_type;
+    if (autoReconnect) {
+      this._enableAutoReconnect(str_type, options);
+    } else if (!this._autoReconnectInProgress) {
+      this._disableAutoReconnect();
+    }
 
-    await this.getDeviceInformation();
+    try {
+      await this.getDeviceInformation();
 
-    // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
-    /*
-    0x01 : リアルタイム(クォータニオン、ジャイロ、加速度)
-    0x02 : ところてん
-    0x03 : リアルタイム(ジャイロ、加速度、圧力 200Hz相当)※インソールのみ対応
-    0x04 : リアルタイム(ジャイロ、加速度、圧力、クォータニオン 100Hz相当)※インソールのみ対応
-    */
-    await this.setDataStreamingMode(4);
+      // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
+      /*
+      0x01 : リアルタイム(クォータニオン、ジャイロ、加速度)
+      0x03 : リアルタイム(ジャイロ、加速度、圧力 200Hz相当)※インソールのみ対応
+      0x04 : リアルタイム(ジャイロ、加速度、圧力、クォータニオン 100Hz相当)※インソールのみ対応
+      */
+      await this.setDataStreamingMode(streamingMode);
 
-    // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
-    await this.syncCoreTime();
+      // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
+      await this.syncCoreTime();
 
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        this.startNotify('SENSOR_VALUES')
-          .then(() => {
-            resolve("done begin(); SENSOR VALUES");
-          })
-          .catch(error => {
-            this.onError(error);
-            reject(error);
-          });
-      }, 0);
-    });
+      await this.startNotify('SENSOR_VALUES');
+
+      // 接続成功: デバイスを記憶し、自動再接続用の切断検知を仕込む
+      if (this.bluetoothDevice) {
+        this._rememberBluetoothDevice(this.bluetoothDevice);
+        this._attachAutoReconnectDisconnectHandler(this.bluetoothDevice);
+      }
+      return "done begin(); SENSOR VALUES";
+    } catch (error) {
+      this._reportError(error);
+      throw error;
+    }
   }
 
   /**
@@ -410,6 +626,205 @@ class Orphe {
   }
 
 
+  // ── エラーレポート ───────────────────────────────────────────
+  // 自動再接続の試行中は onError を逐一発火させず、最後のエラーとして保持する
+  _reportError(error) {
+    if (this._suppressAutoReconnectErrors) {
+      this._lastAutoReconnectError = error;
+      return;
+    }
+    this.onError(error);
+  }
+
+  // ── 自動再接続 ──────────────────────────────────────────────
+  _enableAutoReconnect(str_type, options = {}) {
+    this._autoReconnectEnabled = true;
+    this._autoReconnectOptions = Object.assign({}, options, { autoReconnect: true });
+  }
+
+  _disableAutoReconnect() {
+    this._autoReconnectEnabled = false;
+    this._autoReconnectInProgress = false;
+    this._suppressAutoReconnectErrors = false;
+  }
+
+  _autoReconnectIntervalMs() {
+    const interval = Number(this._autoReconnectOptions.reconnectIntervalMs);
+    return Number.isFinite(interval) &amp;&amp; interval >= 0 ? interval : 3000;
+  }
+
+  _autoReconnectMaxAttempts() {
+    const attempts = Number(this._autoReconnectOptions.reconnectMaxAttempts);
+    return Number.isFinite(attempts) &amp;&amp; attempts > 0 ? attempts : 120;
+  }
+
+  _autoReconnectWait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  _attachAutoReconnectDisconnectHandler(device) {
+    if (!device?.addEventListener) return;
+    if (this._autoReconnectDevice === device) return;
+    if (this._autoReconnectDevice?.removeEventListener) {
+      try {
+        this._autoReconnectDevice.removeEventListener('gattserverdisconnected', this._autoReconnectDisconnectHandler);
+      } catch (_) { }
+    }
+    this._autoReconnectDevice = device;
+    device.addEventListener('gattserverdisconnected', this._autoReconnectDisconnectHandler);
+  }
+
+  async _restoreAutoReconnectDevice() {
+    if (this.bluetoothDevice) return true;
+    const rememberedDevice = await this._requestRememberedBluetoothDevice();
+    if (!rememberedDevice) return false;
+    this.bluetoothDevice = rememberedDevice;
+    this._usingRememberedBluetoothDevice = true;
+    this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
+    this._attachAutoReconnectDisconnectHandler(this.bluetoothDevice);
+    this.onScan(this.bluetoothDevice.name);
+    return true;
+  }
+
+  _handleAutoReconnectDisconnect() {
+    if (!this._autoReconnectEnabled || this._autoReconnectInProgress) return;
+    this._startAutoReconnect();
+  }
+
+  async _startAutoReconnect() {
+    if (!this._autoReconnectEnabled || this._autoReconnectInProgress) return;
+
+    this._autoReconnectInProgress = true;
+    const startedAt = Date.now();
+    const maxAttempts = this._autoReconnectMaxAttempts();
+    const intervalMs = this._autoReconnectIntervalMs();
+    let lastError = null;
+
+    for (let attempt = 1; this._autoReconnectEnabled &amp;&amp; attempt &lt;= maxAttempts; attempt++) {
+      this.onReconnectAttempt({ attempt, maxAttempts, intervalMs });
+
+      try {
+        const hasDevice = await this._restoreAutoReconnectDevice();
+        if (!hasDevice) throw new Error('Last connected Bluetooth device not found. Please reconnect manually.');
+
+        this._lastAutoReconnectError = null;
+        this._suppressAutoReconnectErrors = true;
+        const result = await this.begin(this.notification_type, this._autoReconnectOptions);
+        this._suppressAutoReconnectErrors = false;
+
+        if (result) {
+          this._autoReconnectInProgress = false;
+          this.onReconnectSuccess({
+            attempt,
+            maxAttempts,
+            elapsedMs: Date.now() - startedAt,
+            result,
+          });
+          return;
+        }
+
+        lastError = this._lastAutoReconnectError || new Error('Auto reconnect attempt failed.');
+      } catch (error) {
+        this._suppressAutoReconnectErrors = false;
+        lastError = error;
+      }
+
+      if (!this._autoReconnectEnabled || attempt >= maxAttempts) break;
+      await this._autoReconnectWait(intervalMs);
+    }
+
+    this._autoReconnectInProgress = false;
+    const error = lastError || new Error('Auto reconnect failed.');
+    this.onReconnectFailed({ maxAttempts, elapsedMs: Date.now() - startedAt, error });
+    this._reportError(error);
+  }
+
+  // ── デバイス記憶（選択ダイアログなしの再接続） ─────────────────
+  /**
+   * 前回デバイスの記憶を使わず、必ずブラウザのBLE選択ダイアログを表示する。
+   * 接続済みINSOLEから別INSOLEへ手動で切り替える場合に利用する。
+   * @param {string} uuid
+   */
+  selectBluetoothDevice(uuid = 'DEVICE_INFORMATION') {
+    this._disableAutoReconnect();
+    this.forgetLastBluetoothDevice();
+    if (this.bluetoothDevice?.gatt?.connected) {
+      try { this.bluetoothDevice.gatt.disconnect(); } catch (_) { }
+    }
+    this.bluetoothDevice = null;
+    this.dataCharacteristic = null;
+    this._usingRememberedBluetoothDevice = false;
+    this._rememberedBluetoothDeviceUnavailable = false;
+    return this.requestDevice(uuid);
+  }
+
+  /**
+   * 最後に接続成功した Bluetooth デバイス情報を忘れる。
+   * 次回 begin() 時に手動選択ダイアログから別デバイスへ切り替えたい場合に利用する。
+   */
+  forgetLastBluetoothDevice() {
+    this._rememberedBluetoothDeviceUnavailable = false;
+    try { localStorage.removeItem(this._lastBluetoothDeviceStorageKey); } catch (_) { }
+  }
+
+  _rememberBluetoothDevice(device) {
+    if (!device) return;
+    this._rememberedBluetoothDeviceUnavailable = false;
+    try {
+      localStorage.setItem(this._lastBluetoothDeviceStorageKey, JSON.stringify({
+        deviceId: this.id,
+        bluetoothId: device.id || '',
+        bluetoothName: device.name || '',
+        lastConnectedAt: Date.now(),
+      }));
+    } catch (_) { }
+  }
+
+  _getLastBluetoothDeviceInfo() {
+    try {
+      const raw = localStorage.getItem(this._lastBluetoothDeviceStorageKey);
+      if (!raw) return null;
+      const info = JSON.parse(raw);
+      if (!info || (!info.bluetoothId &amp;&amp; !info.bluetoothName)) return null;
+      return info;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _findLastBluetoothDevice(devices) {
+    const info = this._getLastBluetoothDeviceInfo();
+    return this._findBluetoothDevice(devices, info);
+  }
+
+  _findBluetoothDevice(devices, info) {
+    if (!info || !Array.isArray(devices)) return null;
+    const bluetoothId = info.bluetoothId || info.id || '';
+    const bluetoothName = info.bluetoothName || info.name || '';
+
+    if (bluetoothId) {
+      const matchedById = devices.find(device => device.id === bluetoothId);
+      if (matchedById) return matchedById;
+    }
+
+    if (bluetoothName) {
+      const matchedByName = devices.filter(device => device.name === bluetoothName);
+      if (matchedByName.length === 1) return matchedByName[0];
+    }
+
+    return null;
+  }
+
+  async _requestRememberedBluetoothDevice() {
+    if (!navigator.bluetooth?.getDevices) return null;
+    try {
+      const devices = await navigator.bluetooth.getDevices();
+      return this._findLastBluetoothDevice(devices);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /**
    * Reset Analysis logs in the core module.
    */
@@ -418,39 +833,77 @@ class Orphe {
     this.write('DEVICE_INFORMATION', data);
   }
   scan(uuid, options = {}) {
-    return (this.bluetoothDevice ? Promise.resolve() : this.requestDevice(uuid))
+    this._log('scan()', {
+      uuid,
+      hasBluetoothDevice: !!this.bluetoothDevice,
+      hasNavigatorBluetooth: typeof navigator !== 'undefined' &amp;&amp; !!navigator.bluetooth,
+      options
+    });
+    if (this.bluetoothDevice) return Promise.resolve();
+
+    const useRememberedDevice = !options.forceDeviceSelection &amp;&amp;
+      !this._rememberedBluetoothDeviceUnavailable &amp;&amp;
+      this._getLastBluetoothDeviceInfo();
+    return (useRememberedDevice ? this._requestRememberedBluetoothDevice() : Promise.resolve(null))
+      .then(device => {
+        if (!device) return this.requestDevice(uuid);
+        this.bluetoothDevice = device;
+        this._usingRememberedBluetoothDevice = true;
+        this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
+        this.onScan(this.bluetoothDevice.name);
+      })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
+        throw error;
       });
   }
   /**
    * Execute requestDevice()
-   * @param {string} uuid 
-   * 
+   * @param {string} uuid
+   *
    */
-  async requestDevice(uuid) {
+  requestDevice(uuid) {
     let options = {
+      /*
+      ORPHE insole module name: INS
+      一部のINSOLE firmwareはadvertisementにservice UUIDを載せないため、
+      chooserではINSのnamePrefixで候補を絞り、optionalServicesで接続後に必要なserviceへアクセスします。
+      */
       filters: [
-        {
-          services: ['01a9d6b5-ff6e-444a-b266-0be75e85c064', 'db1b7aca-cda5-4453-a49b-33a53d3f0833']
-        },
-        { namePrefix: ['INS'] }
+        { namePrefix: 'INS' }
       ],
-      optionalServices: [this.hashUUID[uuid].serviceUUID],
+      acceptAllDevices: false,
+      optionalServices: [
+        this.ORPHE_INFORMATION,
+        this.ORPHE_OTHER_SERVICE
+      ],
       optionalManufacturerData: [
         0x0000
       ]
     };
 
-    try {
-      const device = await navigator.bluetooth.requestDevice(options);
-      this.bluetoothDevice = device;
-      this.bluetoothDevice.addEventListener('gattserverdisconnected', this.onDisconnect);
+    this._log('requestDevice() before navigator.bluetooth.requestDevice', {
+      uuid,
+      options,
+      hasNavigatorBluetooth: typeof navigator !== 'undefined' &amp;&amp; !!navigator.bluetooth,
+      isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : undefined,
+      href: typeof window !== 'undefined' ? window.location.href : undefined
+    });
+    return navigator.bluetooth.requestDevice(options)
+      .then(device => {
+        this.bluetoothDevice = device;
+        this._usingRememberedBluetoothDevice = false;
+        this._rememberedBluetoothDeviceUnavailable = false;
+        this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
+        this._log('requestDevice() selected device', {
+          uuid,
+          deviceName: this.bluetoothDevice.name,
+          deviceId: this.bluetoothDevice.id
+        });
+        this.onScan(this.bluetoothDevice.name);
 
-      // await this.autoStartWatchingAdvertisements();
-    } catch (error) {
-      console.warn('Failed requestDevice:', error);
-    }
+        // await this.autoStartWatchingAdvertisements();
+      });
   }
 
   /**
@@ -509,16 +962,14 @@ class Orphe {
 
   /**
    * アドバタイズメントデータ受信時のコールバック
-   * @param {BluetoothAdvertisingEvent} event 
+   * @param {BluetoothAdvertisingEvent} event
    */
   onAdvertisementReceived(event) {
-    console.log('=== Advertisement Received ===');
-    console.log('Device Name:', event.device.name);
-    console.log('RSSI:', event.rssi, 'dBm');
-    console.log('TX Power:', event.txPower);
-    console.log('==============================');
-    console.log(event);
-
+    this._log('Advertisement Received', {
+      name: event.device.name,
+      rssi: event.rssi,
+      txPower: event.txPower
+    });
 
     const dv = event.manufacturerData.get(0x0000);
 
@@ -540,31 +991,6 @@ class Orphe {
   }
 
   /**
-   * Notificationに接続する処理を実行
-   */
-  async connectToNotifications() {
-    try {
-      console.log('Connecting to notifications...');
-
-      // SENSOR_VALUESのnotificationを開始
-      await this.startNotify('SENSOR_VALUES');
-      console.log('Connected to SENSOR_VALUES notifications');
-
-      // STEP_ANALYSISのnotificationを開始（オプション）
-      try {
-        await this.startNotify('STEP_ANALYSIS');
-        console.log('Connected to STEP_ANALYSIS notifications');
-      } catch (error) {
-        console.warn('STEP_ANALYSIS notification not available:', error.message);
-      }
-
-    } catch (error) {
-      console.error('Failed to connect to notifications:', error);
-      throw error;
-    }
-  }
-
-  /**
    * アドバタイズメント監視を停止
    */
   stopWatchingAdvertisements() {
@@ -576,14 +1002,21 @@ class Orphe {
 
   /**
    * GATT通信を始めるための関数。read, write, startNotify, stopNotifyが呼び出されるとscanと一緒に呼び出されます。
-   * @param {string} uuid 
+   * @param {string} uuid
    *
    */
   connectGATT(uuid) {
+    this._log('connectGATT() start', {
+      uuid,
+      hasBluetoothDevice: !!this.bluetoothDevice,
+      gattConnected: !!(this.bluetoothDevice &amp;&amp; this.bluetoothDevice.gatt &amp;&amp; this.bluetoothDevice.gatt.connected),
+      hasDataCharacteristic: !!this.dataCharacteristic,
+      lastConnected: this.hashUUID_lastConnected
+    });
     if (!this.bluetoothDevice) {
       var error = "No Bluetooth Device";
-      this.onError(error);
-      return;
+      this._reportError(error);
+      return Promise.reject(error);
     }
     if (this.bluetoothDevice.gatt.connected &amp;&amp; this.dataCharacteristic) {
       if (this.hashUUID_lastConnected == uuid)
@@ -607,14 +1040,23 @@ class Orphe {
         // this.autoStartWatchingAdvertisements();
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
+        // 記憶していたデバイスが見つからない/権限切れの場合は記憶経由の接続を
+        // 一旦諦め、次回 scan() でユーザに選択ダイアログを出す
+        if (this._usingRememberedBluetoothDevice) {
+          this._rememberedBluetoothDeviceUnavailable = true;
+          this._usingRememberedBluetoothDevice = false;
+          this.bluetoothDevice = null;
+          this.dataCharacteristic = null;
+        }
+        throw error;
       });
   }
   /**
    * サーバからのデータを受信したときに呼び出される関数です。この関数は、characteristicvaluechangedイベントが発生したときに呼び出されます。
-   * @param {function} self 
-   * @param {string} uuid 
-   * 
+   * @param {function} self
+   * @param {string} uuid
+   *
    */
   dataChanged(self, uuid) {
     return function (event) {
@@ -624,7 +1066,7 @@ class Orphe {
   /**
    * サーバからデータを読み込む。notificationからはonReadで呼び出されるので、この関数を利用するのは DEVICE_INFORMATION characteristicのみです。
    * @param {string} uuid DEVICE_INFORMATION
-   * 
+   *
    */
   read(uuid) {
     return (this.scan(uuid))
@@ -635,7 +1077,7 @@ class Orphe {
         return this.dataCharacteristic.readValue();
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
         throw error; // エラーを再スローして、呼び出し側でキャッチできるようにする
       });
   }
@@ -643,7 +1085,7 @@ class Orphe {
    * write data to the BLE device。実際にwriteを利用するのは DEVICE_INFORMATION characteristicのみです。
    * @param {string} uuid DEVICE_INFORMATION, SENSOR_VALUES, STEP_ANALYSIS
    * @param {dataView} array_value write bytes
-   * 
+   *
    */
   write(uuid, array_value) {
     return (this.scan(uuid))
@@ -658,13 +1100,14 @@ class Orphe {
         this.onWrite(uuid);
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
+        throw error;
       });
   }
   /**
    * Start Notification
-   * @param {string} uuid 
-   * 
+   * @param {string} uuid
+   *
    */
   startNotify(uuid) {
     return this.scan(uuid)
@@ -677,13 +1120,14 @@ class Orphe {
       })
       .catch(error => {
         console.error('startNotify: Error : ' + error);
-        this.onError(error);
+        this._reportError(error);
+        throw error;
       });
   }
   /**
    * Stop Notification
-   * @param {string} uuid 
-   * 
+   * @param {string} uuid
+   *
    */
   stopNotify(uuid) {
     return this.scan(uuid) // BLEデバイスのスキャンを開始します。
@@ -696,8 +1140,6 @@ class Orphe {
         return this.dataCharacteristic.stopNotifications();
       })
       .then(() => {
-        // Notificationを停止した後のコールバック関数を呼び出します。
-        // this.dataCharacteristic.removeEventListener('characteristicvaluechanged', this.dataChanged(this, uuid));
         // イベントハンドラを解除
         if (this.dataChangedEventHandlerMap[uuid]) {
           this.dataCharacteristic.removeEventListener(
@@ -710,7 +1152,7 @@ class Orphe {
         this.onStopNotify(uuid);
       })
       .catch(error => {
-        this.onError(error);
+        this._reportError(error);
       });
 
   }
@@ -723,12 +1165,12 @@ class Orphe {
 
   /**
    * BLEデバイスとの接続を切断します。デバイス接続をマニュアルで切断する場合には reset() を利用してください。切断だけでなくクラス内のメンバ変数もクリア初期化する必要があり、reset()を利用するとそれらの処理が行われます。
-   * 
+   *
    */
   disconnect() {
     if (!this.bluetoothDevice) {
       var error = "No Bluetooth Device";
-      this.onError(error);
+      this._reportError(error);
       return;
     }
 
@@ -739,19 +1181,22 @@ class Orphe {
       this.bluetoothDevice.gatt.disconnect();
     } else {
       var error = "Bluetooth Device is already disconnected";
-      this.onError(error);
+      this._reportError(error);
       return;
     }
   }
   /**
    * this.device_informationの連想配列形式でデータを渡すことで、コアモジュールのデバイス設定ができます。
-   * @param {object} obj 
+   * 注意: ORPHE INSOLE の現行ファームウェアでは未対応です。
+   * @param {object} obj
    */
   setDeviceInformation(obj) {
     // この機能は insole では未対応とします。
     // const senddata = new Uint8Array([0x01, obj.lr, obj.led_brightness, 0, obj.rec_auto_run, obj.time01, obj.time02, obj.range.acc, obj.range.gyro]);
     // this.write('DEVICE_INFORMATION', senddata);
-    alert("setDeviceInformation: not supported");
+    const error = new Error('setDeviceInformation is not supported on ORPHE INSOLE.');
+    console.warn(error.message);
+    this._reportError(error);
   }
 
   /**
@@ -761,14 +1206,20 @@ class Orphe {
    * @returns {Promise&lt;void>}
    */
   async setDataStreamingMode(mode = 4) {
-    const data = new Uint8Array([0x0D, mode]);
+    const normalizedMode = Number(mode);
+    const supportedModes = [1, 3, 4];
+    if (!Number.isInteger(normalizedMode) || !supportedModes.includes(normalizedMode)) {
+      throw new Error(`Invalid ORPHE INSOLE data streaming mode: ${mode}. Use 1, 3, or 4.`);
+    }
+    const data = new Uint8Array([0x0D, normalizedMode]);
     await this.write('DEVICE_INFORMATION', data);
+    this.streaming_mode = normalizedMode;
   }
 
 
   /**
    * COREモジュールの時刻を PCの時刻 + random_trip_time/2 で同期します。
-   * 
+   *
    * @param {number}[n=3] n - 平均値算出のためのサンプル数
    * @return {object} {sum_round_trip_time, average_round_trip_time, standard_time, adjusted_time, round_trip_times}
    */
@@ -820,8 +1271,10 @@ class Orphe {
   }
   /**
    * reset(disconnect &amp; clear)
+   * マニュアル切断の意思表示とみなし、自動再接続も無効化します。
    */
   reset() {
+    this._disableAutoReconnect();
     this.disconnect(); //disconnect() is not Promise Object
     this.clear();
     this.onReset();
@@ -835,7 +1288,7 @@ class Orphe {
   /**
    * Incoming byte callback function. コアモジュールから送信されるデータを受信するコールバック関数です。それぞれのUUIDに対応するデータを正しく整形して対応するコールバック関数に渡します。ユーザはコールバック関数を手元のコードでオーバーライドして利用します。gotData()がユーザによってオーバーライドされている場合は、gotData以外のnotifyに伴うコールバック関数はすべて呼び出されないことに注意してください。
    * @param {dataView} data incoming bytes
-   * @param {string} uuid 
+   * @param {string} uuid
    */
   onRead(data, uuid) {
     let ret = this.timestamp.getHz();
@@ -846,7 +1299,7 @@ class Orphe {
       this.gotData(data, uuid);
       // データ欠損チェック
       if (uuid == 'SENSOR_VALUES') {
-        // 50,55,56がリアルタームデータ取得時の先頭ヘッダ 
+        // 50,55,56がリアルタームデータ取得時の先頭ヘッダ
         if (data.getUint8(0) == 50 || data.getUint8(0) == 55 || data.getUint8(0) == 56) {
           if (this.serial_number) {
             const serial_number_prev = this.serial_number;
@@ -873,287 +1326,77 @@ class Orphe {
       return;
     }
 
-    // デバイス情報Readの場合    
+    // デバイス情報Readの場合
     if (uuid == 'DEVICE_INFORMATION') {
     }
     else if (uuid == 'SENSOR_VALUES') {
-      let t_start = 0;
-      let timestamp;
-      // 一旦固定値
-      let gyroRange = 2000;
-      let accRange = 16;
+      const parsed = parseInsoleSensorValues(data);
+      if (!parsed) {
+        console.warn("SENSOR VALUES: Data length is not 104");
+        return;
+      }
 
       // データ欠損チェック
       if (this.serial_number) {
         const serial_number_prev = this.serial_number;
-        this.serial_number = data.getUint16(1);
+        this.serial_number = parsed.serial_number;
         if (this.serial_number - serial_number_prev != 1) {
           this.lostData(this.serial_number, serial_number_prev);
         }
       }
       else {
-        this.serial_number = data.getUint16(1);
+        this.serial_number = parsed.serial_number;
       }
 
-      // エラー処理
-      if (data.byteLength != 104) {
-        console.warn("SENSOR VALUES: Data length is not 104");
-        return
-      }
-
-
-      // COREから送られてきたタイムスタンプをUNIXタイムスタンプに変換
-      function toTimestamp(hours, minutes, seconds, milliseconds) {
-        // 現在の日付を取得
-        const now = new Date();
-
-        // Dateオブジェクトに時間を設定
-        now.setHours(hours);
-        now.setMinutes(minutes);
-        now.setSeconds(seconds);
-        now.setMilliseconds(milliseconds);
-
-        // タイムスタンプ（ミリ秒）を返す
-        return now.getTime();
-      }
-      timestamp = toTimestamp(
-        data.getUint8(3),
-        data.getUint8(4),
-        data.getUint8(5),
-        data.getUint16(6)
-      )
-
-      gyroRange = 2000;
-      accRange = 16;
-      t_start = timestamp;
-
-      if (data.getUint8(0) == 50) {
-        // それぞれの値は29毎で、4つ分ある。データの順番は古いデータから順番にpushされている。なので、最新が4番目、最古が1番目となる。
-        for (let i = 3; i >= 0; i--) {
-
-          // 2番目以降のtimestampは最初のタイムスタンプとの差分になっているため
-          // t_startに数値を足す処理を行って、各パケットのtimestampを算出する
-          if (i == 3) {
-            timestamp = t_start;
-          }
-          else {
-            timestamp = timestamp + data.getUint8(28 + 21 * i);
-          }
-          this.quat = {
-            w: data.getInt16(8 + 21 * i) / 32768,
-            x: data.getInt16(10 + 21 * i) / 32768,
-            y: data.getInt16(12 + 21 * i) / 32768,
-            z: data.getInt16(14 + 21 * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
+      for (const sample of parsed.samples) {
+        if (sample.quat) {
+          this.quat = sample.quat;
           this.history_sensor_values.quat.push(this.quat);
-
-          this.gyro = {
-            x: data.getInt16(16 + 21 * i) / 32768,
-            y: data.getInt16(18 + 21 * i) / 32768,
-            z: data.getInt16(20 + 21 * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
+        }
+        if (sample.gyro) {
+          this.gyro = sample.gyro;
           this.history_sensor_values.gyro.push(this.gyro);
-
-          this.acc = {
-            x: data.getInt16(22 + 21 * i) / 32768,
-            y: data.getInt16(24 + 21 * i) / 32768,
-            z: data.getInt16(26 + 21 * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
+        }
+        if (sample.acc) {
+          this.acc = sample.acc;
           this.history_sensor_values.acc.push(this.acc);
-
-          // ジャイロと加速度補正をかけたものを別途作成
-          this.converted_gyro = {
-            x: this.gyro.x * gyroRange,
-            y: this.gyro.y * gyroRange,
-            z: this.gyro.z * gyroRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
+        }
+        if (sample.press) {
+          this.press = sample.press;
+          this.history_sensor_values.press.push(this.press);
+        }
+        if (sample.converted_gyro) {
+          this.converted_gyro = sample.converted_gyro;
           this.history_sensor_values.converted_gyro.push(this.converted_gyro);
-
-          this.converted_acc = {
-            x: this.acc.x * accRange,
-            y: this.acc.y * accRange,
-            z: this.acc.z * accRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
+        }
+        if (sample.converted_acc) {
+          this.converted_acc = sample.converted_acc;
           this.history_sensor_values.converted_acc.push(this.converted_acc);
+        }
 
+        if (sample.quat &amp;&amp; typeof Quaternion !== 'undefined') {
+          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
+          this.euler = q.toEuler();
+        }
+
+        if (parsed.header == 50) {
           this.gotAcc(this.acc);
           this.gotQuat(this.quat);
           this.gotGyro(this.gyro);
           this.gotConvertedAcc(this.converted_acc);
           this.gotConvertedGyro(this.converted_gyro);
-          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
-          this.euler = q.toEuler();
-          this.gotEuler(this.euler);
+          if (sample.quat &amp;&amp; typeof Quaternion !== 'undefined') this.gotEuler(this.euler);
         }
-
-      }
-      // 200Hz：ジャイロ、加速度、圧力
-      else if (data.getUint8(0) == 55) {
-        // それぞれの値は34毎で、4つ分ある。データの順番は順番にpushされている。なので、最新が1番目、最古が4番目となる。
-        let offset = 24;
-        for (let i = 3; i >= 0; i--) {
-
-          timestamp = t_start;
-
-          this.gyro = {
-            x: data.getInt16(8 + offset * i) / 32768,
-            y: data.getInt16(10 + offset * i) / 32768,
-            z: data.getInt16(12 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
-          this.history_sensor_values.gyro.push(this.gyro);
-
-          this.acc = {
-            x: data.getInt16(14 + offset * i) / 32768,
-            y: data.getInt16(16 + offset * i) / 32768,
-            z: data.getInt16(18 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
-          this.history_sensor_values.acc.push(this.acc);
-
-          this.press = {
-            values: [
-              data.getUint16(20 + offset * i),
-              data.getUint16(22 + offset * i),
-              data.getUint16(24 + offset * i),
-              data.getUint16(26 + offset * i),
-              data.getUint16(28 + offset * i),
-              data.getUint16(30 + offset * i)
-            ],
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          }
-          this.history_sensor_values.press.push(this.press);
-
-          // ジャイロと加速度補正をかけたものを別途作成
-          this.converted_gyro = {
-            x: this.gyro.x * gyroRange,
-            y: this.gyro.y * gyroRange,
-            z: this.gyro.z * gyroRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
-          this.history_sensor_values.converted_gyro.push(this.converted_gyro);
-
-          this.converted_acc = {
-            x: this.acc.x * accRange,
-            y: this.acc.y * accRange,
-            z: this.acc.z * accRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 3 - i
-          };
-          this.history_sensor_values.converted_acc.push(this.converted_acc);
-
+        else if (parsed.header == 55) {
           this.gotAcc(this.acc);
           this.gotGyro(this.gyro);
           this.gotConvertedAcc(this.converted_acc);
           this.gotConvertedGyro(this.converted_gyro);
           this.gotPress(this.press);
         }
-      }
-      // 100Hz：ジャイロ、加速度、圧力、クオータニオン
-      else if (data.getUint8(0) == 56) {
-        // それぞれの値は34毎で、2つ分ある。データの順番は順番にpushされている。なので、最新が1番目、最古が2番目となる。関数呼び出しは古いデータから順番に行いたいので逆順のループを利用する。
-        let offset = 32;
-        for (let i = 1; i >= 0; i--) {
-          timestamp = t_start;
-
-          this.quat = {
-            w: data.getInt16(8 + offset * i) / 32768,
-            x: data.getInt16(10 + offset * i) / 32768,
-            y: data.getInt16(12 + offset * i) / 32768,
-            z: data.getInt16(14 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.quat.push(this.quat);
-
-
-          this.gyro = {
-            x: data.getInt16(16 + offset * i) / 32768,
-            y: data.getInt16(18 + offset * i) / 32768,
-            z: data.getInt16(20 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.gyro.push(this.gyro);
-
-          this.acc = {
-            x: data.getInt16(22 + offset * i) / 32768,
-            y: data.getInt16(24 + offset * i) / 32768,
-            z: data.getInt16(26 + offset * i) / 32768,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.acc.push(this.acc);
-
-          this.press = {
-            values: [
-              data.getUint16(28 + offset * i),
-              data.getUint16(30 + offset * i),
-              data.getUint16(32 + offset * i),
-              data.getUint16(34 + offset * i),
-              data.getUint16(36 + offset * i),
-              data.getUint16(38 + offset * i)
-            ],
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          }
-          this.history_sensor_values.press.push(this.press);
-
-
-
-          // ジャイロと加速度補正をかけたものを別途作成
-          this.converted_gyro = {
-            x: this.gyro.x * gyroRange,
-            y: this.gyro.y * gyroRange,
-            z: this.gyro.z * gyroRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          };
-          this.history_sensor_values.converted_gyro.push(this.converted_gyro);
-
-          this.converted_acc = {
-            x: this.acc.x * accRange,
-            y: this.acc.y * accRange,
-            z: this.acc.z * accRange,
-            timestamp: timestamp,
-            serial_number: this.serial_number,
-            packet_number: 1 - i
-          };
-          this.history_sensor_values.converted_acc.push(this.converted_acc);
-
+        else if (parsed.header == 56) {
           this.gotQuat(this.quat);
-          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
-          this.euler = q.toEuler();
-          this.gotEuler(this.euler);
+          if (sample.quat &amp;&amp; typeof Quaternion !== 'undefined') this.gotEuler(this.euler);
           this.gotAcc(this.acc);
           this.gotGyro(this.gyro);
           this.gotConvertedAcc(this.converted_acc);
@@ -1168,13 +1411,13 @@ class Orphe {
   /**
    * Date Timeを取得する
    * 0	year	0-255	西暦から2000を引いた数
-   * 1	month		
-   * 2	day		
-   * 3	hour		
-   * 4	minute		
-   * 5	second		
+   * 1	month
+   * 2	day
+   * 3	hour
+   * 4	minute
+   * 5	second
    * 6	subsecond
-   * 
+   *
    * @returns {Promise&lt;object>} date_timeを連想配列形式{timestamp, data,round_trip_time}で返す。dataにはCOREから直接送信されてきたdataviewが格納されている。round_trip_timeはデータを取得にかかった時間[ms]。
    */
   async getDateTime() {
@@ -1199,8 +1442,13 @@ class Orphe {
         };
         resolve(this.date_time);
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
-        console.log('Error: ' + error);
-        this.onError(error);
+        const message = error &amp;&amp; error.message ? error.message : String(error);
+        if (error &amp;&amp; error.name === 'NotFoundError') {
+          this._log('requestDevice chooser cancelled', { message });
+        } else {
+          console.log('Error: ' + error);
+        }
+        this._reportError(error);
         reject(error);
       });
     });
@@ -1216,7 +1464,7 @@ class Orphe {
         if (!data) {
           const error = new Error('No data received from DEVICE_INFORMATION');
           console.error('Error: ' + error.message);
-          this.onError(error);
+          this._reportError(error);
           reject(error);
           return;
         }
@@ -1232,8 +1480,13 @@ class Orphe {
         }
         resolve(this.device_information);
       }).catch(error => {  // ダイアログのキャンセルはそのまま閉じる
-        console.log('Error: ' + error);
-        this.onError(error);
+        const message = error &amp;&amp; error.message ? error.message : String(error);
+        if (error &amp;&amp; error.name === 'NotFoundError') {
+          this._log('requestDevice chooser cancelled', { message });
+        } else {
+          console.log('Error: ' + error);
+        }
+        this._reportError(error);
         reject(error);
       });
     });
@@ -1307,72 +1560,72 @@ class Orphe {
    */
   gotEuler(euler) { }
   /**
-   * 歩容解析の取得
+   * 歩容解析の取得（STEP_ANALYSIS FW対応待ちのため現状呼び出されません）
    * @param {Object} gait {type, direction, calorie, distance} 歩行解析の取得
    */
   gotGait(gait) { }
   /**
-   * 現在の歩容タイプを取得する
-   * @param {Object} type {value} 0:none, 1:walk, 2:run, 3:stand 
+   * 現在の歩容タイプを取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {Object} type {value} 0:none, 1:walk, 2:run, 3:stand
    */
   gotType(type) { }
   /**
-   * ランニングの方向を取得する
+   * ランニングの方向を取得する（STEP_ANALYSIS FW対応待ち）
    * @param {Object} direction {value} 0:none, 1:foward, 2:backward, 3:inside, 4:outside
    */
   gotDirection(direction) { }
   /**
-   * 総消費カロリーを取得する
+   * 総消費カロリーを取得する（STEP_ANALYSIS FW対応待ち）
    * @param {Object} calorie {value}
    */
   gotCalorie(calorie) { }
 
   /**
-   * 総移動距離を取得する
-   * @param {Object} distance {value} 
+   * 総移動距離を取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {Object} distance {value}
    */
   gotDistance(distance) { }
 
   /**
-   * 立脚期継続時間[s]を取得する
-   * @param {*} standing_phase_duration 
+   * 立脚期継続時間[s]を取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {*} standing_phase_duration
    */
   gotStandingPhaseDuration(standing_phase_duration) { }
 
   /**
-   * 遊脚期継続時間[s]を取得する
-   * @param {*} swing_phase_duration 
+   * 遊脚期継続時間[s]を取得する（STEP_ANALYSIS FW対応待ち）
+   * @param {*} swing_phase_duration
    */
   gotSwingPhaseDuration(swing_phase_duration) { }
   /**
-   * ストライド[m]の取得
+   * ストライド[m]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} stride {x,y,z}
    */
   gotStride(stride) { }
   /**
-   * 着地角度[degree]の取得
+   * 着地角度[degree]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} foot_angle {value}
    */
   gotFootAngle(foot_angle) { }
 
   /**
-   * プロネーション[degree]の取得
+   * プロネーション[degree]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} pronation {x,y,z}
    */
   gotPronation(pronation) { }
   /**
-   * 着地衝撃力[kgf/weight]の取得
+   * 着地衝撃力[kgf/weight]の取得（STEP_ANALYSIS FW対応待ち）
    * @param {Object} landing_impact {value}
    */
   gotLandingImpact(landing_impact) { }
   /**
-   * 現在までの歩数を取得する
+   * 現在までの歩数を取得する（STEP_ANALYSIS FW対応待ち）
    * @param {Object} steps_number {value}
    */
   gotStepsNumber(steps_number) { }
 
   /**
-   * 以前来たデータとのシリアルナンバーの差が1でない場合に呼び出される。SENSOR_VALUESのcharacteristicを利用し、かつ、200Hzのデータ取得のモデル（CR-3）のみで利用可能。50Hzの加速度センサーのデータ取得モデル（CR-2）では利用できない。
+   * 以前来たデータとのシリアルナンバーの差が1でない場合に呼び出される。SENSOR_VALUESのcharacteristicを利用したリアルタイムデータ取得時に利用可能。
    * @param {number} serial_number - 現在のシリアルナンバー
    * @param {number} serial_number_prev - 一つ前に受診したデータのシリアルナンバー
    */
@@ -1387,6 +1640,22 @@ class Orphe {
   onDisconnect() { console.log("onDisconnect"); }
 
   /**
+   * 自動再接続の試行開始時に呼び出される
+   * @param {Object} info {attempt, maxAttempts, intervalMs}
+   */
+  onReconnectAttempt(info) { }
+  /**
+   * 自動再接続成功時に呼び出される
+   * @param {Object} info {attempt, maxAttempts, elapsedMs, result}
+   */
+  onReconnectSuccess(info) { }
+  /**
+   * 自動再接続が最大試行回数に達して失敗したときに呼び出される
+   * @param {Object} info {maxAttempts, elapsedMs, error}
+   */
+  onReconnectFailed(info) { }
+
+  /**
    * アドバタイズメントデータを受信した時に呼び出される
    * @param {BluetoothAdvertisingEvent} event - アドバタイズメントイベント
    */
@@ -1394,7 +1663,7 @@ class Orphe {
 
   /**
    * notification frequencyの実測値を取得する
-   * @param {float} frequency 
+   * @param {float} frequency
    */
   gotBLEFrequency(frequency) { }
   onClear() { console.log("onClear"); }
@@ -1403,4 +1672,40 @@ class Orphe {
 
   //一般開発ユーザからアクセス可能な関数の定義ここまで
   //--------------------------------------------------
-}</code></pre></article></section></div></div></div><div class="search-container" id="PkfLWpAbet" style="display:none"><div class="wrapper" id="iCxFxjkHbP"><button class="icon-button search-close-button" id="VjLlGakifb" aria-label="close search"><svg><use xlink:href="#close-icon"></use></svg></button><div class="search-box-c"><svg><use xlink:href="#search-icon"></use></svg> <input type="text" id="vpcKVYIppa" class="search-input" placeholder="Search..." autofocus></div><div class="search-result-c" id="fWwVHRuDuN"><span class="search-result-c-text">Type anything to view search result</span></div></div></div><div class="mobile-menu-icon-container"><button class="icon-button" id="mobile-menu" data-isopen="false" aria-label="menu"><svg><use xlink:href="#menu-icon"></use></svg></button></div><div id="mobile-sidebar" class="mobile-sidebar-container"><div class="mobile-sidebar-wrapper"><div class="mobile-nav-links"></div><div class="mobile-sidebar-items-c"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-Orphe.html">Orphe</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-Orphe-FixedSizeArray.html">FixedSizeArray</a></div><div class="sidebar-section-children"><a href="module-Orphe-Orphe.html">Orphe</a></div><div class="sidebar-section-children"><a href="module-Orphe-OrpheTimestamp.html">OrpheTimestamp</a></div></div></div><div class="mobile-navbar-actions"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div></div></div><script type="text/javascript" src="scripts/core.min.js"></script><script src="scripts/search.min.js" defer="defer"></script><script src="scripts/third-party/fuse.js" defer="defer"></script><script type="text/javascript">var tocbotInstance=tocbot.init({tocSelector:"#eed4d2a0bfd64539bb9df78095dec881",contentSelector:".main-content",headingSelector:"h1, h2, h3",hasInnerContainers:!0,scrollContainer:".main-content",headingsOffset:130,onClick:bringLinkToView})</script></body></html>
+}
+
+// ── グローバル公開とエイリアス ─────────────────────────────────
+// 推奨クラス名は OrpheInsole。
+// 後方互換のため、同一ページに ORPHE-CORE.js が読み込まれていない場合に限り
+// `Orphe` というエイリアスも公開する（CORE と同時読み込み時は CORE 側の
+// `Orphe` が優先され、INSOLE は OrpheInsole で利用する）。
+if (typeof global.OrpheInsole === 'undefined') {
+  global.OrpheInsole = OrpheInsole;
+}
+let hasLexicalOrphe = false;
+try {
+  // CORE.js が先に読み込まれている場合、class Orphe のレキシカル束縛が見える
+  hasLexicalOrphe = (typeof Orphe !== 'undefined');
+} catch (_) {
+  hasLexicalOrphe = true;
+}
+if (!hasLexicalOrphe &amp;&amp; typeof global.Orphe === 'undefined') {
+  global.Orphe = OrpheInsole;
+}
+// 補助クラス/関数も衝突しない形で公開（既存コードの直接利用との互換のため）
+if (typeof global.FixedSizeArray === 'undefined') global.FixedSizeArray = FixedSizeArray;
+if (typeof global.OrpheTimestamp === 'undefined') global.OrpheTimestamp = OrpheTimestamp;
+if (typeof global.parseInsoleSensorValues === 'undefined') global.parseInsoleSensorValues = parseInsoleSensorValues;
+
+if (typeof module !== 'undefined' &amp;&amp; module.exports) {
+  module.exports = {
+    Orphe: OrpheInsole,
+    OrpheInsole,
+    FixedSizeArray,
+    OrpheTimestamp,
+    parseInsoleSensorValues
+  };
+}
+
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</code></pre></article></section></div></div></div><div class="search-container" id="PkfLWpAbet" style="display:none"><div class="wrapper" id="iCxFxjkHbP"><button class="icon-button search-close-button" id="VjLlGakifb" aria-label="close search"><svg><use xlink:href="#close-icon"></use></svg></button><div class="search-box-c"><svg><use xlink:href="#search-icon"></use></svg> <input type="text" id="vpcKVYIppa" class="search-input" placeholder="Search..." autofocus></div><div class="search-result-c" id="fWwVHRuDuN"><span class="search-result-c-text">Type anything to view search result</span></div></div></div><div class="mobile-menu-icon-container"><button class="icon-button" id="mobile-menu" data-isopen="false" aria-label="menu"><svg><use xlink:href="#menu-icon"></use></svg></button></div><div id="mobile-sidebar" class="mobile-sidebar-container"><div class="mobile-sidebar-wrapper"><div class="mobile-nav-links"></div><div class="mobile-sidebar-items-c"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-OrpheInsole.html">OrpheInsole</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-OrpheInsole-FixedSizeArray.html">FixedSizeArray</a></div><div class="sidebar-section-children"><a href="module-OrpheInsole-OrpheInsole.html">OrpheInsole</a></div><div class="sidebar-section-children"><a href="module-OrpheInsole-OrpheTimestamp.html">OrpheTimestamp</a></div></div></div><div class="mobile-navbar-actions"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div></div></div><script type="text/javascript" src="scripts/core.min.js"></script><script src="scripts/search.min.js" defer="defer"></script><script src="scripts/third-party/fuse.js" defer="defer"></script><script type="text/javascript">var tocbotInstance=tocbot.init({tocSelector:"#eed4d2a0bfd64539bb9df78095dec881",contentSelector:".main-content",headingSelector:"h1, h2, h3",hasInnerContainers:!0,scrollContainer:".main-content",headingsOffset:130,onClick:bringLinkToView})</script></body></html>
