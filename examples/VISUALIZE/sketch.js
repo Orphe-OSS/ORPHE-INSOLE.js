@@ -84,6 +84,38 @@ class ChartFeed {
 
 const feeds = []; // feeds[id] = {press, acc, gyro, quat, euler}
 
+/**
+ * 装着位置（mount_position bit0: 0=LEFT, 1=RIGHT）に合わせて、
+ * 左足デバイスのパネルを画面左、右足デバイスのパネルを画面右に並べ替える。
+ * どちらのトグルから接続しても、表示位置は実際の左右に追従する。
+ */
+function updatePanelOrder() {
+    for (let id = 0; id < 2; id++) {
+        const panel = document.getElementById(`panel${id}`);
+        if (!panel) continue;
+        const info = insoles[id].device_information;
+        let order = id; // 未接続・左右不明時は元の並び
+        if (info && typeof info.mount_position !== 'undefined') {
+            order = (info.mount_position & 0b1) === 1 ? 1 : 0; // L=左列, R=右列
+        }
+        panel.style.order = order;
+    }
+}
+
+/**
+ * device_information は begin() の接続処理の中で onConnect の後に取得されるため、
+ * mount_position が入るまで短時間ポーリングしてからパネルを並べ替える。
+ */
+function updatePanelOrderWhenReady(id, tries = 20) {
+    const info = insoles[id].device_information;
+    if (info && typeof info.mount_position !== 'undefined') {
+        updatePanelOrder();
+        return;
+    }
+    if (tries <= 0) return;
+    setTimeout(() => updatePanelOrderWhenReady(id, tries - 1), 250);
+}
+
 window.onload = function () {
     for (let id = 0; id < 2; id++) {
         buildInsoleToolkit(
@@ -126,6 +158,12 @@ window.onload = function () {
         };
         insole.lostData = function (serial_number, serial_number_prev) {
             console.warn(`INSOLE${this.id}: lost packets ${serial_number_prev} -> ${serial_number}`);
+        };
+        insole.onConnect = function () {
+            updatePanelOrderWhenReady(this.id);
+        };
+        insole.onReconnectSuccess = function () {
+            updatePanelOrderWhenReady(this.id);
         };
     }
 

@@ -67,6 +67,29 @@
       background: var(--yellow);
     }
 
+    /* 音はブラウザ仕様上クリックしないと鳴らせないため、
+       有効化されるまでボタンを強調表示する */
+    #enable-audio.attention {
+      animation: pulse-audio 1.5s ease-in-out infinite;
+      font-size: 1.05em;
+    }
+
+    #enable-audio.is-enabled {
+      animation: none;
+      color: #071618;
+      background: #bfe9c9;
+      cursor: default;
+    }
+
+    @keyframes pulse-audio {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(244, 196, 48, 0.85);
+      }
+      50% {
+        box-shadow: 0 0 0 12px rgba(244, 196, 48, 0);
+      }
+    }
+
     a {
       color: inherit;
     }
@@ -1567,7 +1590,7 @@
         </div>
 
         <div class="top-actions">
-          <button id="enable-audio" type="button" class="warning">音を有効化</button>
+          <button id="enable-audio" type="button" class="warning attention" title="ブラウザの自動再生制限のため、クリックするまで音は鳴りません">🔊 ここを押して音を有効化</button>
           <label class="audio-master-control" for="master-volume">
             出力音量
             <input id="master-volume" type="range" min="0" max="100" step="1" value="82">

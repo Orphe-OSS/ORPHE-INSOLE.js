@@ -2315,6 +2315,13 @@
       updateAudioControls();
       $("audio-state").textContent = "音声オン";
       $("audio-state").classList.add("is-on");
+      const enableButton = $("enable-audio");
+      if (enableButton) {
+        enableButton.classList.remove("attention");
+        enableButton.classList.add("is-enabled");
+        enableButton.textContent = "🔊 音声オン";
+        enableButton.disabled = true;
+      }
       setGlobalStatus("音声を有効化しました。Kāholo/Hela/ʻAmiのフェイズ音が鳴ります。");
     } catch (error) {
       setGlobalStatus(error.message, true);

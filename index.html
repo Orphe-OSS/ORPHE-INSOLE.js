@@ -365,13 +365,6 @@
       color: rgba(255, 255, 255, 0.74);
     }
 
-    .two-col {
-      display: grid;
-      grid-template-columns: minmax(0, 1.02fr) minmax(320px, 0.98fr);
-      gap: 54px;
-      align-items: center;
-    }
-
     .feature-list {
       display: grid;
       gap: 18px;
@@ -404,98 +397,6 @@
     .feature-item p {
       margin-bottom: 0;
       color: var(--muted);
-    }
-
-    .insole-visual {
-      position: relative;
-      min-height: 440px;
-      display: grid;
-      place-items: center;
-      background: #eef3f6;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .insole-shape {
-      position: relative;
-      width: 230px;
-      height: 360px;
-      border-radius: 54% 46% 42% 48% / 30% 28% 72% 70%;
-      background: #fdfefe;
-      box-shadow: 0 18px 44px rgba(15, 28, 34, 0.16);
-      transform: rotate(-7deg);
-    }
-
-    .insole-shape::before {
-      content: "";
-      position: absolute;
-      inset: 20px 28px;
-      border: 1px solid rgba(49, 70, 80, 0.16);
-      border-radius: 54% 46% 42% 48% / 30% 28% 72% 70%;
-    }
-
-    .sensor-dot {
-      position: absolute;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: var(--cyan);
-      border: 6px solid rgba(69, 230, 230, 0.28);
-      background-clip: padding-box;
-    }
-
-    .sensor-dot.orange {
-      background: var(--orange);
-      border-color: rgba(255, 96, 64, 0.28);
-    }
-
-    .sensor-dot.green {
-      background: var(--green);
-      border-color: rgba(112, 196, 111, 0.28);
-    }
-
-    .sensor-dot:nth-child(1) {
-      top: 62px;
-      left: 76px;
-    }
-
-    .sensor-dot:nth-child(2) {
-      top: 92px;
-      right: 54px;
-    }
-
-    .sensor-dot:nth-child(3) {
-      top: 150px;
-      left: 52px;
-    }
-
-    .sensor-dot:nth-child(4) {
-      top: 170px;
-      right: 62px;
-    }
-
-    .sensor-dot:nth-child(5) {
-      bottom: 96px;
-      left: 72px;
-    }
-
-    .sensor-dot:nth-child(6) {
-      bottom: 54px;
-      right: 74px;
-    }
-
-    .visual-caption {
-      position: absolute;
-      left: 18px;
-      right: 18px;
-      bottom: 18px;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: #43505b;
-      font-size: 13px;
-      font-weight: 400;
     }
 
     .product-showcase {
@@ -825,7 +726,6 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .two-col,
       .product-showcase,
       .award-grid,
       .quick-start,
@@ -908,16 +808,6 @@
         width: min(100% - 24px, var(--max));
       }
 
-      .insole-visual {
-        min-height: 380px;
-      }
-
-      .insole-shape {
-        width: 190px;
-        height: 306px;
-      }
-
-      .visual-caption,
       .notice,
       .footer-inner {
         flex-direction: column;
@@ -999,8 +889,8 @@
     </section>
 
     <section class="section" id="about">
-      <div class="section-inner two-col">
-        <div>
+      <div class="section-inner">
+        <div class="section-head">
           <p class="eyebrow" data-i18n="aboutEyebrow">What is ORPHE INSOLE?</p>
           <h2 data-i18n="aboutTitle">Smart insole data, ready for web prototypes.</h2>
           <p class="lead" data-i18n="aboutLead">
@@ -1026,21 +916,6 @@
                 <p data-i18n-html="feature3Body">Use <code>new Orphe(...)</code> or the clearer <code>new OrpheInsole(...)</code> alias while keeping familiar callbacks.</p>
               </div>
             </div>
-          </div>
-        </div>
-
-        <div class="insole-visual" aria-label="Pressure sensor layout illustration" data-i18n-aria-label="insoleVisualLabel">
-          <div class="insole-shape">
-            <span class="sensor-dot orange"></span>
-            <span class="sensor-dot"></span>
-            <span class="sensor-dot green"></span>
-            <span class="sensor-dot"></span>
-            <span class="sensor-dot orange"></span>
-            <span class="sensor-dot green"></span>
-          </div>
-          <div class="visual-caption">
-            <span data-i18n="visualCaption1">Pressure map concept</span>
-            <span>INSOLE SENSOR_VALUES</span>
           </div>
         </div>
       </div>
@@ -1387,8 +1262,6 @@
         feature2Body: "Open the examples in Chrome or Edge, connect with Web Bluetooth, and start inspecting live packets.",
         feature3Title: "Compatible with existing ORPHE style APIs",
         feature3Body: "Use <code>new Orphe(...)</code> or the clearer <code>new OrpheInsole(...)</code> alias while keeping familiar callbacks.",
-        insoleVisualLabel: "Pressure sensor layout illustration",
-        visualCaption1: "Pressure map concept",
         productImageCaption: "Evaluation Kit",
         productEyebrow: "Official product details",
         productTitle: "A pressure and motion platform inside the insole.",
@@ -1520,8 +1393,6 @@
         feature2Body: "ChromeまたはEdgeでサンプルを開き、Web Bluetoothで接続すれば、ライブパケットをすぐ確認できます。",
         feature3Title: "既存のORPHE APIスタイルと互換",
         feature3Body: "<code>new Orphe(...)</code> でも、より分かりやすい <code>new OrpheInsole(...)</code> でも利用でき、既存のコールバック互換を保ちます。",
-        insoleVisualLabel: "圧力センサーレイアウトのイラスト",
-        visualCaption1: "圧力マップのイメージ",
         productImageCaption: "Evaluation Kit",
         productEyebrow: "公式製品情報",
         productTitle: "インソール内の圧力・モーションプラットフォーム。",
