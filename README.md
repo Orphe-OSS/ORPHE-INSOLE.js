@@ -7,6 +7,8 @@ Happy hacking for ORPHE INSOLE module on javascript.
 ## 動作確認
 まずは手元のORPHE INSOLEを[sensor dashboard](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/sensor-dashboard)ページで接続し、値が取得できるかを確認してみましょう
 
+製品スペック・取得できるデータ・使い方をまとめて知りたい場合は [showcase](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/showcase) ページがおすすめです（実機が無くてもデモ再生で全ビジュアルが動きます）。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 

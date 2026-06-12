@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">SENSOR DASHBOARD</text>
+  <g>
+    <rect x="24" y="40" width="84" height="56" rx="6" fill="#10171c" stroke="#2b3a44"/>
+    <text x="34" y="58" fill="#9fb6c3" font-size="9">PRESS 1</text>
+    <text x="34" y="84" fill="#45e6e6" font-size="20" font-weight="bold">1842</text>
+    <rect x="118" y="40" width="84" height="56" rx="6" fill="#10171c" stroke="#2b3a44"/>
+    <text x="128" y="58" fill="#9fb6c3" font-size="9">ACC Z</text>
+    <text x="128" y="84" fill="#ff6040" font-size="20" font-weight="bold">+1.02</text>
+    <rect x="212" y="40" width="84" height="56" rx="6" fill="#10171c" stroke="#2b3a44"/>
+    <text x="222" y="58" fill="#9fb6c3" font-size="9">GYRO Y</text>
+    <text x="222" y="84" fill="#ffcd56" font-size="20" font-weight="bold">312.4</text>
+    <rect x="24" y="106" width="84" height="56" rx="6" fill="#10171c" stroke="#2b3a44"/>
+    <text x="34" y="124" fill="#9fb6c3" font-size="9">QUAT W</text>
+    <text x="34" y="150" fill="#9966ff" font-size="20" font-weight="bold">0.981</text>
+    <rect x="118" y="106" width="84" height="56" rx="6" fill="#10171c" stroke="#2b3a44"/>
+    <text x="128" y="124" fill="#9fb6c3" font-size="9">FREQ</text>
+    <text x="128" y="150" fill="#fff" font-size="20" font-weight="bold">100Hz</text>
+    <rect x="212" y="106" width="84" height="56" rx="6" fill="#10171c" stroke="#2b3a44"/>
+    <text x="222" y="124" fill="#9fb6c3" font-size="9">SIDE</text>
+    <text x="222" y="150" fill="#3fb950" font-size="20" font-weight="bold">L / R</text>
+  </g>
+</svg>
