@@ -2,8 +2,9 @@
  * ORPHE INSOLE Showcase — アプリ本体
  *
  * 役割:
- *  - InsoleToolkit による接続と got* コールバックの配線
+ *  - InsoleToolkit による接続（左右最大2台）と got* コールバックの配線
  *  - ライブ受信とデモ再生（demo-data.js）を同じ dispatchFrame() に集約
+ *  - mount_position による L/R 自動判定とパネルの並び替え
  *  - CSV記録（収録した実データはデモ再生のソースとして読み込み可能）
  *  - 描画は requestAnimationFrame で約30fpsにスロットリング（CLAUDE.md Pattern 5）
  */
@@ -76,32 +77,41 @@ class ChartFeed {
 }
 
 //--------------------------------------------------
-// 状態
+// 状態（デバイス0/1）
 //--------------------------------------------------
-let lastLiveAt = -Infinity;
+let lastLiveAt = -Infinity;                    // いずれかのデバイスの最終ライブ受信
+const lastLiveAtDev = [-Infinity, -Infinity];  // デバイスごとの最終ライブ受信
 let liveActive = false;
-let latestEuler = null;
-let latestQuat = null;
+const latestEuler = [null, null];
+const latestQuat = [null, null];
+const sides = ['L', 'R'];                      // 表示上のL/R（mount_position で更新）
+
+let pressurePanels = [];
+let imuPanels = [];
 
 //--------------------------------------------------
 // フレーム配信: ライブ/デモ共通の入口
 //--------------------------------------------------
-function dispatchFrame(frame, isLive) {
-    if (isLive) lastLiveAt = performance.now();
-
-    PressureViz.push(frame);
-    ImuViz.push(frame);
-    if (frame.quat) {
-        latestQuat = frame.quat;
-        AttitudeViz.setQuat(frame.quat);
+function dispatchFrame(deviceId, frame, isLive) {
+    if (deviceId !== 0 && deviceId !== 1) return;
+    if (isLive) {
+        lastLiveAt = performance.now();
+        lastLiveAtDev[deviceId] = lastLiveAt;
     }
-    if (frame.euler) latestEuler = frame.euler;
 
-    if (Recorder.recording) Recorder.add(frame, isLive);
+    pressurePanels[deviceId].push(frame);
+    imuPanels[deviceId].push(frame);
+    if (frame.quat) {
+        latestQuat[deviceId] = frame.quat;
+        AttitudeViz.setQuat(deviceId, frame.quat);
+    }
+    if (frame.euler) latestEuler[deviceId] = frame.euler;
+
+    if (Recorder.recording) Recorder.add(deviceId, frame, isLive);
 }
 
 //--------------------------------------------------
-// CSV記録
+// CSV記録（接続中の全デバイスを1ファイルに記録。device 列で区別）
 //--------------------------------------------------
 const Recorder = {
     rows: [],
@@ -118,9 +128,9 @@ const Recorder = {
     stop() {
         this.recording = false;
     },
-    add(frame, isLive) {
+    add(deviceId, frame, isLive) {
         if (isLive) this.liveSeen = true;
-        this.rows.push(frame);
+        this.rows.push({ device: deviceId, ...frame });
     },
     toCSV() {
         const fmt = (v, d) => (v === null || v === undefined) ? '' : v.toFixed(d);
@@ -128,6 +138,7 @@ const Recorder = {
         for (const f of this.rows) {
             const press = f.press || [];
             lines.push([
+                f.device ?? 0,
                 Math.round(f.t ?? 0), f.serial ?? '',
                 ...[0, 1, 2, 3, 4, 5].map(i => (f.press ? Math.round(press[i]) : '')),
                 fmt(f.acc?.x, 4), fmt(f.acc?.y, 4), fmt(f.acc?.z, 4),
@@ -175,7 +186,8 @@ const DemoPlayer = {
 
         this.clock += dt;
         while (this.idx < this.rows.length && this.rows[this.idx].t <= this.clock) {
-            dispatchFrame(this.rows[this.idx], false);
+            const row = this.rows[this.idx];
+            dispatchFrame(row.device ?? 0, row, false);
             this.idx++;
         }
         if (this.idx >= this.rows.length) { // ループ再生
@@ -186,17 +198,19 @@ const DemoPlayer = {
 };
 
 //--------------------------------------------------
-// ライブ受信: コールバック数回分を1フレームに組み立てる
+// ライブ受信: コールバック数回分を1フレームに組み立てる（デバイスごと）
 //--------------------------------------------------
-let pending = {};
+const pendings = [{}, {}];
 
-function notePending(data) {
+function notePending(deviceId, data) {
+    const pending = pendings[deviceId];
     if (data && typeof data.timestamp !== 'undefined') pending.t = data.timestamp;
     if (data && typeof data.serial_number !== 'undefined') pending.serial = data.serial_number;
 }
 
-function commitLiveFrame() {
-    dispatchFrame({
+function commitLiveFrame(deviceId) {
+    const pending = pendings[deviceId];
+    dispatchFrame(deviceId, {
         t: pending.t ?? performance.now(),
         serial: pending.serial,
         press: pending.press ?? null,
@@ -205,19 +219,45 @@ function commitLiveFrame() {
         quat: pending.quat ?? null,
         euler: pending.euler ?? null,
     }, true);
-    pending = {};
+    pendings[deviceId] = {};
 }
 
 //--------------------------------------------------
-// L/R 表示切替（device_information.mount_position bit0: 0=LEFT, 1=RIGHT）
-// device_information は接続処理の中で取得されるため短時間ポーリングする
+// L/R 表示（device_information.mount_position bit0: 0=LEFT, 1=RIGHT）
 //--------------------------------------------------
+function applySide(deviceId, side) {
+    sides[deviceId] = side;
+    pressurePanels[deviceId].setFoot(side);
+    AttitudeViz.setFoot(deviceId, side);
+
+    for (const prefix of ['press_panel', 'imu_panel', 'euler_panel']) {
+        const panel = document.getElementById(`${prefix}${deviceId}`);
+        if (!panel) continue;
+        panel.style.order = (side === 'L') ? 0 : 1; // 左足を画面左に
+        const badge = panel.querySelector('.side-badge');
+        if (badge) {
+            badge.innerText = side;
+            badge.classList.remove('bg-secondary', 'bg-success', 'bg-primary');
+            badge.classList.add(side === 'L' ? 'bg-success' : 'bg-primary');
+        }
+    }
+
+    // もう一方のデバイスが未接続なら、表示の重複を避けて反対側に寄せる
+    const other = 1 - deviceId;
+    const otherLive = (performance.now() - lastLiveAtDev[other]) < LIVE_TIMEOUT_MS;
+    if (!otherLive && sides[other] === side) {
+        applySide(other, side === 'L' ? 'R' : 'L');
+    }
+}
+
+/**
+ * device_information は接続処理の中で取得されるため、
+ * mount_position が入るまで短時間ポーリングしてから反映する。
+ */
 function applyMountPositionWhenReady(insole, tries = 20) {
     const info = insole.device_information;
     if (info && typeof info.mount_position !== 'undefined') {
-        const side = (info.mount_position & 0b1) === 1 ? 'R' : 'L';
-        PressureViz.setFoot(side);
-        AttitudeViz.setFoot(side);
+        applySide(insole.id, (info.mount_position & 0b1) === 1 ? 'R' : 'L');
         return;
     }
     if (tries <= 0) return;
@@ -228,57 +268,65 @@ function applyMountPositionWhenReady(insole, tries = 20) {
 // 初期化
 //--------------------------------------------------
 window.onload = function () {
-    PressureViz.init();
-    ImuViz.init();
+    pressurePanels = [createPressurePanel(0, 'L'), createPressurePanel(1, 'R')];
+    imuPanels = [createImuPanel(0), createImuPanel(1)];
+    pressurePanels.forEach(p => p.init());
+    imuPanels.forEach(p => p.init());
 
     if (!navigator.bluetooth) {
         document.getElementById('bt_unsupported').classList.remove('d-none');
     }
 
-    buildInsoleToolkit(
-        document.getElementById('toolkit0'),
-        'CONNECT',
-        0,
-        { streamingMode: 4, autoReconnect: true }
-    );
+    for (let id = 0; id < 2; id++) {
+        buildInsoleToolkit(
+            document.getElementById(`toolkit${id}`),
+            `INSOLE 0${id + 1}`,
+            id,
+            { streamingMode: 4, autoReconnect: true }
+        );
 
-    const insole = insoles[0];
-    insole.setup();
+        const insole = insoles[id];
+        insole.setup();
 
-    insole.gotQuat = function (quat) {
-        notePending(quat);
-        pending.quat = { w: quat.w, x: quat.x, y: quat.y, z: quat.z };
-    };
-    insole.gotEuler = function (euler) {
-        pending.euler = { pitch: euler.pitch, roll: euler.roll, yaw: euler.yaw };
-        // モード1は press が無く euler が各サンプルの最後に呼ばれる
-        if (this.streaming_mode === 1) commitLiveFrame();
-    };
-    insole.gotConvertedAcc = function (acc) {
-        notePending(acc);
-        pending.acc = { x: acc.x, y: acc.y, z: acc.z };
-    };
-    insole.gotConvertedGyro = function (gyro) {
-        notePending(gyro);
-        pending.gyro = { x: gyro.x, y: gyro.y, z: gyro.z };
-        // quaternion.js が読み込めず gotEuler が呼ばれない環境でのモード1フォールバック
-        if (this.streaming_mode === 1 && typeof Quaternion === 'undefined') commitLiveFrame();
-    };
-    insole.gotPress = function (press) {
-        notePending(press);
-        pending.press = press.values.slice(0, 6);
-        // モード3/4は press が各サンプルの最後に呼ばれる（SDKのコールバック順）
-        commitLiveFrame();
-    };
-    insole.lostData = function (serial, prev) {
-        console.warn(`INSOLE: lost packets ${prev} -> ${serial}`);
-    };
-    insole.onConnect = function () {
-        applyMountPositionWhenReady(this);
-    };
-    insole.onReconnectSuccess = function () {
-        applyMountPositionWhenReady(this);
-    };
+        insole.gotQuat = function (quat) {
+            notePending(this.id, quat);
+            pendings[this.id].quat = { w: quat.w, x: quat.x, y: quat.y, z: quat.z };
+        };
+        insole.gotEuler = function (euler) {
+            pendings[this.id].euler = { pitch: euler.pitch, roll: euler.roll, yaw: euler.yaw };
+            // モード1は press が無く euler が各サンプルの最後に呼ばれる
+            if (this.streaming_mode === 1) commitLiveFrame(this.id);
+        };
+        insole.gotConvertedAcc = function (acc) {
+            notePending(this.id, acc);
+            pendings[this.id].acc = { x: acc.x, y: acc.y, z: acc.z };
+        };
+        insole.gotConvertedGyro = function (gyro) {
+            notePending(this.id, gyro);
+            pendings[this.id].gyro = { x: gyro.x, y: gyro.y, z: gyro.z };
+            // quaternion.js が読み込めず gotEuler が呼ばれない環境でのモード1フォールバック
+            if (this.streaming_mode === 1 && typeof Quaternion === 'undefined') commitLiveFrame(this.id);
+        };
+        insole.gotPress = function (press) {
+            notePending(this.id, press);
+            pendings[this.id].press = press.values.slice(0, 6);
+            // モード3/4は press が各サンプルの最後に呼ばれる（SDKのコールバック順）
+            commitLiveFrame(this.id);
+        };
+        insole.lostData = function (serial, prev) {
+            console.warn(`INSOLE${this.id}: lost packets ${prev} -> ${serial}`);
+        };
+        insole.onConnect = function () {
+            applyMountPositionWhenReady(this);
+        };
+        insole.onReconnectSuccess = function () {
+            applyMountPositionWhenReady(this);
+        };
+    }
+
+    // 初期のL/Rバッジ・並び（デモは device0=左足 / device1=右足）
+    applySide(0, 'L');
+    applySide(1, 'R');
 
     // --- デモ再生（初期は合成歩行データ。収録CSVで差し替え可能） ---
     DemoPlayer.setRows(DemoData.generate());
@@ -339,17 +387,17 @@ window.onload = function () {
     const liveBadge = document.getElementById('live_badge');
     const noticePress = document.getElementById('notice_press');
     const noticeQuat = document.getElementById('notice_quat');
-    const gauges = {
-        pitch: [document.getElementById('gauge_pitch'), document.getElementById('val_pitch')],
-        roll: [document.getElementById('gauge_roll'), document.getElementById('val_roll')],
-        yaw: [document.getElementById('gauge_yaw'), document.getElementById('val_yaw')],
-    };
-    const quatReadout = document.getElementById('quat_readout');
+    const gauges = [0, 1].map(id => ({
+        pitch: [document.getElementById(`gauge_pitch${id}`), document.getElementById(`val_pitch${id}`)],
+        roll: [document.getElementById(`gauge_roll${id}`), document.getElementById(`val_roll${id}`)],
+        yaw: [document.getElementById(`gauge_yaw${id}`), document.getElementById(`val_yaw${id}`)],
+    }));
+    const quatReadouts = [0, 1].map(id => document.getElementById(`quat_readout${id}`));
 
-    function setGauge(key, rad) {
+    function setGauge(deviceId, key, rad) {
         const deg = rad * 180 / Math.PI;
         const pct = Math.max(-50, Math.min(50, deg / 90 * 50));
-        const [bar, val] = gauges[key];
+        const [bar, val] = gauges[deviceId][key];
         if (pct >= 0) {
             bar.style.left = '50%';
             bar.style.width = `${pct}%`;
@@ -368,17 +416,19 @@ window.onload = function () {
         if (now - lastRender >= RENDER_INTERVAL_MS) {
             lastRender = now;
 
-            PressureViz.render();
-            ImuViz.render();
-
-            if (latestEuler) {
-                setGauge('pitch', latestEuler.pitch);
-                setGauge('roll', latestEuler.roll);
-                setGauge('yaw', latestEuler.yaw);
-            }
-            if (latestQuat) {
-                quatReadout.textContent =
-                    `w ${latestQuat.w.toFixed(3)} / x ${latestQuat.x.toFixed(3)} / y ${latestQuat.y.toFixed(3)} / z ${latestQuat.z.toFixed(3)}`;
+            for (let id = 0; id < 2; id++) {
+                pressurePanels[id].render();
+                imuPanels[id].render();
+                if (latestEuler[id]) {
+                    setGauge(id, 'pitch', latestEuler[id].pitch);
+                    setGauge(id, 'roll', latestEuler[id].roll);
+                    setGauge(id, 'yaw', latestEuler[id].yaw);
+                }
+                if (latestQuat[id]) {
+                    const q = latestQuat[id];
+                    quatReadouts[id].textContent =
+                        `w ${q.w.toFixed(3)} / x ${q.x.toFixed(3)} / y ${q.y.toFixed(3)} / z ${q.z.toFixed(3)}`;
+                }
             }
 
             // LIVE/DEMO バッジ
@@ -386,10 +436,16 @@ window.onload = function () {
             liveBadge.classList.toggle('bg-success', liveActive);
             liveBadge.classList.toggle('bg-secondary', !liveActive);
 
-            // ストリーミングモードによる配信有無の注記
-            const mode = liveActive ? insole.streaming_mode : 0;
-            noticePress.classList.toggle('d-none', mode !== 1);
-            noticeQuat.classList.toggle('d-none', mode !== 3);
+            // ストリーミングモードによる配信有無の注記（ライブ中のデバイスのみ対象）
+            let anyMode1 = false, anyMode3 = false;
+            for (let id = 0; id < 2; id++) {
+                const devLive = (performance.now() - lastLiveAtDev[id]) < LIVE_TIMEOUT_MS;
+                if (!devLive) continue;
+                if (insoles[id].streaming_mode === 1) anyMode1 = true;
+                if (insoles[id].streaming_mode === 3) anyMode3 = true;
+            }
+            noticePress.classList.toggle('d-none', !anyMode1);
+            noticeQuat.classList.toggle('d-none', !anyMode3);
 
             // 記録ステータス
             if (Recorder.recording) {

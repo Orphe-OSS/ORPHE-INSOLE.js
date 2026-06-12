@@ -28,6 +28,32 @@ section {
   color: #45e6e6;
 }
 
+.section-title.justify-content-center {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* --- デバイス別パネル（圧力/IMU/Euler、L/Rで並び替え） --- */
+.device-panel .panel-label {
+  font-size: 0.8rem;
+  color: #9fb6c3;
+  margin-bottom: 0.5rem;
+}
+
+.device-panel .panel-label .device-name {
+  font-weight: 700;
+}
+
+/* --- 購入導線 --- */
+.buy-card {
+  background: #10171c;
+  border: 1px solid #5c4a16;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+
 .section-desc {
   max-width: 52rem;
 }
@@ -188,19 +214,32 @@ section {
   border-radius: 4px;
 }
 
-/* --- 次のステップ --- */
+/* --- 次のステップ（サムネイル付きカード） --- */
 .next-card {
   display: block;
   height: 100%;
-  padding: 0.75rem;
   border: 1px solid #2b3a44;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #d7e3ea;
   text-decoration: none;
   background: #10171c;
+  overflow: hidden;
 }
 
 .next-card:hover {
   border-color: #45e6e6;
   color: #fff;
+}
+
+.next-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #0b1116;
+  border-bottom: 1px solid #2b3a44;
+}
+
+.next-body {
+  padding: 0.75rem;
 }

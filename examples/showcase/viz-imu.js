@@ -1,19 +1,19 @@
 /**
  * IMUセクションの可視化: 加速度[G]・ジャイロ[deg/s] の折れ線チャート + 数値表示
+ * （デバイスごとに1パネル）
  */
-const ImuViz = (function () {
-
+function createImuPanel(deviceId) {
     let accFeed = null, gyroFeed = null;
     let latestAcc = null, latestGyro = null;
     let accReadout, gyroReadout;
 
     function init() {
-        accFeed = new ChartFeed(makeLineChart('chart_acc', 'Accelerometer [G]',
+        accFeed = new ChartFeed(makeLineChart(`chart_acc${deviceId}`, 'Accelerometer [G]',
             ['x', 'y', 'z'], -4, 4));
-        gyroFeed = new ChartFeed(makeLineChart('chart_gyro', 'Gyro [deg/s]',
+        gyroFeed = new ChartFeed(makeLineChart(`chart_gyro${deviceId}`, 'Gyro [deg/s]',
             ['x', 'y', 'z'], -800, 800));
-        accReadout = document.getElementById('acc_readout');
-        gyroReadout = document.getElementById('gyro_readout');
+        accReadout = document.getElementById(`acc_readout${deviceId}`);
+        gyroReadout = document.getElementById(`gyro_readout${deviceId}`);
     }
 
     function push(frame) {
@@ -45,4 +45,4 @@ const ImuViz = (function () {
     }
 
     return { init, push, render };
-})();
+}

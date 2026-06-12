@@ -1,18 +1,19 @@
 /**
  * ORPHE INSOLE Showcase — デモ用歩行データ
  *
- * 実機が無い環境でもページ全体が動くように、歩行を模した合成データを生成する。
+ * 実機が無い環境でもページ全体が動くように、歩行を模した合成データを
+ * 左右2台分（device 0 = 左足, device 1 = 右足・半周期ずらし）生成する。
  * 本アプリのCSV記録機能で収録した実データ（同じ列構成）を parseCSV で読み込めば、
  * そのままデモ再生のソースとして差し替えられる。
  *
  * フレーム形式（ライブ受信と共通。app.js の dispatchFrame に渡す単位）:
- *   { t[ms], serial, press:[6]|null, acc:{x,y,z}[G]|null,
+ *   { device, t[ms], serial, press:[6]|null, acc:{x,y,z}[G]|null,
  *     gyro:{x,y,z}[dps]|null, quat:{w,x,y,z}|null, euler:{pitch,roll,yaw}[rad]|null }
  */
 const DemoData = (function () {
 
     const CSV_HEADER = [
-        'timestamp', 'serial_number',
+        'device', 'timestamp', 'serial_number',
         'press0', 'press1', 'press2', 'press3', 'press4', 'press5',
         'acc_x', 'acc_y', 'acc_z',
         'gyro_x', 'gyro_y', 'gyro_z',
@@ -40,63 +41,65 @@ const DemoData = (function () {
     }
 
     /**
-     * 合成歩行データを生成する。
+     * 1サンプル分を合成する。
      * チャネル割当は hula-motion-sonifier の SENSOR_LAYOUT に合わせる:
      *   0:toe-medial 1:ball-medial 2:toe-lateral 3:ball-center 4:lateral-midfoot 5:heel
+     */
+    function sampleAt(t, phase, mirror) {
+        const STANCE = 0.6; // 接地期の割合
+        const noise = (amp) => (Math.random() - 0.5) * 2 * amp;
+        const m = mirror ? -1 : 1; // 右足は左右対称に反転
+
+        // --- 圧力: かかと→中足→母趾球→つま先 へ荷重が移動 ---
+        const press = [
+            1800 * bump(phase, 0.52, 0.09),  // 0 toe-medial
+            2600 * bump(phase, 0.42, 0.12),  // 1 ball-medial
+            1300 * bump(phase, 0.48, 0.09),  // 2 toe-lateral
+            2400 * bump(phase, 0.38, 0.12),  // 3 ball-center
+            1500 * bump(phase, 0.25, 0.14),  // 4 lateral-midfoot
+            2800 * bump(phase, 0.12, 0.11),  // 5 heel
+        ].map(v => Math.max(0, Math.round(v + noise(50))));
+
+        // --- 加速度 [G]: 重力1G + 着地衝撃 + 周期的な揺れ ---
+        const impact = 1.6 * bump(phase, 0.03, 0.02);
+        const acc = {
+            x: m * 0.25 * Math.sin(2 * Math.PI * phase) + noise(0.03),
+            y: 0.12 * Math.sin(2 * Math.PI * phase * 2 + 1) + noise(0.03),
+            z: 1.0 + impact + 0.18 * Math.sin(2 * Math.PI * phase * 2) + noise(0.04),
+        };
+
+        // --- ジャイロ [dps]: 遊脚期に大きなピッチ回転 ---
+        const swing = phase > STANCE ? Math.sin(Math.PI * (phase - STANCE) / (1 - STANCE)) : 0;
+        const gyro = {
+            x: m * 30 * Math.sin(2 * Math.PI * phase * 2) + noise(8),
+            y: 380 * swing - 90 * bump(phase, 0.55, 0.05) + noise(8),
+            z: m * 20 * Math.sin(2 * Math.PI * phase + 2) + noise(8),
+        };
+
+        // --- 姿勢: 蹴り出しで底屈、遊脚中盤で背屈 ---
+        const pitch = -0.45 * bump(phase, 0.62, 0.07) + 0.30 * bump(phase, 0.82, 0.1);
+        const roll = m * (0.08 * Math.sin(2 * Math.PI * phase) + 0.02 * Math.sin(t / 900));
+        const yaw = m * 0.06 * Math.sin(t / 1500);
+
+        return { press, acc, gyro, quat: eulerToQuat(pitch, roll, yaw), euler: { pitch, roll, yaw } };
+    }
+
+    /**
+     * 合成歩行データを生成する（左右2台分、t順）。
      * @param {number} durationMs 生成する長さ（既定30秒）
      * @param {number} hz サンプリング周波数（既定100Hz）
      * @returns {Array} フレーム配列
      */
     function generate(durationMs = 30000, hz = 100) {
-        const CYCLE_MS = 1200;            // 1歩行周期
-        const STANCE = 0.6;               // 接地期の割合
+        const CYCLE_MS = 1200; // 1歩行周期。右足は半周期ずらす
         const rows = [];
         const n = Math.floor(durationMs / 1000 * hz);
-        const noise = (amp) => (Math.random() - 0.5) * 2 * amp;
-
         for (let i = 0; i < n; i++) {
             const t = Math.round(i * 1000 / hz);
-            const phase = (t % CYCLE_MS) / CYCLE_MS;
-
-            // --- 圧力: かかと→中足→母趾球→つま先 へ荷重が移動 ---
-            const press = [
-                1800 * bump(phase, 0.52, 0.09),  // 0 toe-medial
-                2600 * bump(phase, 0.42, 0.12),  // 1 ball-medial
-                1300 * bump(phase, 0.48, 0.09),  // 2 toe-lateral
-                2400 * bump(phase, 0.38, 0.12),  // 3 ball-center
-                1500 * bump(phase, 0.25, 0.14),  // 4 lateral-midfoot
-                2800 * bump(phase, 0.12, 0.11),  // 5 heel
-            ].map(v => Math.max(0, Math.round(v + noise(50))));
-
-            // --- 加速度 [G]: 重力1G + 着地衝撃 + 周期的な揺れ ---
-            const impact = 1.6 * bump(phase, 0.03, 0.02);
-            const acc = {
-                x: 0.25 * Math.sin(2 * Math.PI * phase) + noise(0.03),
-                y: 0.12 * Math.sin(2 * Math.PI * phase * 2 + 1) + noise(0.03),
-                z: 1.0 + impact + 0.18 * Math.sin(2 * Math.PI * phase * 2) + noise(0.04),
-            };
-
-            // --- ジャイロ [dps]: 遊脚期に大きなピッチ回転 ---
-            const swing = phase > STANCE ? Math.sin(Math.PI * (phase - STANCE) / (1 - STANCE)) : 0;
-            const gyro = {
-                x: 30 * Math.sin(2 * Math.PI * phase * 2) + noise(8),
-                y: 380 * swing - 90 * bump(phase, 0.55, 0.05) + noise(8),
-                z: 20 * Math.sin(2 * Math.PI * phase + 2) + noise(8),
-            };
-
-            // --- 姿勢: 蹴り出しで底屈、遊脚中盤で背屈 ---
-            const pitch = -0.45 * bump(phase, 0.62, 0.07) + 0.30 * bump(phase, 0.82, 0.1);
-            const roll = 0.08 * Math.sin(2 * Math.PI * phase) + 0.02 * Math.sin(t / 900);
-            const yaw = 0.06 * Math.sin(t / 1500);
-            const quat = eulerToQuat(pitch, roll, yaw);
-
-            rows.push({
-                t, serial: i,
-                press,
-                acc, gyro,
-                quat,
-                euler: { pitch, roll, yaw },
-            });
+            const phaseL = (t % CYCLE_MS) / CYCLE_MS;
+            const phaseR = (phaseL + 0.5) % 1;
+            rows.push({ device: 0, t, serial: i, ...sampleAt(t, phaseL, false) });
+            rows.push({ device: 1, t, serial: i, ...sampleAt(t, phaseR, true) });
         }
         return rows;
     }
@@ -104,6 +107,7 @@ const DemoData = (function () {
     /**
      * 本アプリのCSV記録機能が出力した形式のCSVをフレーム配列に変換する。
      * 空欄のグループ（モードにより配信されなかった列）は null になる。
+     * device 列が無い旧形式のCSVは device 0 として読み込む。
      * @param {string} text CSVテキスト
      * @returns {Array} フレーム配列（timestamp は先頭を0とした相対時刻に正規化）
      */
@@ -132,6 +136,7 @@ const DemoData = (function () {
             const quat = { w: num(cols, 'quat_w'), x: num(cols, 'quat_x'), y: num(cols, 'quat_y'), z: num(cols, 'quat_z') };
             const euler = { pitch: num(cols, 'euler_pitch'), roll: num(cols, 'euler_roll'), yaw: num(cols, 'euler_yaw') };
             rows.push({
+                device: num(cols, 'device') ?? 0,
                 t: num(cols, 'timestamp') ?? 0,
                 serial: num(cols, 'serial_number') ?? i,
                 press: press.every(v => v === null) ? null : press.map(v => v ?? 0),
@@ -141,7 +146,8 @@ const DemoData = (function () {
                 euler: euler.pitch === null ? null : euler,
             });
         }
-        // 先頭を 0ms に正規化（収録時刻のオフセットを除去）
+        // 先頭を 0ms に正規化し、t順に並べる（収録時刻のオフセットを除去）
+        rows.sort((a, b) => a.t - b.t);
         const t0 = rows[0].t;
         rows.forEach(r => { r.t -= t0; });
         return rows;

@@ -1,5 +1,5 @@
 /**
- * 姿勢セクションの可視化: クォータニオン → 3D 靴モデル
+ * 姿勢セクションの可視化: クォータニオン → 3D 靴モデル（左右2台分）
  *
  * ORPHE-CORE.js examples/VIEW (sketch.js) からの移植。
  * p5.js(WEBGL) で STL モデルを表示し、受信クォータニオンを
@@ -12,9 +12,9 @@
 
 const AttitudeViz = (function () {
 
-    let quat = null;   // 最新の受信クォータニオン {w,x,y,z}
-    let qRef = null;   // 姿勢リセット時の基準
-    let foot = 'L';
+    const quats = [null, null];  // 最新の受信クォータニオン {w,x,y,z}
+    const qRefs = [null, null];  // 姿勢リセット時の基準
+    const feet = ['L', 'R'];     // デバイスごとの装着位置（mount_position で更新）
 
     function conj(q) {
         return { w: q.w, x: -q.x, y: -q.y, z: -q.z };
@@ -30,15 +30,20 @@ const AttitudeViz = (function () {
     }
 
     return {
-        setQuat(q) { quat = q; },
-        setFoot(side) { foot = side; },
-        getFoot() { return foot; },
-        reset() { qRef = quat ? { ...quat } : null; },
+        setQuat(id, q) { quats[id] = q; },
+        setFoot(id, side) { feet[id] = side; },
+        getFoot(id) { return feet[id]; },
+        /** 全デバイスの現在姿勢を基準にする */
+        reset() {
+            for (let id = 0; id < 2; id++) {
+                qRefs[id] = quats[id] ? { ...quats[id] } : null;
+            }
+        },
         /** 基準補正済みのクォータニオンを返す（基準未設定時は生値） */
-        relativeQuat() {
-            if (!quat) return null;
-            if (!qRef) return quat;
-            return mul(conj(qRef), quat);
+        relativeQuat(id) {
+            if (!quats[id]) return null;
+            if (!qRefs[id]) return quats[id];
+            return mul(conj(qRefs[id]), quats[id]);
         },
     };
 })();
@@ -68,24 +73,32 @@ function draw() {
         0, 1, 0
     );
 
-    directionalLight(255, 255, 255, 0, -100, -100);
-    ambientLight(80);
-    ambientMaterial(255, 255, 255);
-    noStroke();
+    // 左足を画面左、右足を画面右に配置。両方同じ足の場合はデバイス順に並べる
+    const feet = [AttitudeViz.getFoot(0), AttitudeViz.getFoot(1)];
+    const xs = (feet[0] === feet[1])
+        ? [-110, 110]
+        : feet.map(f => (f === 'L' ? -110 : 110));
 
-    const model3d = (AttitudeViz.getFoot() === 'R') ? showcase_model_R : showcase_model_L;
-    const q = AttitudeViz.relativeQuat();
+    for (let id = 0; id < 2; id++) {
+        const model3d = (feet[id] === 'R') ? showcase_model_R : showcase_model_L;
+        const q = AttitudeViz.relativeQuat(id);
 
-    push();
-    rotateZ(PI);
-    if (q && typeof toxi !== 'undefined') {
-        // 座標系変換は VIEW と同一: (z, -x, y, w)
-        const quatr = new toxi.geom.Quaternion(q.z, -q.x, q.y, q.w);
-        const axisAngle = quatr.toAxisAngle();
-        rotate(axisAngle[0], createVector(axisAngle[1], axisAngle[2], axisAngle[3]));
+        push();
+        translate(xs[id], 0, 0);
+        directionalLight(255, 255, 255, 0, -100, -100);
+        ambientLight(80);
+        ambientMaterial(255, 255, 255);
+        noStroke();
+        rotateZ(PI);
+        if (q && typeof toxi !== 'undefined') {
+            // 座標系変換は VIEW と同一: (z, -x, y, w)
+            const quatr = new toxi.geom.Quaternion(q.z, -q.x, q.y, q.w);
+            const axisAngle = quatr.toAxisAngle();
+            rotate(axisAngle[0], createVector(axisAngle[1], axisAngle[2], axisAngle[3]));
+        }
+        if (model3d) model(model3d);
+        pop();
     }
-    if (model3d) model(model3d);
-    pop();
 }
 
 function windowResized() {

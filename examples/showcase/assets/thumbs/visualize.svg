@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <g stroke="#2b3a44" stroke-width="1">
+    <line x1="24" y1="40" x2="296" y2="40"/>
+    <line x1="24" y1="75" x2="296" y2="75"/>
+    <line x1="24" y1="110" x2="296" y2="110"/>
+    <line x1="24" y1="145" x2="296" y2="145"/>
+  </g>
+  <polyline fill="none" stroke="#45e6e6" stroke-width="2.5"
+    points="24,120 56,80 88,130 120,60 152,110 184,70 216,125 248,85 280,115 296,95"/>
+  <polyline fill="none" stroke="#ff6040" stroke-width="2.5"
+    points="24,90 56,125 88,70 120,115 152,65 184,120 216,80 248,130 280,75 296,105"/>
+  <polyline fill="none" stroke="#ffcd56" stroke-width="2.5"
+    points="24,105 56,100 88,95 120,140 152,90 184,95 216,100 248,60 280,100 296,120"/>
+  <polyline fill="none" stroke="#9966ff" stroke-width="2" opacity="0.7"
+    points="24,130 56,110 88,115 120,95 152,125 184,105 216,110 248,100 280,130 296,110"/>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">VISUALIZE</text>
+  <g fill="#9fb6c3" font-size="9">
+    <circle cx="220" cy="22" r="4" fill="#45e6e6"/><text x="228" y="25">press</text>
+    <circle cx="262" cy="22" r="4" fill="#ff6040"/><text x="270" y="25">acc</text>
+  </g>
+</svg>
