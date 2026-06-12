@@ -1,0 +1,206 @@
+/* ORPHE INSOLE Showcase */
+
+body {
+  scroll-padding-top: 70px;
+}
+
+.showcase-header {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+
+.showcase-header nav a {
+  color: #9fb6c3;
+  text-decoration: none;
+}
+
+.showcase-header nav a:hover {
+  color: #fff;
+}
+
+section {
+  scroll-margin-top: 70px;
+}
+
+.section-title {
+  font-size: 1.4rem;
+  color: #45e6e6;
+}
+
+.section-desc {
+  max-width: 52rem;
+}
+
+.mono {
+  font-family: SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.spec-table th {
+  width: 38%;
+  font-weight: 600;
+  color: #9fb6c3;
+}
+
+.connect-steps li {
+  margin-bottom: 0.5rem;
+}
+
+/* --- コードスニペット --- */
+.snippet-block {
+  position: relative;
+}
+
+.snippet-title {
+  font-size: 0.75rem;
+  color: #9fb6c3;
+  margin-bottom: 0.25rem;
+}
+
+.snippet {
+  background: #10171c;
+  border: 1px solid #2b3a44;
+  border-radius: 6px;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  color: #d7e3ea;
+  overflow-x: auto;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 1.4rem;
+  right: 0.5rem;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+}
+
+/* --- 足型マップ（hula-motion-sonifier の手法を流用） --- */
+.insole-map {
+  position: relative;
+  width: min(100%, 170px);
+  aspect-ratio: 0.411 / 1;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.4));
+}
+
+.insole-map.is-left {
+  background-image: url("./assets/orphe-insole-left.png");
+}
+
+.insole-map.is-right {
+  background-image: url("./assets/orphe-insole-right.png");
+}
+
+.sensor-dot {
+  position: absolute;
+  z-index: 1;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  background: #234;
+  transition: background-color 60ms linear;
+}
+
+.cop-dot {
+  position: absolute;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  background: #45e6e6;
+  transform: translate(-50%, -50%);
+  transition: left 90ms linear, top 90ms linear;
+  display: none;
+}
+
+.cop-legend {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #45e6e6;
+  vertical-align: -1px;
+}
+
+/* --- 3D --- */
+#canvas3d_placeholder {
+  width: 100%;
+  background: #10171c;
+  border: 1px solid #2b3a44;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#canvas3d_placeholder canvas {
+  display: block;
+}
+
+/* --- Euler ゲージ --- */
+.euler-gauge {
+  display: grid;
+  grid-template-columns: 3rem 1fr 4rem;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.gauge-track {
+  position: relative;
+  height: 10px;
+  background: #10171c;
+  border: 1px solid #2b3a44;
+  border-radius: 5px;
+}
+
+.gauge-track::after {
+  /* 中央(0°)の目印 */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: #2b3a44;
+}
+
+.gauge-bar {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 50%;
+  width: 0;
+  background: #45e6e6;
+  border-radius: 4px;
+}
+
+/* --- 次のステップ --- */
+.next-card {
+  display: block;
+  height: 100%;
+  padding: 0.75rem;
+  border: 1px solid #2b3a44;
+  border-radius: 6px;
+  color: #d7e3ea;
+  text-decoration: none;
+  background: #10171c;
+}
+
+.next-card:hover {
+  border-color: #45e6e6;
+  color: #fff;
+}
