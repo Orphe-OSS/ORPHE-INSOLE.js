@@ -80,7 +80,9 @@ function draw() {
         : feet.map(f => (f === 'L' ? -110 : 110));
 
     for (let id = 0; id < 2; id++) {
-        const model3d = (feet[id] === 'R') ? showcase_model_R : showcase_model_L;
+        // 注: STLモデルは VIEW のカメラ・rotateZ(PI) 前提で作られており、
+        // 装着位置(L/R)に対して左右反転のモデルを当てると正しい向きで表示される。
+        const model3d = (feet[id] === 'R') ? showcase_model_L : showcase_model_R;
         const q = AttitudeViz.relativeQuat(id);
 
         push();
