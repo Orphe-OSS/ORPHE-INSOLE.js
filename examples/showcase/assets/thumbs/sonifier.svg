@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">HULA MOTION SONIFIER</text>
+  <!-- 足型シルエット -->
+  <g transform="translate(70,100)">
+    <ellipse cx="0" cy="20" rx="26" ry="42" fill="#10171c" stroke="#2b3a44" stroke-width="2"/>
+    <ellipse cx="-2" cy="-32" rx="20" ry="22" fill="#10171c" stroke="#2b3a44" stroke-width="2"/>
+    <circle cx="-8" cy="-38" r="6" fill="#ff6040"/>
+    <circle cx="6" cy="-30" r="6" fill="#ffcd56"/>
+    <circle cx="-6" cy="-8" r="6" fill="#45e6e6"/>
+    <circle cx="8" cy="-4" r="6" fill="#45e6e6"/>
+    <circle cx="0" cy="40" r="7" fill="#ff6040"/>
+  </g>
+  <!-- 音波 -->
+  <g stroke="#45e6e6" fill="none" stroke-width="3" stroke-linecap="round">
+    <path d="M150 100 q 14 -28 28 0 q 14 28 28 0 q 14 -28 28 0 q 14 28 28 0"/>
+  </g>
+  <g stroke="#45e6e6" fill="none" stroke-width="2" opacity="0.45" stroke-linecap="round">
+    <path d="M150 130 q 10 -16 20 0 q 10 16 20 0 q 10 -16 20 0 q 10 16 20 0 q 10 -16 20 0"/>
+  </g>
+  <!-- 音符 -->
+  <g fill="#ffcd56">
+    <ellipse cx="252" cy="58" rx="8" ry="6" transform="rotate(-20 252 58)"/>
+    <rect x="258" y="28" width="3" height="30" rx="1.5"/>
+    <path d="M258 28 q 14 4 12 16 q -2 -8 -12 -8 z"/>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="monospace">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <rect x="24" y="22" width="272" height="136" rx="8" fill="#10171c" stroke="#2b3a44"/>
+  <rect x="24" y="22" width="272" height="24" rx="8" fill="#1a242c"/>
+  <circle cx="40" cy="34" r="4" fill="#ff6040"/>
+  <circle cx="54" cy="34" r="4" fill="#ffcd56"/>
+  <circle cx="68" cy="34" r="4" fill="#3fb950"/>
+  <text x="120" y="38" fill="#9fb6c3" font-size="10">TERMINAL</text>
+  <g font-size="10">
+    <text x="36" y="66" fill="#3fb950">&gt; notify SENSOR_VALUES</text>
+    <text x="36" y="82" fill="#d7e3ea">34 12 00 4F 09 F1 07 23 ...</text>
+    <text x="36" y="98" fill="#d7e3ea">34 13 00 50 09 EE 07 25 ...</text>
+    <text x="36" y="114" fill="#45e6e6">press [1842 903 411 1220 633 2810]</text>
+    <text x="36" y="130" fill="#9fb6c3">serial 4943  100Hz  lost 0</text>
+    <text x="36" y="146" fill="#3fb950">&gt; _</text>
+  </g>
+</svg>
