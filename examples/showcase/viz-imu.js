@@ -8,9 +8,9 @@ function createImuPanel(deviceId) {
     let accReadout, gyroReadout;
 
     function init() {
-        accFeed = new ChartFeed(makeLineChart(`chart_acc${deviceId}`, 'Accelerometer [G]',
+        accFeed = new ChartFeed(makeLineChart(`chart_acc${deviceId}`, 'chartAccTitle',
             ['x', 'y', 'z'], -4, 4));
-        gyroFeed = new ChartFeed(makeLineChart(`chart_gyro${deviceId}`, 'Gyro [deg/s]',
+        gyroFeed = new ChartFeed(makeLineChart(`chart_gyro${deviceId}`, 'chartGyroTitle',
             ['x', 'y', 'z'], -800, 800));
         accReadout = document.getElementById(`acc_readout${deviceId}`);
         gyroReadout = document.getElementById(`gyro_readout${deviceId}`);

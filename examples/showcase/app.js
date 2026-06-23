@@ -22,8 +22,18 @@ const SERIES_COLORS = [
     'rgb(153, 102, 255)',
 ];
 
+const showcaseCharts = [];
+
+function i18nText(key, params, fallback) {
+    return window.ShowcaseI18n ? window.ShowcaseI18n.t(key, params, fallback) : (fallback || key);
+}
+
+function i18nHtml(key, params, fallback) {
+    return window.ShowcaseI18n ? window.ShowcaseI18n.html(key, params, fallback) : (fallback || key);
+}
+
 /** 折れ線チャートを生成するファクトリ（examples/VISUALIZE と同じ構成） */
-function makeLineChart(canvasId, title, seriesLabels, yMin, yMax) {
+function makeLineChart(canvasId, titleKey, seriesLabels, yMin, yMax) {
     const datasets = seriesLabels.map((label, i) => ({
         label,
         backgroundColor: SERIES_COLORS[i % SERIES_COLORS.length],
@@ -36,17 +46,27 @@ function makeLineChart(canvasId, title, seriesLabels, yMin, yMax) {
     if (typeof yMin === 'number' && typeof yMax === 'number') {
         scales.y = { min: yMin, max: yMax };
     }
-    return new Chart(document.getElementById(canvasId), {
+    const chart = new Chart(document.getElementById(canvasId), {
         type: 'line',
         data: { labels: [], datasets },
         options: {
             animation: false,
             plugins: {
                 legend: { position: 'top', labels: { boxWidth: 12 } },
-                title: { display: true, text: title },
+                title: { display: true, text: i18nText(titleKey, undefined, titleKey) },
             },
             scales,
         },
+    });
+    chart.$titleKey = titleKey;
+    showcaseCharts.push(chart);
+    return chart;
+}
+
+function updateChartLanguage() {
+    showcaseCharts.forEach((chart) => {
+        chart.options.plugins.title.text = i18nText(chart.$titleKey, undefined, chart.$titleKey);
+        chart.update('none');
     });
 }
 
@@ -335,18 +355,39 @@ window.onload = function () {
     const recordToggle = document.getElementById('record_toggle');
     const recordDownload = document.getElementById('record_download');
     const recordStatus = document.getElementById('record_status');
+    function updateRecordToggleLabel() {
+        recordToggle.innerHTML = i18nHtml(
+            Recorder.recording ? 'recordStopHtml' : 'recordStartHtml',
+            undefined,
+            Recorder.recording ? '<i class="bi bi-stop-fill"></i> 記録停止' : '<i class="bi bi-record-fill"></i> 記録開始'
+        );
+    }
+    function updateRecordStatus() {
+        if (Recorder.recording) {
+            const sec = (performance.now() - Recorder.startedAt) / 1000;
+            recordStatus.textContent = i18nText('recordStatusRecording', {
+                mode: liveActive ? 'LIVE' : 'DEMO',
+                rows: Recorder.rows.length,
+                seconds: sec.toFixed(1),
+            });
+        } else if (Recorder.rows.length > 0) {
+            recordStatus.textContent = i18nText('recordStatusReady', { rows: Recorder.rows.length });
+        } else {
+            recordStatus.textContent = i18nText('recordStatusIdle');
+        }
+    }
     recordToggle.addEventListener('click', function () {
         if (Recorder.recording) {
             Recorder.stop();
-            this.innerHTML = '<i class="bi bi-record-fill"></i> 記録開始';
             this.classList.replace('btn-outline-danger', 'btn-danger');
             recordDownload.disabled = Recorder.rows.length === 0;
         } else {
             Recorder.start();
-            this.innerHTML = '<i class="bi bi-stop-fill"></i> 記録停止';
             this.classList.replace('btn-danger', 'btn-outline-danger');
             recordDownload.disabled = true;
         }
+        updateRecordToggleLabel();
+        updateRecordStatus();
     });
     recordDownload.addEventListener('click', () => Recorder.download());
 
@@ -359,11 +400,14 @@ window.onload = function () {
         try {
             const rows = DemoData.parseCSV(await file.text());
             DemoPlayer.setRows(rows);
-            csvStatus.textContent =
-                `${file.name}: ${rows.length}行 / ${(DemoPlayer.durationMs() / 1000).toFixed(1)}秒 を読み込みました（未接続時にループ再生します）`;
+            csvStatus.textContent = i18nText('csvLoaded', {
+                file: file.name,
+                rows: rows.length,
+                seconds: (DemoPlayer.durationMs() / 1000).toFixed(1),
+            });
             csvStatus.classList.remove('text-danger');
         } catch (e) {
-            csvStatus.textContent = `読み込み失敗: ${e.message}`;
+            csvStatus.textContent = i18nText('csvLoadFailed', { message: e.message });
             csvStatus.classList.add('text-danger');
         }
     });
@@ -377,9 +421,18 @@ window.onload = function () {
             const code = this.parentElement.querySelector('pre code');
             try {
                 await navigator.clipboard.writeText(code.innerText);
-                this.textContent = 'copied!';
-                setTimeout(() => { this.textContent = 'copy'; }, 1200);
+                this.textContent = i18nText('copyCopied');
+                setTimeout(() => { this.textContent = i18nText('copyButton'); }, 1200);
             } catch (e) { /* clipboard 不許可時は何もしない */ }
+        });
+    });
+
+    window.addEventListener('showcase:languagechange', () => {
+        updateChartLanguage();
+        updateRecordToggleLabel();
+        updateRecordStatus();
+        document.querySelectorAll('.copy-btn').forEach((btn) => {
+            btn.textContent = i18nText('copyButton');
         });
     });
 
@@ -448,13 +501,7 @@ window.onload = function () {
             noticeQuat.classList.toggle('d-none', !anyMode3);
 
             // 記録ステータス
-            if (Recorder.recording) {
-                const sec = (performance.now() - Recorder.startedAt) / 1000;
-                recordStatus.textContent =
-                    `記録中 (${liveActive ? 'LIVE' : 'DEMO'}): ${Recorder.rows.length}行 / ${sec.toFixed(1)}秒`;
-            } else if (Recorder.rows.length > 0) {
-                recordStatus.textContent = `記録済み: ${Recorder.rows.length}行 — CSV保存できます`;
-            }
+            updateRecordStatus();
         }
         requestAnimationFrame(loop);
     }

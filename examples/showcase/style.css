@@ -19,6 +19,40 @@ body {
   color: #fff;
 }
 
+.language-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #2b3a44;
+  border-radius: 999px;
+  background: #10171c;
+}
+
+.language-switch button {
+  min-width: 44px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: #9fb6c3;
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.language-switch button.active {
+  color: #051314;
+  background: #45e6e6;
+}
+
+.language-switch button:focus-visible {
+  outline: 2px solid #ff6040;
+  outline-offset: 2px;
+}
+
 section {
   scroll-margin-top: 70px;
 }

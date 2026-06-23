@@ -50,7 +50,7 @@ function createPressurePanel(deviceId, defaultFoot) {
         });
         setFoot(foot, true);
 
-        feed = new ChartFeed(makeLineChart(`chart_press${deviceId}`, 'Pressure (6ch raw)',
+        feed = new ChartFeed(makeLineChart(`chart_press${deviceId}`, 'chartPressureTitle',
             ['p0', 'p1', 'p2', 'p3', 'p4', 'p5']));
     }
 
