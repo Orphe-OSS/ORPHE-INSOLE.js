@@ -228,14 +228,15 @@
 
   // Real-device check showed channels P0/P2 and P1/P4 are mirrored from the
   // original visual-only layout. Keep array order as raw channel order so CSV
-  // columns remain left_p0..p5/right_p0..p5.
+  // columns remain left_p0..p5/right_p0..p5. imageX/imageY are aligned to the
+  // white cross markers baked into the insole image asset.
   const SensorLayout = [
-    createSensorPoint(0.64, 0.22, "P0"),
-    createSensorPoint(0.79, 0.37, "P1"),
-    createSensorPoint(0.25, 0.17, "P2"),
-    createSensorPoint(0.54, 0.35, "P3"),
-    createSensorPoint(0.25, 0.34, "P4"),
-    createSensorPoint(0.60, 0.88, "P5")
+    createSensorPoint(0.7596, 0.1680, "P0"),
+    createSensorPoint(0.7513, 0.3320, "P1"),
+    createSensorPoint(0.4024, 0.2210, "P2"),
+    createSensorPoint(0.5245, 0.3483, "P3"),
+    createSensorPoint(0.2884, 0.3681, "P4"),
+    createSensorPoint(0.5552, 0.8206, "P5")
   ];
 
   function createSensorPoint(imageX, imageY, label) {
