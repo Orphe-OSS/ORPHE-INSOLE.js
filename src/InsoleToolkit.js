@@ -163,8 +163,10 @@ async function toggleInsoleModule(dom, options = {}) {
     if (checked == true) {
         let ret;
         try {
-            ret = await insole.begin('SENSOR_VALUES', options);
+            const beginOptions = Object.assign({}, options, { forceDeviceSelection: true });
+            ret = await insole.begin('SENSOR_VALUES', beginOptions);
         } catch (error) {
+            console.error('toggleInsoleModule connect failed:', error);
             ret = null;
         }
         if (!ret) {

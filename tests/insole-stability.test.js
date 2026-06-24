@@ -23,6 +23,17 @@ async function main() {
   assert.equal(insole._lastBluetoothDeviceStorageKey, 'orphe_insole_last_bluetooth_device_0');
   assert.equal(new OrpheInsole(1)._lastBluetoothDeviceStorageKey, 'orphe_insole_last_bluetooth_device_1');
 
+  // ── 別スロットで同じBluetooth Deviceを共有しない ──────────────
+  {
+    const left = new OrpheInsole(0);
+    const right = new OrpheInsole(1);
+    const device = { id: 'same-device', name: 'INS-L' };
+    left.bluetoothDevice = device;
+    assert.equal(right._findBluetoothDeviceInUse({ id: 'same-device', name: 'INS-L' }), left);
+    assert.equal(left._findBluetoothDeviceInUse(device), null, 'same instance id is allowed to reuse its own device');
+    left.bluetoothDevice = null;
+  }
+
   // ── _findBluetoothDevice のマッチングロジック ─────────────────
   const devices = [
     { id: 'aaa', name: 'INS-L' },
@@ -53,6 +64,8 @@ async function main() {
   assert.equal(insole._autoReconnectEnabled, true);
   assert.equal(insole._autoReconnectOptions.autoReconnect, true);
   assert.equal(insole._autoReconnectOptions.streamingMode, 3);
+  insole._enableAutoReconnect('SENSOR_VALUES', { streamingMode: 3, forceDeviceSelection: true });
+  assert.equal(insole._autoReconnectOptions.forceDeviceSelection, undefined, 'manual chooser option must not leak into auto reconnect');
   insole._disableAutoReconnect();
   assert.equal(insole._autoReconnectEnabled, false);
 
@@ -77,6 +90,49 @@ async function main() {
     assert.equal(target.streaming_mode, 3);
     await assert.rejects(() => target.setDataStreamingMode(2), /Invalid ORPHE INSOLE data streaming mode/);
     await assert.rejects(() => target.setDataStreamingMode('x'), /Invalid ORPHE INSOLE data streaming mode/);
+  }
+
+  // ── forceDeviceSelection が最初の scan まで伝搬する ────────────
+  {
+    const target = new OrpheInsole(0);
+    let scanOptions = null;
+    target.scan = async (_uuid, options = {}) => { scanOptions = options; };
+    target.connectGATT = async () => {};
+    target.dataCharacteristic = {
+      readValue: async () => {
+        const data = new DataView(new ArrayBuffer(10));
+        data.setUint8(0, 1);
+        data.setUint8(1, 0);
+        data.setUint8(8, 3);
+        data.setUint8(9, 3);
+        return data;
+      }
+    };
+    await target.getDeviceInformation({ forceDeviceSelection: true });
+    assert.equal(scanOptions.forceDeviceSelection, true);
+  }
+
+  // ── begin() の接続オプションが初期化手順全体に渡る ────────────
+  {
+    const target = new OrpheInsole(0);
+    const calls = [];
+    target.getDeviceInformation = async (options) => { calls.push(['getDeviceInformation', options.forceDeviceSelection]); };
+    target.setDataStreamingMode = async (mode, options) => { calls.push(['setDataStreamingMode', mode, options.forceDeviceSelection]); };
+    target.syncCoreTime = async (n, options) => { calls.push(['syncCoreTime', n, options.forceDeviceSelection]); };
+    target.startNotify = async (uuid, options) => { calls.push(['startNotify', uuid, options.forceDeviceSelection]); };
+    const result = await target.begin('SENSOR_VALUES', {
+      streamingMode: 3,
+      forceDeviceSelection: true,
+      autoReconnect: true,
+    });
+    assert.equal(result, 'done begin(); SENSOR VALUES');
+    assert.deepEqual(calls, [
+      ['getDeviceInformation', true],
+      ['setDataStreamingMode', 3, true],
+      ['syncCoreTime', 3, true],
+      ['startNotify', 'SENSOR_VALUES', true],
+    ]);
+    assert.equal(target._autoReconnectOptions.forceDeviceSelection, undefined);
   }
 
   // ── 既存パーサが壊れていないこと（スモーク） ───────────────────

@@ -340,6 +340,8 @@ class OrpheInsole {
     // ユーザが onDisconnect を上書きしても古い関数が呼ばれ続けるため、
     // 必ずこのラッパーを登録する。
     this._onDisconnectHandler = (event) => this.onDisconnect(event);
+    OrpheInsole._instances = OrpheInsole._instances || [];
+    OrpheInsole._instances.push(this);
 
     /**
    * デバイスインフォメーションを取得して保存しておく連想配列です。begin()を呼び出すとデバイスから値を取得して初期化されます。
@@ -589,7 +591,7 @@ class OrpheInsole {
     }
 
     try {
-      await this.getDeviceInformation();
+      await this.getDeviceInformation(options);
 
       // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
       /*
@@ -597,12 +599,12 @@ class OrpheInsole {
       0x03 : リアルタイム(ジャイロ、加速度、圧力 200Hz相当)※インソールのみ対応
       0x04 : リアルタイム(ジャイロ、加速度、圧力、クォータニオン 100Hz相当)※インソールのみ対応
       */
-      await this.setDataStreamingMode(streamingMode);
+      await this.setDataStreamingMode(streamingMode, options);
 
       // DateTimeキャラクタリスティックを利用して時刻を同期する．現在のPC時間とデータ取得にかかる統計値からその分コアの時計を進めておく．
-      await this.syncCoreTime();
+      await this.syncCoreTime(3, options);
 
-      await this.startNotify('SENSOR_VALUES');
+      await this.startNotify('SENSOR_VALUES', options);
 
       // 接続成功: デバイスを記憶し、自動再接続用の切断検知を仕込む
       if (this.bluetoothDevice) {
@@ -637,7 +639,9 @@ class OrpheInsole {
   // ── 自動再接続 ──────────────────────────────────────────────
   _enableAutoReconnect(str_type, options = {}) {
     this._autoReconnectEnabled = true;
-    this._autoReconnectOptions = Object.assign({}, options, { autoReconnect: true });
+    const reconnectOptions = Object.assign({}, options);
+    delete reconnectOptions.forceDeviceSelection;
+    this._autoReconnectOptions = Object.assign(reconnectOptions, { autoReconnect: true });
   }
 
   _disableAutoReconnect() {
@@ -813,6 +817,18 @@ class OrpheInsole {
     return null;
   }
 
+  _findBluetoothDeviceInUse(device) {
+    if (!device || !Array.isArray(OrpheInsole._instances)) return null;
+    return OrpheInsole._instances.find(instance => {
+      if (!instance || instance === this || instance.id === this.id) return false;
+      const assignedDevice = instance.bluetoothDevice;
+      if (!assignedDevice) return false;
+      if (assignedDevice === device) return true;
+      if (assignedDevice.id && device.id && assignedDevice.id === device.id) return true;
+      return false;
+    }) || null;
+  }
+
   async _requestRememberedBluetoothDevice() {
     if (!navigator.bluetooth?.getDevices) return null;
     try {
@@ -845,6 +861,15 @@ class OrpheInsole {
     return (useRememberedDevice ? this._requestRememberedBluetoothDevice() : Promise.resolve(null))
       .then(device => {
         if (!device) return this.requestDevice(uuid);
+        const inUseBy = this._findBluetoothDeviceInUse(device);
+        if (inUseBy) {
+          this._rememberedBluetoothDeviceUnavailable = true;
+          this.forgetLastBluetoothDevice();
+          if (this._autoReconnectInProgress) {
+            throw new Error(`Bluetooth device "${device.name || device.id || 'unknown'}" is already assigned to ORPHE INSOLE ${String(inUseBy.id + 1).padStart(2, '0')}. Select a different device.`);
+          }
+          return this.requestDevice(uuid);
+        }
         this.bluetoothDevice = device;
         this._usingRememberedBluetoothDevice = true;
         this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
@@ -889,6 +914,10 @@ class OrpheInsole {
     });
     return navigator.bluetooth.requestDevice(options)
       .then(device => {
+        const inUseBy = this._findBluetoothDeviceInUse(device);
+        if (inUseBy) {
+          throw new Error(`Bluetooth device "${device.name || device.id || 'unknown'}" is already assigned to ORPHE INSOLE ${String(inUseBy.id + 1).padStart(2, '0')}. Select a different device.`);
+        }
         this.bluetoothDevice = device;
         this._usingRememberedBluetoothDevice = false;
         this._rememberedBluetoothDeviceUnavailable = false;
@@ -1066,8 +1095,8 @@ class OrpheInsole {
    * @param {string} uuid DEVICE_INFORMATION
    *
    */
-  read(uuid) {
-    return (this.scan(uuid))
+  read(uuid, options = {}) {
+    return (this.scan(uuid, options))
       .then(() => {
         return this.connectGATT(uuid);
       })
@@ -1085,8 +1114,8 @@ class OrpheInsole {
    * @param {dataView} array_value write bytes
    *
    */
-  write(uuid, array_value) {
-    return (this.scan(uuid))
+  write(uuid, array_value, options = {}) {
+    return (this.scan(uuid, options))
       .then(() => {
         return this.connectGATT(uuid);
       })
@@ -1107,8 +1136,8 @@ class OrpheInsole {
    * @param {string} uuid
    *
    */
-  startNotify(uuid) {
-    return this.scan(uuid)
+  startNotify(uuid, options = {}) {
+    return this.scan(uuid, options)
       .then(() => this.connectGATT(uuid))
       .then(() => this.dataCharacteristic.startNotifications())
       .then(() => {
@@ -1127,8 +1156,8 @@ class OrpheInsole {
    * @param {string} uuid
    *
    */
-  stopNotify(uuid) {
-    return this.scan(uuid) // BLEデバイスのスキャンを開始します。
+  stopNotify(uuid, options = {}) {
+    return this.scan(uuid, options) // BLEデバイスのスキャンを開始します。
       .then(() => {
         return this.connectGATT(uuid); // GATTサーバーに接続します。
       })
@@ -1203,14 +1232,14 @@ class OrpheInsole {
    * @param {number} mode - The streaming mode to set. Should be a valid mode value recognized by the device.
    * @returns {Promise<void>}
    */
-  async setDataStreamingMode(mode = 4) {
+  async setDataStreamingMode(mode = 4, options = {}) {
     const normalizedMode = Number(mode);
     const supportedModes = [1, 3, 4];
     if (!Number.isInteger(normalizedMode) || !supportedModes.includes(normalizedMode)) {
       throw new Error(`Invalid ORPHE INSOLE data streaming mode: ${mode}. Use 1, 3, or 4.`);
     }
     const data = new Uint8Array([0x0D, normalizedMode]);
-    await this.write('DEVICE_INFORMATION', data);
+    await this.write('DEVICE_INFORMATION', data, options);
     this.streaming_mode = normalizedMode;
   }
 
@@ -1221,13 +1250,17 @@ class OrpheInsole {
    * @param {number}[n=3] n - 平均値算出のためのサンプル数
    * @return {object} {sum_round_trip_time, average_round_trip_time, standard_time, adjusted_time, round_trip_times}
    */
-  async syncCoreTime(n = 3) {
+  async syncCoreTime(n = 3, options = {}) {
+    if (typeof n === 'object' && n !== null) {
+      options = n;
+      n = 3;
+    }
     let average_round_trip_time = 0;
     let sum_round_trip_time = 0;
     let core_time;
     let round_trip_times = [];
     for (let i = 0; i < n; i++) {
-      core_time = await this.getDateTime();
+      core_time = await this.getDateTime(options);
       sum_round_trip_time += core_time.round_trip_time;
       round_trip_times.push(core_time.round_trip_time);
     }
@@ -1237,7 +1270,7 @@ class OrpheInsole {
     const adjusted_time = parseInt(standard_time + Math.round(average_round_trip_time / 2));
     core_time.date.setTime(adjusted_time);
 
-    await this.setDateTime(core_time.date);
+    await this.setDateTime(core_time.date, options);
     this.half_round_trip_time = Math.round(average_round_trip_time / 2);
     return { sum_round_trip_time, average_round_trip_time, standard_time, adjusted_time, round_trip_times };
 
@@ -1245,7 +1278,7 @@ class OrpheInsole {
   /**
    * [YY, MM, DD, hh, mm, ss, (sub)ss]の配列を渡すことで、コアモジュールの日時設定ができます。
    */
-  async setDateTime(set_date) {
+  async setDateTime(set_date, options = {}) {
     const array = new Uint8Array(7);
     array[0] = set_date.getFullYear() - 2000;
     array[1] = set_date.getMonth() + 1;
@@ -1255,7 +1288,7 @@ class OrpheInsole {
     array[5] = set_date.getSeconds();
     array[6] = parseInt(set_date.getMilliseconds() / 10);
     const senddata = new Uint8Array([array[0], array[1], array[2], array[3], array[4], array[5], array[6]]);
-    await this.write('DATE_TIME', senddata);
+    await this.write('DATE_TIME', senddata, options);
   }
 
   /**
@@ -1418,10 +1451,10 @@ class OrpheInsole {
    *
    * @returns {Promise<object>} date_timeを連想配列形式{timestamp, data,round_trip_time}で返す。dataにはCOREから直接送信されてきたdataviewが格納されている。round_trip_timeはデータを取得にかかった時間[ms]。
    */
-  async getDateTime() {
+  async getDateTime(options = {}) {
     return new Promise((resolve, reject) => {
       const startTime = performance.now(); // 関数開始時の時間を取得
-      this.read('DATE_TIME').then((data) => {
+      this.read('DATE_TIME', options).then((data) => {
         const endTime = performance.now(); // データの取得が完了したので，時間を記録
         const date = new Date(
           data.getUint8(0) + 2000,
@@ -1456,9 +1489,9 @@ class OrpheInsole {
    * 呼び出すと現在のデバイス設定を取得します。連想配列形式でリターンされます。asyncに対応させているので、awaitを利用して呼び出すことをおすすめします。
    * @returns {Promise<object>} device_informationを連想配列形式で返す
    */
-  async getDeviceInformation() {
+  async getDeviceInformation(options = {}) {
     return new Promise((resolve, reject) => {
-      this.read('DEVICE_INFORMATION').then((data) => {
+      this.read('DEVICE_INFORMATION', options).then((data) => {
         if (!data) {
           const error = new Error('No data received from DEVICE_INFORMATION');
           console.error('Error: ' + error.message);
