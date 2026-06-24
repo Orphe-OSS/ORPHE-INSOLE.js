@@ -61,6 +61,9 @@
       recordingCopy: "両足をそろえて立ち、記録開始ボタンを押します。設定した秒数が経過すると、CSV形式で保存できる記録が作成されます。",
       liveDemoTitle: "実機 / デモ",
       liveDemoCopy: "実機未接続でも合成データで動作します。INSOLEを接続するとLIVE表示になり、圧力・CoP・左右荷重が実測値に切り替わります。",
+      toolkitConnect: "接続する",
+      toolkitDisconnect: "切断する",
+      toolkitUnavailable: "InsoleToolkitを読み込めません",
       guideEyebrow: "How to Test",
       guideTitle: "検査の進め方",
       guideStepPrepare: "安全のため、支えられる人が横に立ちます。足幅・靴・床・姿勢を毎回そろえます。",
@@ -156,6 +159,9 @@
       recordingCopy: "Stand with both feet aligned, then press Start recording. After the selected duration, the trial is ready to save as CSV.",
       liveDemoTitle: "Live / Demo",
       liveDemoCopy: "The page runs with synthetic data until hardware is connected. When an INSOLE connects, pressure, CoP, and left/right load switch to LIVE measurements.",
+      toolkitConnect: "Connect",
+      toolkitDisconnect: "Disconnect",
+      toolkitUnavailable: "InsoleToolkit is not loaded",
       guideEyebrow: "How to Test",
       guideTitle: "Test Flow",
       guideStepPrepare: "For safety, keep a spotter beside the participant. Keep foot width, shoes, floor, and posture the same every trial.",
@@ -573,6 +579,7 @@
       appState.dom.languageToggle.setAttribute("aria-label", t("languageToggleLabel"));
     }
     syncTrialButtonLabel();
+    refreshToolkitButtons();
     refreshDeviceStatuses();
   }
 
@@ -663,9 +670,13 @@
   }
 
   function setupDevices() {
-    const toolkitBles = Array.isArray(root.bles) ? root.bles : (typeof bles !== "undefined" ? bles : null);
-    const toolkitBuilder = typeof root.buildCoreToolkit === "function" ? root.buildCoreToolkit : (typeof buildCoreToolkit !== "undefined" ? buildCoreToolkit : null);
+    const toolkitInsoles = Array.isArray(root.insoles) ? root.insoles : (typeof insoles !== "undefined" && Array.isArray(insoles) ? insoles : null);
+    const toolkitBles = toolkitInsoles || (Array.isArray(root.bles) ? root.bles : (typeof bles !== "undefined" && Array.isArray(bles) ? bles : null));
+    const insoleBuilder = typeof root.buildInsoleToolkit === "function" ? root.buildInsoleToolkit : (typeof buildInsoleToolkit !== "undefined" ? buildInsoleToolkit : null);
+    const coreBuilder = typeof root.buildCoreToolkit === "function" ? root.buildCoreToolkit : (typeof buildCoreToolkit !== "undefined" ? buildCoreToolkit : null);
+    const toolkitBuilder = insoleBuilder || coreBuilder;
     if (!toolkitBles || typeof toolkitBuilder !== "function") {
+      renderToolkitMessage(t("toolkitUnavailable"));
       setDeviceStatus(0, t("sdkMissing"));
       setDeviceStatus(1, t("sdkMissing"));
       return;
@@ -702,6 +713,7 @@
       };
       instance.onError = (error) => {
         setDeviceStatus(deviceIndex, error && error.message ? error.message : t("connectionError"));
+        root.setTimeout(() => refreshToolkitButton(deviceIndex), 0);
       };
       instance.gotPress = (press) => {
         const side = resolveDeviceSide(deviceState);
@@ -718,9 +730,66 @@
         appState.feet[resolveDeviceSide(deviceState)].quat = quat;
       };
 
-      toolkitBuilder(appState.dom.toolkitPlaceholder, `INSOLE 0${deviceIndex + 1}`, deviceIndex, "SENSOR_VALUES");
+      const toolkitOptions = { streamingMode: appState.selectedMode, autoReconnect: true };
+      if (toolkitBuilder === insoleBuilder) {
+        toolkitBuilder(appState.dom.toolkitPlaceholder, `INSOLE 0${deviceIndex + 1}`, deviceIndex, toolkitOptions);
+      } else {
+        toolkitBuilder(appState.dom.toolkitPlaceholder, `INSOLE 0${deviceIndex + 1}`, deviceIndex, "SENSOR_VALUES", toolkitOptions);
+      }
+      enhanceToolkitControl(deviceIndex);
       return deviceState;
     });
+  }
+
+  function renderToolkitMessage(message) {
+    if (!appState.dom.toolkitPlaceholder) {
+      return;
+    }
+    appState.dom.toolkitPlaceholder.innerHTML = `<div class="toolkit-message">${message}</div>`;
+  }
+
+  function enhanceToolkitControl(deviceIndex) {
+    const documentRef = root.document;
+    const control = documentRef.getElementById(`insole_toolkit${deviceIndex}`) || documentRef.getElementById(`core_toolkit${deviceIndex}`);
+    const input = documentRef.getElementById(`switch_ble${deviceIndex}`);
+    const label = control ? control.querySelector(".form-check-label") : null;
+    if (!control || !input || !label) {
+      return;
+    }
+
+    control.classList.add("toolkit-connect-control");
+    label.setAttribute("for", input.id);
+    label.innerHTML = '<strong class="toolkit-device-name"></strong><small class="toolkit-action-label"></small>';
+    input.addEventListener("change", () => {
+      refreshToolkitButton(deviceIndex);
+    });
+    refreshToolkitButton(deviceIndex);
+  }
+
+  function refreshToolkitButtons() {
+    [0, 1].forEach((deviceIndex) => refreshToolkitButton(deviceIndex));
+  }
+
+  function refreshToolkitButton(deviceIndex) {
+    const documentRef = root.document;
+    if (!documentRef) {
+      return;
+    }
+    const control = documentRef.getElementById(`insole_toolkit${deviceIndex}`) || documentRef.getElementById(`core_toolkit${deviceIndex}`);
+    const input = documentRef.getElementById(`switch_ble${deviceIndex}`);
+    if (!control || !input) {
+      return;
+    }
+    const deviceName = control.querySelector(".toolkit-device-name");
+    const actionLabel = control.querySelector(".toolkit-action-label");
+    if (deviceName) {
+      deviceName.textContent = `INSOLE 0${deviceIndex + 1}`;
+    }
+    if (actionLabel) {
+      actionLabel.textContent = input.checked ? t("toolkitDisconnect") : t("toolkitConnect");
+    }
+    control.classList.toggle("is-connected", input.checked);
+    input.setAttribute("aria-label", `${input.checked ? t("toolkitDisconnect") : t("toolkitConnect")} INSOLE 0${deviceIndex + 1}`);
   }
 
   async function connectDevice(index) {
@@ -770,6 +839,7 @@
 
   function updateDeviceConnectionUi(deviceState) {
     setDeviceStatus(deviceState.index, deviceState.connected ? t("connected", deviceState.side) : t("notConnected"));
+    refreshToolkitButton(deviceState.index);
   }
 
   function refreshDeviceStatuses() {

@@ -430,11 +430,10 @@ h2 {
 .toolkit-card {
   grid-column: span 3;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
 }
 
 .toolkit-placeholder {
@@ -446,23 +445,41 @@ h2 {
 }
 
 .toolkit-placeholder .form-ckeck,
+.toolkit-placeholder .form-check,
 .toolkit-placeholder .form-switch,
 .toolkit-placeholder .d-flex {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 42px;
-  padding: 6px 8px;
+  min-height: 54px;
+  padding: 8px 10px;
   border: 1px solid rgba(215, 223, 218, 0.82);
   border-radius: 6px;
   background: #fbfcfb;
 }
 
+.toolkit-placeholder .toolkit-connect-control {
+  border-color: rgba(0, 100, 95, 0.24);
+  background: #ffffff;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.toolkit-placeholder .toolkit-connect-control:hover,
+.toolkit-placeholder .toolkit-connect-control:focus-within {
+  border-color: rgba(0, 140, 131, 0.58);
+  background: rgba(0, 140, 131, 0.06);
+}
+
+.toolkit-placeholder .toolkit-connect-control.is-connected {
+  border-color: rgba(0, 140, 131, 0.52);
+  background: #eaf7f4;
+}
+
 .toolkit-placeholder .form-check-input {
   flex: 0 0 auto;
-  width: 38px;
-  height: 22px;
+  width: 42px;
+  height: 24px;
   margin: 0;
   appearance: none;
   border: 1px solid #b7c5bf;
@@ -476,7 +493,7 @@ h2 {
   display: block;
   width: 16px;
   height: 16px;
-  margin: 2px;
+  margin: 3px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 5px rgba(23, 32, 29, 0.24);
@@ -489,7 +506,7 @@ h2 {
 }
 
 .toolkit-placeholder .form-check-input:checked::before {
-  transform: translateX(16px);
+  transform: translateX(18px);
 }
 
 .toolkit-placeholder .form-check-label {
@@ -501,6 +518,40 @@ h2 {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolkit-device-name,
+.toolkit-action-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolkit-device-name {
+  font-size: 13px;
+  line-height: 1.05;
+}
+
+.toolkit-action-label {
+  margin-top: 5px;
+  color: var(--teal-dark);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.toolkit-message {
+  grid-column: 1 / -1;
+  padding: 10px;
+  border: 1px solid rgba(178, 45, 53, 0.28);
+  border-radius: 6px;
+  background: rgba(178, 45, 53, 0.08);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .toolkit-placeholder span[id^="ui"] {
