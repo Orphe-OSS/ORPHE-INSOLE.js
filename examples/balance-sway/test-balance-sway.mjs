@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const BalanceSway = require("./balance-sway.js");
+const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 
 const leftFlat = [900, 900, 900, 900, 900, 900];
 const rightFlat = [900, 900, 900, 900, 900, 900];
+
+{
+  assert.match(html, /src="\.\.\/\.\.\/src\/InsoleToolkit\.js"/);
+  assert.doesNotMatch(html, /src="\.\.\/\.\.\/src\/CoreToolkit\.js"/);
+}
 
 {
   const layout = BalanceSway.SensorLayout;
