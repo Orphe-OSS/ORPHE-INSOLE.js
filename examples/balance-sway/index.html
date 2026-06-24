@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORPHE INSOLE Balance Sway Example</title>
+  <link rel="stylesheet" href="styles.css?v=one-screen2">
+</head>
+
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="../../index.html" aria-label="ORPHE-INSOLE.js home">
+        <img src="../../assets/images/orphe.svg" alt="ORPHE">
+        <span>INSOLE Balance Sway</span>
+      </a>
+      <div class="topbar-status">
+        <button id="language-toggle" class="language-toggle" type="button" aria-label="Switch language">
+          <span data-i18n="languageToggle">English</span>
+        </button>
+        <span id="data-source-badge" class="status-pill demo">DEMO</span>
+        <span id="sample-rate">0.0 Hz</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="control-band" aria-label="計測コントロール">
+        <div class="title-block">
+          <p class="eyebrow" data-i18n="heroEyebrow">Center of Pressure Lab</p>
+          <h1 data-i18n="heroTitle">重心動揺計風ビジュアライゼーション</h1>
+          <p class="hero-copy" data-i18n="heroCopy">
+            ORPHE INSOLE の片足6点圧力センサから圧力中心を推定し、左右荷重・軌跡長・揺れ速度をリアルタイムに観察するexampleです。
+          </p>
+          <p class="hero-notice" data-i18n="heroNotice">※可視化のexampleであり、実際の重心動揺計としては使えません。</p>
+          <div class="hero-facts" aria-label="ORPHE INSOLE key specs">
+            <span>6ch pressure / foot</span>
+            <span>100Hz / 200Hz</span>
+            <span>Bluetooth 5.2</span>
+          </div>
+        </div>
+
+        <div class="control-grid">
+          <button id="demo-toggle" class="control-button active" type="button">
+            <span class="button-kicker" data-i18n="sourceKicker">Source</span>
+            <strong data-i18n="demoStream">Demo Stream</strong>
+          </button>
+          <div class="toolkit-card">
+            <span class="button-kicker">INSOLE Toolkit</span>
+            <div id="toolkit-placeholder" class="toolkit-placeholder"></div>
+          </div>
+          <label class="select-control">
+            <span data-i18n="modeLabel">Mode</span>
+            <select id="streaming-mode">
+              <option value="4">4: 100Hz + quat</option>
+              <option value="3">3: 200Hz pressure</option>
+            </select>
+          </label>
+          <label class="select-control">
+            <span data-i18n="protocolLabel">Protocol</span>
+            <select id="protocol-select">
+              <option value="quiet" data-i18n="protocolQuiet">Quiet stance</option>
+              <option value="romberg" data-i18n="protocolRomberg">Romberg style</option>
+              <option value="shift" data-i18n="protocolShift">Weight shift</option>
+            </select>
+          </label>
+          <div class="recording-card">
+            <div class="recording-copy">
+              <span class="button-kicker" data-i18n="recordingKicker">記録</span>
+              <strong data-i18n="recordingTitle">圧力データを記録できます</strong>
+              <p data-i18n="recordingCopy">両足をそろえて立ち、記録開始ボタンを押します。設定した秒数が経過すると、CSV形式で保存できる記録が作成されます。</p>
+            </div>
+            <div class="recording-controls">
+              <label class="duration-control">
+                <span data-i18n="secondsLabel">記録時間</span>
+                <div class="duration-input">
+                  <input id="trial-duration" type="number" min="5" max="120" step="5" value="30">
+                  <span data-i18n="secondsUnit">秒</span>
+                </div>
+              </label>
+              <button id="calibrate-center" class="record-tool-button" type="button" title="現在位置を中心として補正" data-i18n-title="centerTitle">
+                <strong data-i18n="center">中心を合わせる</strong>
+                <small data-i18n="centerHelp">今の立ち位置を基準にします</small>
+              </button>
+              <button id="trial-toggle" class="record-primary" type="button">
+                <span class="button-kicker" data-i18n="trialKicker">記録</span>
+                <strong data-i18n="start">記録開始</strong>
+              </button>
+              <button id="reset-trace" class="record-tool-button" type="button" title="軌跡をリセット" data-i18n-title="resetTitle">
+                <strong data-i18n="reset">やり直し</strong>
+                <small data-i18n="resetHelp">軌跡と記録を消します</small>
+              </button>
+              <button id="export-csv" class="record-tool-button" type="button" title="CSVを書き出し" data-i18n-title="csvTitle">
+                <strong data-i18n="csv">CSV保存</strong>
+                <small data-i18n="csvHelp">記録データを書き出します</small>
+              </button>
+            </div>
+          </div>
+          <div class="control-note-card">
+            <span class="button-kicker" data-i18n="liveDemoTitle">Live / Demo</span>
+            <p data-i18n="liveDemoCopy">
+              実機未接続でも合成データで動作します。INSOLEを接続するとLIVE表示になり、圧力・CoP・左右荷重が実測値に切り替わります。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <div class="panel cop-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow" data-i18n="copEyebrow">Statokinesigram</p>
+              <h2 data-i18n="copTitle">Global CoP Trace</h2>
+              <p class="panel-definition" data-i18n="copDefinition">左右足CoPを荷重で合成した全体CoPの30秒軌跡。</p>
+            </div>
+            <span id="cop-readout" class="readout">x 0.00 / y 0.00</span>
+          </div>
+          <canvas id="cop-canvas" width="900" height="650" aria-label="CoP trace"></canvas>
+        </div>
+
+        <div class="panel pressure-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow" data-i18n="pressureEyebrow">Pressure Map</p>
+              <h2 data-i18n="pressureTitle">Six Sensors / Foot</h2>
+              <p class="panel-definition" data-i18n="pressureDefinition">左右各6点のADC生値と足内CoP。</p>
+            </div>
+            <span id="load-readout" class="readout">0 a.u.</span>
+          </div>
+          <canvas id="pressure-canvas" width="760" height="650" aria-label="Pressure map"></canvas>
+          <div class="pressure-explainer">
+            <div class="pressure-legend">
+              <span class="legend-dot low"></span><span data-i18n="lowLoad">低荷重</span>
+              <span class="legend-line"></span>
+              <span class="legend-dot high"></span><span data-i18n="highLoad">高荷重</span>
+              <span class="cop-swatch"></span><span>CoP</span>
+            </div>
+            <p data-i18n="pressureExplainer">
+              左右それぞれ6か所の圧力センサを足型の上に表示します。値が大きいセンサほど暖色になり、水色の印は足裏の圧力中心を示します。圧力値はADC生値です。実機接続時はモード3または4で圧力を配信します。荷重[N]へ換算する場合は別途キャリブレーションが必要です。
+            </p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow" data-i18n="stabilogramEyebrow">Front / Back Sway</p>
+              <h2 data-i18n="stabilogramTitle">前後方向の揺れ</h2>
+              <p class="panel-definition" data-i18n="stabilogramDefinition">オレンジの線は重心がつま先側・踵側へ動いた量です。線の上下が大きいほど、前後方向の揺れが大きい状態です。</p>
+            </div>
+            <span class="readout">30 s</span>
+          </div>
+          <canvas id="stabilogram-canvas" width="900" height="310" aria-label="Stabilogram chart"></canvas>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow" data-i18n="loadEyebrow">Weight Bearing</p>
+              <h2 data-i18n="loadTitle">Left / Right Ratio</h2>
+              <p class="panel-definition" data-i18n="loadDefinition">緑線は全荷重のうち左足に乗っている割合です。破線の50%に近いほど左右均等で、上なら左足荷重、下なら右足荷重です。</p>
+            </div>
+            <span id="paired-readout" class="readout">pair waiting</span>
+          </div>
+          <canvas id="load-canvas" width="760" height="310" aria-label="Load balance chart"></canvas>
+        </div>
+      </section>
+
+      <section class="metrics-row" aria-label="重心動揺指標">
+        <div class="metric">
+          <span data-i18n="metricSteadiness">Steadiness</span>
+          <strong id="metric-score">--</strong>
+          <small data-i18n="metricSteadinessDef">100に近いほど、この試行内では揺れが少なく安定。</small>
+        </div>
+        <div class="metric">
+          <span data-i18n="metricPath">Path</span>
+          <strong id="metric-path">--</strong>
+          <small data-i18n="metricPathDef">重心点が動いた距離の合計。小さいほど揺れが少ない。</small>
+        </div>
+        <div class="metric">
+          <span data-i18n="metricVelocity">Velocity</span>
+          <strong id="metric-velocity">--</strong>
+          <small data-i18n="metricVelocityDef">1秒あたりの揺れ量。大きいほど速く補正している。</small>
+        </div>
+        <div class="metric">
+          <span data-i18n="metricEllipse">Ellipse</span>
+          <strong id="metric-ellipse">--</strong>
+          <small data-i18n="metricEllipseDef">揺れが広がった範囲。大きいほど広く動いている。</small>
+        </div>
+        <div class="metric">
+          <span data-i18n="metricLoad">L/R Load</span>
+          <strong id="metric-load">--</strong>
+          <small data-i18n="metricLoadDef">左/右の荷重割合。50/50に近いほど左右均等。</small>
+        </div>
+        <div class="metric">
+          <span data-i18n="metricTrial">Trial</span>
+          <strong id="metric-trial">Idle</strong>
+          <small data-i18n="metricTrialDef">計測中は残り時間、終了後は記録秒数を表示。</small>
+        </div>
+      </section>
+
+      <section class="exam-guide" aria-label="重心動揺検査ガイド">
+        <div class="guide-card guide-card-wide">
+          <p class="eyebrow" data-i18n="guideEyebrow">How to Test</p>
+          <h2 data-i18n="guideTitle">検査の進め方</h2>
+          <ol class="guide-steps">
+            <li data-i18n="guideStepPrepare">安全のため、支えられる人が横に立ちます。足幅・靴・床・姿勢を毎回そろえます。</li>
+            <li data-i18n="guideStepOpen">開眼: 正面の一点を見て、話さず静かに立ちます。Centerで現在位置を基準にしてStartします。</li>
+            <li data-i18n="guideStepClosed">閉眼: 開眼で安全に立てる場合だけ実施します。目を閉じると視覚情報が減るため揺れやすくなります。</li>
+            <li data-i18n="guideStepStop">足が動く、支えが必要、強い不安がある場合は中止し、その試行は比較から外します。</li>
+          </ol>
+        </div>
+        <div class="guide-card">
+          <p class="eyebrow" data-i18n="postureEyebrow">Posture</p>
+          <h2 data-i18n="postureTitle">姿勢</h2>
+          <p data-i18n="postureCopy">両足でまっすぐ立ち、腕は自然に下ろします。膝を固めすぎず、検査中は足を踏み替えません。</p>
+        </div>
+        <div class="guide-card">
+          <p class="eyebrow" data-i18n="readingEyebrow">Result Guide</p>
+          <h2 data-i18n="readingTitle">結果の見方</h2>
+          <p data-i18n="readingCopy">まずCoP軌跡の大きさを見ます。次に軌跡長・速度・楕円面積で揺れ量を確認し、最後に左右荷重の偏りを見ます。</p>
+        </div>
+        <div class="guide-card">
+          <p class="eyebrow" data-i18n="judgementEyebrow">Compare</p>
+          <h2 data-i18n="judgementTitle">比較のポイント</h2>
+          <p data-i18n="judgementCopy">数値は単独で診断せず、同じ人・同じ条件で比較します。開眼より閉眼で大きく悪化する場合は、視覚に頼った姿勢制御の可能性を疑います。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/CoreToolkit.js"></script>
+  <script src="balance-sway.js?v=one-screen2"></script>
+</body>
+
+</html>
