@@ -115,6 +115,22 @@ section {
   margin-bottom: 0.5rem;
 }
 
+.connect-note-card {
+  height: 100%;
+  background: #10171c;
+  border: 1px solid #2b3a44;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.connect-note-card li {
+  margin-bottom: 0.45rem;
+}
+
+.connect-note-card li:last-child {
+  margin-bottom: 0;
+}
+
 /* --- コードスニペット --- */
 .snippet-block {
   position: relative;
@@ -202,6 +218,53 @@ section {
   border: 2px solid #fff;
   background: #45e6e6;
   vertical-align: -1px;
+}
+
+.pressure-load-card,
+.statokinesigram-card {
+  background: #10171c;
+  border: 1px solid #2b3a44;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.pressure-total-track,
+.pressure-side-track {
+  position: relative;
+  overflow: hidden;
+  background: #071015;
+  border: 1px solid #2b3a44;
+}
+
+.pressure-total-track {
+  height: 18px;
+  border-radius: 9px;
+}
+
+.pressure-side-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+.pressure-total-fill,
+.pressure-side-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0d4f8b 0%, #45e6e6 48%, #ff6040 100%);
+  transition: width 90ms linear;
+}
+
+.pressure-side-fill.right {
+  background: linear-gradient(90deg, #2d77b8 0%, #45e6e6 52%, #ff8a40 100%);
+}
+
+.statokinesigram-card canvas {
+  display: block;
+  width: 100%;
+  background: #071015;
+  border: 1px solid #2b3a44;
+  border-radius: 6px;
 }
 
 /* --- 3D --- */

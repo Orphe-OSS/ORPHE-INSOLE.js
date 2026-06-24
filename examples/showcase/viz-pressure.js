@@ -1,18 +1,18 @@
 /**
  * 圧力セクションの可視化: 足型ヒートマップ + CoP + 6ch折れ線チャート（デバイスごとに1パネル）
  *
- * センサ座標は hula-motion-sonifier の SENSOR_LAYOUT（左足画像基準・0..1の比率）を流用。
+ * センサ座標はインソール画像内の白い十字マーカー（左足画像基準・0..1の比率）に合わせる。
  * 右足表示時は x を鏡像反転する。
  * チャネルの物理配置はモデルにより異なる場合があるため、配置を変えるときは
  * SENSOR_LAYOUT の並びだけを修正すればよい。
  */
 const PRESSURE_SENSOR_LAYOUT = [
-    { x: 0.25, y: 0.17 },  // 0 toe-medial
-    { x: 0.25, y: 0.34 },  // 1 ball-medial
-    { x: 0.64, y: 0.22 },  // 2 toe-lateral
-    { x: 0.54, y: 0.35 },  // 3 ball-center
-    { x: 0.79, y: 0.37 },  // 4 lateral-midfoot
-    { x: 0.60, y: 0.88 },  // 5 heel
+    { x: 0.7596, y: 0.1680 },  // p0
+    { x: 0.7513, y: 0.3320 },  // p1
+    { x: 0.4024, y: 0.2210 },  // p2
+    { x: 0.5245, y: 0.3483 },  // p3
+    { x: 0.2884, y: 0.3681 },  // p4
+    { x: 0.5552, y: 0.8206 },  // p5
 ];
 
 function createPressurePanel(deviceId, defaultFoot) {

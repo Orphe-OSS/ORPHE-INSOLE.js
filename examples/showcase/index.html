@@ -116,7 +116,7 @@
       <div class="row g-4 mt-1">
         <div class="col-md-6">
           <ol class="connect-steps">
-            <li data-i18n="connectStep1">INSOLE の電源を入れる（充電済みであることを確認）</li>
+            <li data-i18n="connectStep1">充電された INSOLE を用意する</li>
             <li data-i18n-html="connectStep2">ページ上部の<strong>トグルスイッチをON</strong>にする（左右2台まで。1台でもOK）</li>
             <li data-i18n-html="connectStep3">デバイス選択ダイアログで <code>ORPHE INSOLE</code> を選ぶ</li>
           </ol>
@@ -141,31 +141,14 @@
           </p>
         </div>
         <div class="col-md-6">
-          <div class="snippet-block">
-            <div class="snippet-title" data-i18n="snippetMinimalTitle">最小コード</div>
-            <pre class="snippet"><code data-i18n-html="snippetMinimalCode">&lt;script src="ORPHE-INSOLE.js"&gt;&lt;/script&gt;
-&lt;script&gt;
-  var insole = new OrpheInsole(0);  // id: 0 or 1 (最大2台)
-  insole.setup();                   // begin の前に必須
-
-  // ボタンクリック等のユーザー操作から呼ぶ
-  async function connect() {
-    await insole.begin('SENSOR_VALUES', {
-      streamingMode: 4,     // 1 | 3 | 4
-      autoReconnect: true,  // 切断時に自動再接続
-    });
-  }
-
-  insole.gotPress = function (press) {
-    console.log(this.id, press.values);  // 6ch の ADC 生値
-  };
-&lt;/script&gt;</code></pre>
-            <button class="btn btn-sm btn-outline-light copy-btn" type="button" data-i18n="copyButton">copy</button>
+          <div class="connect-note-card">
+            <h3 class="h6 text-info" data-i18n="connectPrepTitle">接続前の確認</h3>
+            <ul class="small mb-0">
+              <li data-i18n="connectPrepItem1">ORPHE INSOLE は動きを検知すると自動的にアドバタイズします。</li>
+              <li data-i18n="connectPrepItem2">反応しない場合は、軽く動かしてからブラウザのデバイス選択をやり直してください。</li>
+              <li data-i18n="connectPrepItem3">圧力値を見る場合は、ギアからモード3または4を選びます。</li>
+            </ul>
           </div>
-          <p class="small text-muted mt-2" data-i18n-html="connectToolkitNote">
-            このページのように接続UIごと使いたい場合は <code>InsoleToolkit.js</code> の
-            <code>buildInsoleToolkit()</code> が便利です（トグル・再接続・モード切替UIを自動生成）。
-          </p>
         </div>
       </div>
     </section>
@@ -175,7 +158,7 @@
       <h2 class="section-title"><i class="bi bi-grid-3x2-gap"></i> <span data-i18n="pressureTitle">圧力センサ（6ch × 左右）</span></h2>
       <p class="section-desc" data-i18n-html="pressureDesc">
         足裏の6点で荷重を計測します。足型マップでは値が大きいほど赤く表示され、
-        <span class="cop-legend"></span> は6点の重み付き平均から計算した<strong>圧力中心（CoP）</strong>です。
+        <span class="cop-legend"></span> は6点の重み付き平均から計算した<strong>推定中心</strong>です。
         左右2台を接続すると、体重移動・左右バランスがそのまま観察できます。
       </p>
       <span id="notice_press" class="badge bg-warning text-dark d-none" data-i18n="noticePress">現在のモード(1)では圧力は配信されません — ギアからモード3/4へ</span>
@@ -206,6 +189,34 @@
             <div class="col-7">
               <canvas id="chart_press1"></canvas>
             </div>
+          </div>
+        </div>
+      </div>
+      <div class="pressure-load-card mt-3">
+        <div class="d-flex justify-content-between align-items-baseline gap-3 flex-wrap">
+          <div>
+            <div class="small text-info fw-bold" data-i18n="pressureGaugeEyebrow">TOTAL PRESSURE</div>
+            <h3 class="h6 mb-0" data-i18n="pressureGaugeTitle">全体圧力ゲージ</h3>
+          </div>
+          <div class="mono fs-5"><span id="pressure_total_value">0</span> a.u.</div>
+        </div>
+        <div class="pressure-total-track mt-3" aria-label="Total pressure">
+          <div id="pressure_total_gauge" class="pressure-total-fill"></div>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-md-6">
+            <div class="d-flex justify-content-between small">
+              <span data-i18n="pressureLeftLabel">左足</span>
+              <span class="mono" id="pressure_left_value">0</span>
+            </div>
+            <div class="pressure-side-track"><div id="pressure_left_bar" class="pressure-side-fill"></div></div>
+          </div>
+          <div class="col-md-6">
+            <div class="d-flex justify-content-between small">
+              <span data-i18n="pressureRightLabel">右足</span>
+              <span class="mono" id="pressure_right_value">0</span>
+            </div>
+            <div class="pressure-side-track"><div id="pressure_right_bar" class="pressure-side-fill right"></div></div>
           </div>
         </div>
       </div>
@@ -310,6 +321,17 @@ insole.gotEuler = function (euler) {
           </div>
         </div>
       </div>
+      <div class="statokinesigram-card mt-4">
+        <div class="d-flex justify-content-between align-items-baseline gap-3 flex-wrap">
+          <div>
+            <div class="small text-info fw-bold" data-i18n="statoEyebrow">ESTIMATED LOAD CENTER</div>
+            <h3 class="h5 mb-1" data-i18n="statoTitle">左右荷重分布の推定中心軌跡</h3>
+            <p class="small text-muted mb-0" data-i18n="statoDesc">左右それぞれ6点のADC生値から求めた推定中心を、荷重比で合成した30秒軌跡。</p>
+          </div>
+          <div class="small mono text-muted" id="stato_readout">x - / y -</div>
+        </div>
+        <canvas id="statokinesigram_canvas" width="900" height="420" class="mt-3" aria-label="Estimated load center trace"></canvas>
+      </div>
     </section>
 
     <!-- 7. データ記録 -->
@@ -388,7 +410,52 @@ insole.gotEuler = function (euler) {
       </p>
     </section>
 
-    <!-- 9. 購入・お問い合わせ -->
+    <!-- 9. プログラムを自作する -->
+    <section id="program" class="py-4 border-top border-secondary">
+      <h2 class="section-title"><i class="bi bi-code-slash"></i> <span data-i18n="programTitle">プログラムを自作する</span></h2>
+      <p class="section-desc" data-i18n-html="programDesc">
+        独自アプリでは <code>ORPHE-INSOLE.js</code> を読み込み、ユーザー操作から <code>begin()</code> を呼びます。
+        このShowcaseのような接続UIごと使いたい場合は <code>InsoleToolkit.js</code> の <code>buildInsoleToolkit()</code> が便利です。
+      </p>
+      <div class="row g-4 mt-1">
+        <div class="col-lg-7">
+          <div class="snippet-block">
+            <div class="snippet-title" data-i18n="snippetMinimalTitle">最小コード</div>
+            <pre class="snippet"><code data-i18n-html="snippetMinimalCode">&lt;script src="ORPHE-INSOLE.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  var insole = new OrpheInsole(0);  // id: 0 or 1 (最大2台)
+  insole.setup();                   // begin の前に必須
+
+  // ボタンクリック等のユーザー操作から呼ぶ
+  async function connect() {
+    await insole.begin('SENSOR_VALUES', {
+      streamingMode: 4,     // 1 | 3 | 4
+      autoReconnect: true,  // 切断時に自動再接続
+    });
+  }
+
+  insole.gotPress = function (press) {
+    console.log(this.id, press.values);  // 6ch の ADC 生値
+  };
+&lt;/script&gt;</code></pre>
+            <button class="btn btn-sm btn-outline-light copy-btn" type="button" data-i18n="copyButton">copy</button>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="connect-note-card">
+            <h3 class="h6 text-info" data-i18n="programStepsTitle">実装の流れ</h3>
+            <ol class="small mb-0">
+              <li data-i18n-html="programStep1"><code>new OrpheInsole(id)</code> でインスタンスを作る。</li>
+              <li data-i18n-html="programStep2"><code>setup()</code> を呼び、ボタン操作などから <code>begin()</code> で接続する。</li>
+              <li data-i18n-html="programStep3"><code>gotPress</code>, <code>gotConvertedAcc</code>, <code>gotConvertedGyro</code>, <code>gotQuat</code> を必要に応じて実装する。</li>
+              <li data-i18n-html="programStep4">接続UIも必要なら <code>buildInsoleToolkit()</code> を使う。</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. 購入・お問い合わせ -->
     <section id="contact" class="py-5 border-top border-secondary text-center">
       <h2 class="section-title justify-content-center"><i class="bi bi-chat-dots"></i> <span data-i18n="contactTitle">購入・お問い合わせ</span></h2>
       <p class="mx-auto mt-3" style="max-width: 40rem;" data-i18n-html="contactDesc">

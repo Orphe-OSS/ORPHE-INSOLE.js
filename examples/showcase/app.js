@@ -12,6 +12,11 @@
 const HISTORY = 200;           // チャートに表示するサンプル数
 const RENDER_INTERVAL_MS = 33; // 描画間隔（約30fps）
 const LIVE_TIMEOUT_MS = 1500;  // ライブ受信がこの時間途絶えたらデモ再生に戻る
+const FOOT_LOCAL_X_RANGE = 0.58;
+const FOOT_LOCAL_Y_RANGE = 0.9;
+const FOOT_CENTER_X = { L: -0.28, R: 0.28 };
+const STATO_WINDOW_MS = 30000;
+const PRESSURE_GAUGE_MAX = 10000;
 
 const SERIES_COLORS = [
     'rgb(69, 230, 230)',
@@ -96,6 +101,201 @@ class ChartFeed {
     }
 }
 
+function pressurePositionForSide(layoutPoint, side) {
+    return {
+        x: side === 'R' ? 1 - layoutPoint.x : layoutPoint.x,
+        y: layoutPoint.y,
+    };
+}
+
+function computeFootPressureState(values, side) {
+    if (!Array.isArray(values)) return null;
+    let load = 0;
+    let x = 0;
+    let y = 0;
+    values.slice(0, 6).forEach((raw, index) => {
+        const value = Math.max(0, Number(raw) || 0);
+        const imagePoint = pressurePositionForSide(PRESSURE_SENSOR_LAYOUT[index], side);
+        const localX = (imagePoint.x - 0.5) * FOOT_LOCAL_X_RANGE;
+        const localY = (0.5 - imagePoint.y) * FOOT_LOCAL_Y_RANGE;
+        load += value;
+        x += localX * value;
+        y += localY * value;
+    });
+    if (load <= 0) {
+        return { side, values, load: 0, cop: { x: 0, y: 0 } };
+    }
+    return { side, values, load, cop: { x: x / load, y: y / load } };
+}
+
+function combineFootPressureStates(left, right) {
+    const feet = [left, right].filter(Boolean);
+    const load = feet.reduce((sum, foot) => sum + foot.load, 0);
+    if (load <= 0) return null;
+    const point = feet.reduce((acc, foot) => {
+        acc.x += (FOOT_CENTER_X[foot.side] + foot.cop.x) * foot.load;
+        acc.y += foot.cop.y * foot.load;
+        return acc;
+    }, { x: 0, y: 0 });
+    return {
+        x: point.x / load,
+        y: point.y / load,
+        load,
+        leftLoad: left ? left.load : 0,
+        rightLoad: right ? right.load : 0,
+    };
+}
+
+function createPressureGauge() {
+    const dom = {
+        totalValue: document.getElementById('pressure_total_value'),
+        leftValue: document.getElementById('pressure_left_value'),
+        rightValue: document.getElementById('pressure_right_value'),
+        totalBar: document.getElementById('pressure_total_gauge'),
+        leftBar: document.getElementById('pressure_left_bar'),
+        rightBar: document.getElementById('pressure_right_bar'),
+    };
+
+    function setWidth(element, value, max) {
+        if (!element) return;
+        const pct = Math.max(0, Math.min(100, value / max * 100));
+        element.style.width = `${pct.toFixed(1)}%`;
+    }
+
+    function render(left, right) {
+        const leftLoad = left ? left.load : 0;
+        const rightLoad = right ? right.load : 0;
+        const total = leftLoad + rightLoad;
+        if (dom.totalValue) dom.totalValue.textContent = String(Math.round(total));
+        if (dom.leftValue) dom.leftValue.textContent = String(Math.round(leftLoad));
+        if (dom.rightValue) dom.rightValue.textContent = String(Math.round(rightLoad));
+        setWidth(dom.totalBar, total, PRESSURE_GAUGE_MAX * 2);
+        setWidth(dom.leftBar, leftLoad, PRESSURE_GAUGE_MAX);
+        setWidth(dom.rightBar, rightLoad, PRESSURE_GAUGE_MAX);
+    }
+
+    return { render };
+}
+
+function createStatokinesigram(canvasId, readoutId) {
+    const canvas = document.getElementById(canvasId);
+    const readout = document.getElementById(readoutId);
+    const samples = [];
+    if (!canvas) return { push() {}, render() {} };
+    const ctx = canvas.getContext('2d');
+
+    function map(point, plot) {
+        return {
+            x: plot.x + (point.x + 0.65) / 1.3 * plot.w,
+            y: plot.y + (0.55 - point.y) / 1.1 * plot.h,
+        };
+    }
+
+    function drawGrid(plot) {
+        ctx.strokeStyle = 'rgba(159, 182, 195, 0.2)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 6; i++) {
+            const x = plot.x + plot.w * i / 6;
+            ctx.beginPath();
+            ctx.moveTo(x, plot.y);
+            ctx.lineTo(x, plot.y + plot.h);
+            ctx.stroke();
+        }
+        for (let i = 0; i <= 4; i++) {
+            const y = plot.y + plot.h * i / 4;
+            ctx.beginPath();
+            ctx.moveTo(plot.x, y);
+            ctx.lineTo(plot.x + plot.w, y);
+            ctx.stroke();
+        }
+    }
+
+    function drawSupportArea(plot) {
+        const leftX = plot.x + (FOOT_CENTER_X.L + 0.65) / 1.3 * plot.w;
+        const rightX = plot.x + (FOOT_CENTER_X.R + 0.65) / 1.3 * plot.w;
+        const toeY = plot.y + (0.55 - 0.34) / 1.1 * plot.h;
+        const heelY = plot.y + (0.55 + 0.38) / 1.1 * plot.h;
+        ctx.fillStyle = 'rgba(69, 230, 230, 0.08)';
+        ctx.strokeStyle = 'rgba(69, 230, 230, 0.42)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(leftX - 42, heelY);
+        ctx.lineTo(leftX - 30, toeY);
+        ctx.lineTo(rightX + 30, toeY);
+        ctx.lineTo(rightX + 42, heelY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    function push(point, now) {
+        if (!point) return;
+        const last = samples[samples.length - 1];
+        if (last && now - last.t < 80) return;
+        samples.push({ t: now, x: point.x, y: point.y, load: point.load });
+        while (samples.length && now - samples[0].t > STATO_WINDOW_MS) {
+            samples.shift();
+        }
+        if (readout) {
+            readout.textContent = `x ${point.x.toFixed(3)} / y ${point.y.toFixed(3)}`;
+        }
+    }
+
+    function render(now) {
+        while (samples.length && now - samples[0].t > STATO_WINDOW_MS) {
+            samples.shift();
+        }
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#071015';
+        ctx.fillRect(0, 0, width, height);
+
+        const plot = { x: 58, y: 34, w: width - 92, h: height - 78 };
+        drawGrid(plot);
+        drawSupportArea(plot);
+
+        ctx.strokeStyle = '#45e6e6';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        let hasPoint = false;
+        samples.forEach((sample) => {
+            const point = map(sample, plot);
+            if (!hasPoint) {
+                ctx.moveTo(point.x, point.y);
+                hasPoint = true;
+            } else {
+                ctx.lineTo(point.x, point.y);
+            }
+        });
+        if (hasPoint) ctx.stroke();
+
+        const latest = samples[samples.length - 1];
+        if (latest) {
+            const point = map(latest, plot);
+            ctx.fillStyle = '#ff6040';
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = '#9fb6c3';
+        ctx.font = '700 12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('ML', plot.x + plot.w / 2, height - 22);
+        ctx.save();
+        ctx.translate(20, plot.y + plot.h / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('AP', 0, 0);
+        ctx.restore();
+    }
+
+    return { push, render };
+}
+
 //--------------------------------------------------
 // 状態（デバイス0/1）
 //--------------------------------------------------
@@ -104,10 +304,13 @@ const lastLiveAtDev = [-Infinity, -Infinity];  // デバイスごとの最終ラ
 let liveActive = false;
 const latestEuler = [null, null];
 const latestQuat = [null, null];
+const latestPressure = [null, null];
 const sides = ['L', 'R'];                      // 表示上のL/R（mount_position で更新）
 
 let pressurePanels = [];
 let imuPanels = [];
+let pressureGauge = null;
+let statokinesigram = null;
 
 //--------------------------------------------------
 // フレーム配信: ライブ/デモ共通の入口
@@ -121,6 +324,9 @@ function dispatchFrame(deviceId, frame, isLive) {
 
     pressurePanels[deviceId].push(frame);
     imuPanels[deviceId].push(frame);
+    if (frame.press) {
+        latestPressure[deviceId] = frame.press.slice(0, 6);
+    }
     if (frame.quat) {
         latestQuat[deviceId] = frame.quat;
         AttitudeViz.setQuat(deviceId, frame.quat);
@@ -290,6 +496,8 @@ function applyMountPositionWhenReady(insole, tries = 20) {
 window.onload = function () {
     pressurePanels = [createPressurePanel(0, 'L'), createPressurePanel(1, 'R')];
     imuPanels = [createImuPanel(0), createImuPanel(1)];
+    pressureGauge = createPressureGauge();
+    statokinesigram = createStatokinesigram('statokinesigram_canvas', 'stato_readout');
     pressurePanels.forEach(p => p.init());
     imuPanels.forEach(p => p.init());
 
@@ -461,6 +669,19 @@ window.onload = function () {
         val.textContent = `${deg >= 0 ? '+' : ''}${deg.toFixed(1)}°`;
     }
 
+    function currentFootPressureStates() {
+        let left = null;
+        let right = null;
+        for (let id = 0; id < 2; id++) {
+            const side = sides[id];
+            const foot = computeFootPressureState(latestPressure[id], side);
+            if (!foot) continue;
+            if (side === 'L') left = foot;
+            if (side === 'R') right = foot;
+        }
+        return { left, right };
+    }
+
     let lastRender = 0;
     function loop(now) {
         liveActive = (performance.now() - lastLiveAt) < LIVE_TIMEOUT_MS;
@@ -482,6 +703,16 @@ window.onload = function () {
                     quatReadouts[id].textContent =
                         `w ${q.w.toFixed(3)} / x ${q.x.toFixed(3)} / y ${q.y.toFixed(3)} / z ${q.z.toFixed(3)}`;
                 }
+            }
+
+            const pressureState = currentFootPressureStates();
+            if (pressureGauge) {
+                pressureGauge.render(pressureState.left, pressureState.right);
+            }
+            const combinedCop = combineFootPressureStates(pressureState.left, pressureState.right);
+            if (statokinesigram) {
+                statokinesigram.push(combinedCop, now);
+                statokinesigram.render(now);
             }
 
             // LIVE/DEMO バッジ
