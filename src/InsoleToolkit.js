@@ -166,7 +166,9 @@ async function toggleInsoleModule(dom, options = {}) {
             const beginOptions = Object.assign({}, options, { forceDeviceSelection: true });
             ret = await insole.begin('SENSOR_VALUES', beginOptions);
         } catch (error) {
-            console.error('toggleInsoleModule connect failed:', error);
+            if (!isInsoleToolkitUserCancel(error)) {
+                console.error('toggleInsoleModule connect failed:', error);
+            }
             ret = null;
         }
         if (!ret) {
@@ -214,6 +216,11 @@ async function toggleInsoleModule(dom, options = {}) {
         insole.reset();
         document.querySelector(`#ui${number}`).style.visibility = 'hidden';
     }
+}
+
+function isInsoleToolkitUserCancel(error) {
+    const message = error && error.message ? error.message : String(error || '');
+    return Boolean(error && error.name === 'NotFoundError') || /cancelled|canceled|chooser/i.test(message);
 }
 
 /**

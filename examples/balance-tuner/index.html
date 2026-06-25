@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORPHE INSOLE Balance Tuner</title>
+  <meta name="description"
+    content="ORPHE INSOLE の左右荷重分布を音程、パン、和音の濁りに変換する可聴化exampleです。">
+  <link rel="icon" href="data:,">
+  <link href="./styles.css?v=20260625d" rel="stylesheet">
+</head>
+
+<body>
+  <main class="app-shell">
+    <section class="tuner-stage" aria-label="Balance Tuner">
+      <canvas id="tuner-canvas" width="1440" height="900" aria-label="Balance tuner visualizer"></canvas>
+
+      <header class="topbar">
+        <div>
+          <p class="kicker">ORPHE INSOLE SONIFICATION</p>
+          <h1>Balance Tuner</h1>
+        </div>
+        <div class="status-row" aria-live="polite">
+          <span id="source-badge" class="status-pill">DEMO</span>
+          <span id="pair-badge" class="status-pill">片足/両足 待機</span>
+          <span id="audio-badge" class="status-pill">Audio off</span>
+        </div>
+      </header>
+
+      <section class="control-surface" aria-label="Sonification controls">
+        <div class="mode-panel">
+          <p class="panel-label">SONIFICATION</p>
+          <div class="mode-buttons" role="group" aria-label="可聴化モード">
+            <button id="mode-tuner" class="mode-button is-active" type="button">
+              <span>Balance Tuner</span>
+              <small>中心に近いほど澄んだ和音</small>
+            </button>
+            <button id="mode-harmony" class="mode-button" type="button">
+              <span>Left/Right Harmony</span>
+              <small>左右均等ほど協和音</small>
+            </button>
+          </div>
+        </div>
+
+        <div class="audio-panel">
+          <button id="audio-toggle" class="primary-action" type="button">音を開始</button>
+          <label class="range-control">
+            <span>Volume</span>
+            <input id="volume-slider" type="range" min="0" max="100" value="55">
+          </label>
+          <button id="center-button" class="ghost-action" type="button">中心を合わせる</button>
+          <button id="demo-toggle" class="ghost-action" type="button">Demo on</button>
+        </div>
+
+        <div class="readout-panel">
+          <div>
+            <span class="readout-label">推定中心</span>
+            <strong id="center-readout">x 0.000 / y 0.000</strong>
+          </div>
+          <div>
+            <span class="readout-label">左右荷重</span>
+            <strong id="load-readout">50 / 50</strong>
+          </div>
+          <div>
+            <span class="readout-label">音の状態</span>
+            <strong id="sound-readout">澄んだ和音</strong>
+          </div>
+        </div>
+      </section>
+
+      <aside class="load-meter-stack" aria-label="左右圧力合計メーター">
+        <div class="vertical-meter is-left">
+          <div class="meter-shell">
+            <div id="left-vertical-meter" class="meter-fill"></div>
+            <span class="meter-target"></span>
+          </div>
+          <div class="meter-text">
+            <span>L</span>
+            <strong id="left-meter-readout">50%</strong>
+          </div>
+        </div>
+        <div class="vertical-meter is-right">
+          <div class="meter-shell">
+            <div id="right-vertical-meter" class="meter-fill"></div>
+            <span class="meter-target"></span>
+          </div>
+          <div class="meter-text">
+            <span>R</span>
+            <strong id="right-meter-readout">50%</strong>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="lower-grid">
+      <div class="panel connection-panel">
+        <div class="panel-head">
+          <div>
+            <p class="kicker">LIVE INPUT</p>
+            <h2>INSOLE を接続する</h2>
+          </div>
+          <select id="streaming-mode" aria-label="データストリーミングモード">
+            <option value="4">Mode 4: 100Hz pressure + quat</option>
+            <option value="3">Mode 3: 200Hz pressure</option>
+          </select>
+        </div>
+        <div id="toolkit-placeholder" class="toolkit-grid"></div>
+        <p class="note">充電された INSOLE を軽く動かしてから接続します。圧力を使うため、実機では Mode 3 または 4 を選んでください。</p>
+      </div>
+
+      <div class="panel feet-panel">
+        <div class="panel-head">
+          <div>
+            <p class="kicker">PRESSURE</p>
+            <h2>6ch raw ADC</h2>
+          </div>
+        </div>
+        <div class="feet-grid">
+          <div>
+            <div id="left-foot-map" class="foot-map is-left" aria-label="Left foot pressure map"></div>
+            <div class="foot-label">LEFT <span id="left-load">0</span></div>
+          </div>
+          <div>
+            <div id="right-foot-map" class="foot-map is-right" aria-label="Right foot pressure map"></div>
+            <div class="foot-label">RIGHT <span id="right-load">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel explanation-panel">
+        <div class="panel-head">
+          <div>
+            <p class="kicker">HOW IT SOUNDS</p>
+            <h2>音への変換</h2>
+          </div>
+        </div>
+        <div class="rule-grid">
+          <div>
+            <h3>Balance Tuner</h3>
+            <p>推定中心の左右位置をパン、前後位置を音程へ変換します。中心から離れるほどビブラートと濁りが増えます。</p>
+          </div>
+          <div>
+            <h3>Left/Right Harmony</h3>
+            <p>左右荷重が50/50に近いと協和音、片足に寄るほど不協和な響きとビート感が増えます。</p>
+          </div>
+        </div>
+        <p class="note">このexampleは可聴化のプロトタイプです。6点ADC生値から求めた推定中心を使っており、医療用の重心計測や力学解析ではありません。</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="./balance-tuner.js?v=20260625d"></script>
+</body>
+
+</html>
