@@ -72,8 +72,7 @@ module.exports = [
                 rotate: 'readonly',
                 createVector: 'readonly',
                 pop: 'readonly',
-                resizeCanvas: 'readonly',
-                d: 'writable'
+                resizeCanvas: 'readonly'
             }
         },
         rules: {

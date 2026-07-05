@@ -75,7 +75,7 @@ window.onload = function () {
                 di_data_buffer.shift();
             }
             let str = '';
-            for (d of di_data_textarea_buffer) {
+            for (const d of di_data_textarea_buffer) {
                 if (d != '\n') {
                     str += `${d},`
                 }
@@ -133,7 +133,7 @@ window.onload = function () {
                 }
 
                 let str = '';
-                for (d of ar_data_textarea_buffer) {
+                for (const d of ar_data_textarea_buffer) {
                     if (d != '\n') {
                         str += `${d},`
                     }
@@ -194,7 +194,7 @@ window.onload = function () {
     // device informationのバッファをCSV形式でダウンロード
     document.querySelector('#button_di_download').addEventListener('click', function () {
         let str = '';
-        for (d of di_data_buffer) {
+        for (const d of di_data_buffer) {
             if (d != '\n') {
                 str += `${d},`
             }
@@ -212,7 +212,7 @@ window.onload = function () {
     // date timeのバッファをCSV形式でダウンロード
     document.querySelector('#button_dt_download').addEventListener('click', function () {
         let str = '';
-        for (d of dt_data_buffer) {
+        for (const d of dt_data_buffer) {
             if (d != '\n') {
                 str += `${d},`
             }
@@ -230,7 +230,7 @@ window.onload = function () {
     // analysis / raw notifyのバッファをCSV形式でダウンロード
     document.querySelector('#button_ar_download').addEventListener('click', function () {
         let str = '';
-        for (d of ar_data_buffer) {
+        for (const d of ar_data_buffer) {
             if (d != '\n') {
                 str += `${d},`
             }
