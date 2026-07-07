@@ -335,6 +335,7 @@ class OrpheInsole {
     this._autoReconnectDisconnectHandler = (event) => this._handleAutoReconnectDisconnect(event);
     this._suppressAutoReconnectErrors = false;
     this._lastAutoReconnectError = null;
+    this._serialInitialized = false;
     // gattserverdisconnected 用 遅延バインドハンドラ。
     // this.onDisconnect を直接 addEventListener すると、リスナー登録後に
     // ユーザが onDisconnect を上書きしても古い関数が呼ばれ続けるため、
@@ -522,24 +523,26 @@ class OrpheInsole {
   /**
    * 最初に必要な初期化処理メソッドです。利用するキャラクタリスティック（DEVICE_INFORMATION, SENSOR_VALUES）の指定の他、オプションを指定することができます。通常利用では引数を省略して 今後の機能拡張を見据えたメソッドなので、基本的にはsetup()で呼び出せば良いです。
    * @param {string[]} [string[]=["DEVICE_INFORMATION","DATE_TIME", "SENSOR_VALUES"]] DEVICE_INFORMATION, DATE_TIME, SENSOR_VALUES,
-   * @param {object} [options = {interpolation}] - interpolationは未実装
+   * @param {object} [options] - 初期化オプション
+   * @param {object} [options.interpolation] - 欠損補間オプション
+   * @param {boolean} [options.interpolation.enabled=false] - 線形補間の有効化/無効化
+   * @param {number} [options.interpolation.max_consecutive_missing=1] - 線形補間する最大の連続欠損数
    *
    */
-  setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES'],
-    options = {
-      interpolation: {
-        enabled: false, // 線形補間の有効化/無効化
-        max_consecutive_missing: 1 // 線形補間する最大の連続欠損数
-      }
-    }
-  ) {
+  setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES'], options = {}) {
 
-    this.interpolation = options.interpolation;
-    this.history_sensor_values.acc.setSize(this.interpolation.max_consecutive_missing);
-    this.history_sensor_values.gyro.setSize(this.interpolation.max_consecutive_missing);
-    this.history_sensor_values.quat.setSize(this.interpolation.max_consecutive_missing);
-    this.history_sensor_values.converted_acc.setSize(this.interpolation.max_consecutive_missing);
-    this.history_sensor_values.converted_gyro.setSize(this.interpolation.max_consecutive_missing);
+    const defaultInterpolation = {
+      enabled: false,
+      max_consecutive_missing: 1
+    };
+    this.interpolation = Object.assign(
+      {},
+      defaultInterpolation,
+      (options && typeof options.interpolation === 'object' && options.interpolation) || {}
+    );
+    for (const key of ['acc', 'gyro', 'quat', 'press', 'converted_acc', 'converted_gyro']) {
+      this.history_sensor_values[key].setSize(this.interpolation.max_consecutive_missing);
+    }
 
     for (const name of names) {
       if (name == 'DEVICE_INFORMATION') {
@@ -1297,6 +1300,7 @@ class OrpheInsole {
   clear() {
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this._serialInitialized = false;
     this.isFirstAdvertisementReceived = false; // フラグをリセット
     this.onClear();
   }
@@ -1309,6 +1313,18 @@ class OrpheInsole {
     this.disconnect(); //disconnect() is not Promise Object
     this.clear();
     this.onReset();
+  }
+
+  _checkSerialGap(current) {
+    if (!this._serialInitialized) {
+      this._serialInitialized = true;
+      this.serial_number = current;
+      return;
+    }
+    const prev = this.serial_number;
+    this.serial_number = current;
+    const diff = (current - prev + 65536) % 65536;
+    if (diff !== 1) this.lostData(current, prev);
   }
 
 
@@ -1332,26 +1348,7 @@ class OrpheInsole {
       if (uuid == 'SENSOR_VALUES') {
         // 50,55,56がリアルタームデータ取得時の先頭ヘッダ
         if (data.getUint8(0) == 50 || data.getUint8(0) == 55 || data.getUint8(0) == 56) {
-          if (this.serial_number) {
-            const serial_number_prev = this.serial_number;
-            this.serial_number = data.getUint16(1);
-
-            // データ欠損が生じた場合
-            if (this.serial_number - serial_number_prev != 1) {
-
-              // 線形補完を有効にしている場合
-              if (this.interpolation.enabled == true) {
-
-              }
-              // ユーザ用コールバック関数の呼び出し
-              this.lostData(this.serial_number, serial_number_prev);
-
-            }
-
-          }
-          else {
-            this.serial_number = data.getUint16(1);
-          }
+          this._checkSerialGap(data.getUint16(1));
         }
       }
       return;
@@ -1368,16 +1365,7 @@ class OrpheInsole {
       }
 
       // データ欠損チェック
-      if (this.serial_number) {
-        const serial_number_prev = this.serial_number;
-        this.serial_number = parsed.serial_number;
-        if (this.serial_number - serial_number_prev != 1) {
-          this.lostData(this.serial_number, serial_number_prev);
-        }
-      }
-      else {
-        this.serial_number = parsed.serial_number;
-      }
+      this._checkSerialGap(parsed.serial_number);
 
       for (const sample of parsed.samples) {
         if (sample.quat) {
