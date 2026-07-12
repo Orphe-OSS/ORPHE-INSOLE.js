@@ -227,6 +227,6 @@ $('btnRun').addEventListener('click', runAll);
 
 $('btnCopy').addEventListener('click', function () {
   navigator.clipboard.writeText(buildReport()).then(function () {
-    log('結果をクリップボードにコピーしました（PR #19 コメントに貼ってください）');
+    log('結果をクリップボードにコピーしました（PR#4 のプルリクエストコメントに貼ってください）');
   });
 });
