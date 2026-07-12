@@ -222,7 +222,7 @@ buildInsoleToolkit(
   parent_element,   // DOM element to append UI
   title,            // 表示タイトル (e.g., 'Left Foot')
   insole_id,        // 0 or 1
-  options           // { streamingMode: 4, autoReconnect: true }
+  options           // { streamingMode: 4, autoReconnect: true, simulator: false }
 );
 
 // Global variables created by InsoleToolkit:
@@ -232,6 +232,10 @@ buildInsoleToolkit(
 ```
 
 接続後、ツールキットのヘッダには 実測周波数 / L・Rバッジ（mount_position から自動判定）/ バッテリー / 再接続ステータス / 設定（ストリーミングモード変更）が表示されます。
+
+`options.simulator: true` を渡すと、そのスロットが `OrpheInsoleSimulator` に差し替わり
+**実機なしで同じ UI・コールバックが動きます**（要 `InsoleSimulator.js` の読み込み。
+トグルONで合成歩行データが流れ始めます。デモ・CI・実機を持たない開発者向け）。
 
 ## Common Patterns
 

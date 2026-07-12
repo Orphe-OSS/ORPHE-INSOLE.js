@@ -131,3 +131,21 @@ utils.mirrorForSide(utils.SENSOR_LAYOUT, 'center');
 
 // @ts-expect-error ContactDetector は on/off が必須
 new utils.ContactDetector({ on: 800 });
+
+// ── OrpheInsoleSimulator の型 ──
+const simulator = new globalThis.OrpheInsoleSimulator(0);
+simulator.setup();
+void simulator.begin({ preset: 'walk', streamingMode: 4, loop: false });
+void simulator.begin('SENSOR_VALUES', { frames: [{ device: 0, t: 0, press: [1, 2, 3, 4, 5, 6], acc: { x: 0, y: 0, z: 1 } }] });
+simulator.gotPress = (press: InsolePressSample) => { void press.values; };
+void simulator.setDataStreamingMode(3);
+globalThis.insoles = [simulator, insole]; // insoles は実機とシミュレータの混在を許す
+
+// buildInsoleToolkit の simulator オプション
+globalThis.buildInsoleToolkit(document.createElement('div'), 'SIM', 0, { simulator: true, streamingMode: 4 });
+
+// @ts-expect-error preset は 'walk' | 'stand' | 'sway' のみ
+void simulator.begin({ preset: 'run' });
+
+// @ts-expect-error simulator の streamingMode も 1|3|4 のみ
+void simulator.setDataStreamingMode(2);
