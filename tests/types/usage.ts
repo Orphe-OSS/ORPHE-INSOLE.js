@@ -93,3 +93,41 @@ void insole.setDataStreamingMode(2);
 
 // @ts-expect-error gotPress requires an InsolePressSample payload.
 insole.gotPress({ values: [1, 2, 3, 4, 5, 6] });
+
+// ── InsoleUtils の型 ──
+const utils = globalThis.OrpheInsoleUtils;
+const validation = utils.validatePress([1, 2, 3, 4, 5, 6]);
+const okFlag: boolean = validation.ok;
+void okFlag;
+
+const cop = utils.computeCoP([1, 2, 3, 4, 5, 6], utils.mirrorForSide(utils.SENSOR_LAYOUT, 'left'), { minLoad: 100 });
+const copLoad: number = cop.load;
+void copLoad;
+
+const calibrator = new utils.PressureCalibrator();
+calibrator.setZero([[0, 0, 0, 0, 0, 0]]);
+const normalizedValues: number[] = calibrator.normalize([1, 2, 3, 4, 5, 6]);
+void normalizedValues;
+
+const contactDetector = new utils.ContactDetector({ on: 800, off: 400, minContactMs: 50 });
+contactDetector.footDown = (info) => {
+    const flight: number | null = info.flightMs;
+    void flight;
+};
+const contactEvent = contactDetector.update(900, 10);
+if (contactEvent && contactEvent.event === 'up') {
+    const stance: number | null = contactEvent.stanceMs;
+    void stance;
+}
+
+const mount = utils.sideFromMountPosition(1);
+if (mount) {
+    const side: 'left' | 'right' = mount.side;
+    void side;
+}
+
+// @ts-expect-error mirrorForSide の side は 'left' | 'right' のみ
+utils.mirrorForSide(utils.SENSOR_LAYOUT, 'center');
+
+// @ts-expect-error ContactDetector は on/off が必須
+new utils.ContactDetector({ on: 800 });
