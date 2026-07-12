@@ -307,7 +307,8 @@ class OrpheInsole {
 
     // Initialize member variables
     this.bluetoothDevice = null;
-    this.dataCharacteristic = null;// 通知を行うcharacteristicを保持する
+    this.dataCharacteristic = null;// 最後に操作した characteristic（後方互換のために残す参照）
+    this._characteristics = {}; // uuid名 -> characteristic。read/write/notify は必ずこちらを参照する
     this.dataChangedEventHandlerMap = {}; // イベントハンドラを保持するマップ
     this.hashUUID = {}; // UUIDを保持するハッシュ
     this.hashUUID_lastConnected; // 最後に接続したUUIDを保持する
@@ -758,6 +759,7 @@ class OrpheInsole {
     }
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this._characteristics = {};
     this._usingRememberedBluetoothDevice = false;
     this._rememberedBluetoothDeviceUnavailable = false;
     return this.requestDevice(uuid);
@@ -1040,7 +1042,7 @@ class OrpheInsole {
       uuid,
       hasBluetoothDevice: !!this.bluetoothDevice,
       gattConnected: !!(this.bluetoothDevice && this.bluetoothDevice.gatt && this.bluetoothDevice.gatt.connected),
-      hasDataCharacteristic: !!this.dataCharacteristic,
+      hasCachedCharacteristic: !!this._characteristics[uuid],
       lastConnected: this.hashUUID_lastConnected
     });
     if (!this.bluetoothDevice) {
@@ -1048,9 +1050,12 @@ class OrpheInsole {
       this._reportError(error);
       return Promise.reject(error);
     }
-    if (this.bluetoothDevice.gatt.connected && this.dataCharacteristic) {
-      if (this.hashUUID_lastConnected == uuid)
-        return Promise.resolve();
+    // UUID ごとにキャッシュした characteristic があればそのまま使う。
+    // （切断時は gatt.connected が false になるため自然に再取得される）
+    if (this.bluetoothDevice.gatt.connected && this._characteristics[uuid]) {
+      this.hashUUID_lastConnected = uuid; // 後方互換のため代入は残す
+      this.dataCharacteristic = this._characteristics[uuid];
+      return Promise.resolve();
     }
     this.hashUUID_lastConnected = uuid;
 
@@ -1062,6 +1067,10 @@ class OrpheInsole {
         return service.getCharacteristic(this.hashUUID[uuid].characteristicUUID);
       })
       .then(characteristic => {
+        // UUID 別に保持する。dataCharacteristic は「最後に触った characteristic」
+        // として後方互換のために残すが、内部の read/write/notify は
+        // this._characteristics[uuid] のみを参照する。
+        this._characteristics[uuid] = characteristic;
         this.dataCharacteristic = characteristic;
         this.onConnectGATT(uuid);
         this.onConnect(uuid);
@@ -1078,9 +1087,21 @@ class OrpheInsole {
           this._usingRememberedBluetoothDevice = false;
           this.bluetoothDevice = null;
           this.dataCharacteristic = null;
+          this._characteristics = {};
         }
         throw error;
       });
+  }
+  /**
+   * uuid 名に対応する characteristic を返す（内部用）。
+   * 通常は connectGATT() が UUID 別に保持したものを返す。
+   * 後方互換のため、キャッシュ未登録時は dataCharacteristic にフォールバックする
+   * （dataCharacteristic を直接注入している既存コード・テストを壊さない）。
+   * @param {string} uuid
+   * @returns {BluetoothRemoteGATTCharacteristic}
+   */
+  _characteristicFor(uuid) {
+    return this._characteristics[uuid] || this.dataCharacteristic;
   }
   /**
    * サーバからのデータを受信したときに呼び出される関数です。この関数は、characteristicvaluechangedイベントが発生したときに呼び出されます。
@@ -1104,7 +1125,7 @@ class OrpheInsole {
         return this.connectGATT(uuid);
       })
       .then(() => {
-        return this.dataCharacteristic.readValue();
+        return this._characteristicFor(uuid).readValue();
       })
       .catch(error => {
         this._reportError(error);
@@ -1124,7 +1145,7 @@ class OrpheInsole {
       })
       .then(() => {
         const data = Uint8Array.from(array_value);
-        return this.dataCharacteristic.writeValue(data);
+        return this._characteristicFor(uuid).writeValue(data);
       })
       .then(() => {
         this.onWrite(uuid);
@@ -1142,10 +1163,10 @@ class OrpheInsole {
   startNotify(uuid, options = {}) {
     return this.scan(uuid, options)
       .then(() => this.connectGATT(uuid))
-      .then(() => this.dataCharacteristic.startNotifications())
+      .then(() => this._characteristicFor(uuid).startNotifications())
       .then(() => {
         this.dataChangedEventHandlerMap[uuid] = this.dataChanged(this, uuid);
-        this.dataCharacteristic.addEventListener('characteristicvaluechanged', this.dataChangedEventHandlerMap[uuid]);
+        this._characteristicFor(uuid).addEventListener('characteristicvaluechanged', this.dataChangedEventHandlerMap[uuid]);
         this.onStartNotify(uuid);
       })
       .catch(error => {
@@ -1167,12 +1188,12 @@ class OrpheInsole {
       .then(() => {
         // stopNotificationsメソッドを呼び出してNotificationを停止します。
         // このメソッドはPromiseを返すため、その完了を待つ必要があります。
-        return this.dataCharacteristic.stopNotifications();
+        return this._characteristicFor(uuid).stopNotifications();
       })
       .then(() => {
         // イベントハンドラを解除
         if (this.dataChangedEventHandlerMap[uuid]) {
-          this.dataCharacteristic.removeEventListener(
+          this._characteristicFor(uuid).removeEventListener(
             'characteristicvaluechanged',
             this.dataChangedEventHandlerMap[uuid]
           );
@@ -1209,6 +1230,8 @@ class OrpheInsole {
 
     if (this.bluetoothDevice.gatt.connected) {
       this.bluetoothDevice.gatt.disconnect();
+      // 切断後の再接続では characteristic を取り直す
+      this._characteristics = {};
     } else {
       var error = "Bluetooth Device is already disconnected";
       this._reportError(error);
@@ -1300,6 +1323,7 @@ class OrpheInsole {
   clear() {
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this._characteristics = {};
     this._serialInitialized = false;
     this.isFirstAdvertisementReceived = false; // フラグをリセット
     this.onClear();
