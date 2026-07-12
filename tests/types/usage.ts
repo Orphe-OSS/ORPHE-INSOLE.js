@@ -149,3 +149,15 @@ void simulator.begin({ preset: 'run' });
 
 // @ts-expect-error simulator の streamingMode も 1|3|4 のみ
 void simulator.setDataStreamingMode(2);
+
+// ── connectionState / connectTimeoutMs / エラーcode の型 ──
+const state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = insole.connectionState;
+void state;
+void insole.begin('SENSOR_VALUES', { streamingMode: 4, connectTimeoutMs: 8000 });
+insole.onError = (error) => {
+    const maybeCode = (error as import('../../types/orphe-insole').InsoleError).code;
+    void maybeCode;
+};
+
+// @ts-expect-error connectionState は読み取り専用
+insole.connectionState = 'connected';

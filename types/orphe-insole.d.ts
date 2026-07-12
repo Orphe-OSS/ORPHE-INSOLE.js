@@ -103,8 +103,22 @@ export interface ReconnectFailedInfo {
     error: unknown;
 }
 
+export type InsoleConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+export type InsoleErrorCode = 'NO_DEVICE' | 'ALREADY_DISCONNECTED' | 'CONNECT_TIMEOUT' | 'INVALID_MODE';
+
+/** onError に渡される code 付き Error（メッセージ文字列は従来互換） */
+export interface InsoleError extends Error {
+    code: InsoleErrorCode;
+}
+
 export interface InsoleBeginOptions {
     streamingMode?: InsoleStreamingMode;
+    /**
+     * GATT 接続のタイムアウト [ms]（opt-in・既定なし = 従来どおり無制限）。
+     * 超過時は code 'CONNECT_TIMEOUT' の Error で reject される。
+     */
+    connectTimeoutMs?: number;
     /** @deprecated Use streamingMode. */
     dataStreamingMode?: InsoleStreamingMode;
     autoReconnect?: boolean;
@@ -252,6 +266,8 @@ export class OrpheInsole {
     forgetLastBluetoothDevice(): void;
     resetAnalysisLogs(): void;
     isConnected(): boolean;
+    /** 接続状態（UI 表示用）。'reconnecting' は自動再接続の試行中 */
+    readonly connectionState: InsoleConnectionState;
     isGotDataOverridden(): boolean;
     scan(uuid: InsoleSetupName, options?: InsoleBeginOptions): Promise<void>;
     requestDevice(uuid: InsoleSetupName): Promise<void>;

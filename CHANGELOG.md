@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `connectionState` getter (`'disconnected' | 'connecting' | 'connected' | 'reconnecting'`) for connection status UI.
+- Add opt-in `begin({ connectTimeoutMs })` — no default; when set, a hanging GATT connect rejects with an Error whose `code` is `'CONNECT_TIMEOUT'`.
+- Internal errors now carry a `code` property (`'NO_DEVICE'`, `'ALREADY_DISCONNECTED'`, `'CONNECT_TIMEOUT'`, `'INVALID_MODE'`) while keeping the same message strings.
+
+### Changed
+
+- **Behavior change (v1.2.0)**: default `on*` progress callbacks (`onConnect`, `onDisconnect`, `onStartNotify`, ...) log to the console only when `insole.debug === true`. Errors are still always printed (`onError` now uses `console.error`). Set `insole.debug = true` or override the callbacks to restore the previous verbosity.
+
 - Add `buildInsoleToolkit(..., {simulator: true})` — swaps the slot to `OrpheInsoleSimulator` so the toolkit UI and callbacks work without hardware (requires InsoleSimulator.js). Simulator gained toolkit-compat methods: `setDataStreamingMode` (live switching), `getDeviceInformation`, `streaming_mode`, `resetAnalysisLogs`. TypeScript definitions for `OrpheInsoleSimulator` added.
 - Add docs landing (docs/README.md), docs/SENSOR_SPEC.md (packet formats 50/55/56, units, mount_position bits, channel remap policy), and docs/TROUBLESHOOTING.md. Unified non-medical-device disclaimers in balance-sway / showcase. Synced CLAUDE.md example tables.
 - Add `src/InsoleUtils.js` (opt-in) — pressure-data utilities promoted from example code: `validatePress` / `StuckChannelMonitor` / `PressureCalibrator` / `SENSOR_LAYOUT` + `mirrorForSide` / `computeCoP` / `ContactDetector` (hysteresis + debounce) / `sideFromMountPosition`. TypeScript definitions included.

@@ -283,6 +283,127 @@ async function main() {
     assert.deepEqual(target._characteristics, {}, 'selectBluetoothDevice() must reset the characteristics cache');
   }
 
+  // ── エラーcode / connectionState / connectTimeoutMs / ログ抑制（PR#10） ──
+  {
+    // NO_DEVICE: connectGATT はデバイスなしで code 付き Error で reject
+    const target = new OrpheInsole(0);
+    target.onError = () => { };
+    await assert.rejects(() => target.connectGATT('DEVICE_INFORMATION'), (error) => {
+      assert.equal(error.code, 'NO_DEVICE');
+      assert.equal(error.message, 'No Bluetooth Device', 'message string is backward compatible');
+      return true;
+    });
+
+    // ALREADY_DISCONNECTED: disconnect() は onError に code 付き Error を渡す
+    const reported = [];
+    target.onError = (error) => reported.push(error);
+    target.bluetoothDevice = { gatt: { connected: false }, name: 'X' };
+    target.stopWatchingAdvertisements = () => { };
+    target.disconnect();
+    assert.equal(reported[0].code, 'ALREADY_DISCONNECTED');
+    assert.equal(reported[0].message, 'Bluetooth Device is already disconnected');
+
+    // INVALID_MODE
+    const modeTarget = new OrpheInsole(0);
+    modeTarget.onError = () => { };
+    await assert.rejects(() => modeTarget.setDataStreamingMode(2), (error) => {
+      assert.equal(error.code, 'INVALID_MODE');
+      return true;
+    });
+  }
+
+  {
+    // connectionState の遷移
+    const target = new OrpheInsole(0);
+    assert.equal(target.connectionState, 'disconnected');
+    target.bluetoothDevice = { gatt: { connected: true } };
+    assert.equal(target.connectionState, 'connected');
+    target.bluetoothDevice = { gatt: { connected: false } };
+    target._autoReconnectInProgress = true;
+    assert.equal(target.connectionState, 'reconnecting');
+    target._autoReconnectInProgress = false;
+    assert.equal(target.connectionState, 'disconnected');
+
+    // begin() 実行中は 'connecting'、成功後は finally でフラグ解除
+    const beginTarget = new OrpheInsole(0);
+    const statesDuringBegin = [];
+    beginTarget.getDeviceInformation = async () => { statesDuringBegin.push(beginTarget.connectionState); };
+    beginTarget.setDataStreamingMode = async () => { };
+    beginTarget.syncCoreTime = async () => { };
+    beginTarget.startNotify = async () => { };
+    await beginTarget.begin('SENSOR_VALUES', {});
+    assert.deepEqual(statesDuringBegin, ['connecting']);
+    assert.equal(beginTarget._connecting, false, 'flag cleared after begin');
+
+    // begin() 失敗時も finally でフラグ解除
+    const failTarget = new OrpheInsole(0);
+    failTarget.onError = () => { };
+    failTarget.getDeviceInformation = async () => { throw new Error('boom'); };
+    await assert.rejects(() => failTarget.begin('SENSOR_VALUES', {}));
+    assert.equal(failTarget._connecting, false, 'flag cleared after failed begin');
+  }
+
+  {
+    // connectTimeoutMs: gatt.connect() が解決しない場合 CONNECT_TIMEOUT で reject
+    const target = new OrpheInsole(0);
+    target.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    target.onError = () => { };
+    target.scan = async () => { };
+    let disconnectCalled = false;
+    target.bluetoothDevice = {
+      gatt: {
+        connected: false,
+        connect: () => new Promise(() => { }), // 永遠に解決しない
+        disconnect: () => { disconnectCalled = true; },
+      },
+    };
+    const startedAt = Date.now();
+    await assert.rejects(() => target.read('DEVICE_INFORMATION', { connectTimeoutMs: 80 }), (error) => {
+      assert.equal(error.code, 'CONNECT_TIMEOUT');
+      return true;
+    });
+    assert.ok(Date.now() - startedAt < 2000, 'rejects promptly');
+    assert.ok(disconnectCalled, 'gatt.disconnect() is attempted on timeout');
+
+    // connectTimeoutMs 未指定なら従来どおりタイムアウトしない（100ms 待って未解決のまま）
+    const noTimeoutTarget = new OrpheInsole(0);
+    noTimeoutTarget.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    noTimeoutTarget.onError = () => { };
+    noTimeoutTarget.scan = async () => { };
+    noTimeoutTarget.bluetoothDevice = { gatt: { connected: false, connect: () => new Promise(() => { }) } };
+    let settled = false;
+    noTimeoutTarget.read('DEVICE_INFORMATION').then(() => { settled = true; }, () => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(settled, false, 'no implicit default timeout');
+  }
+
+  {
+    // 既定コールバックのログは debug 時のみ / onError は常時 console.error
+    const target = new OrpheInsole(0);
+    const logs = [];
+    const errors = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args) => logs.push(args);
+    console.error = (...args) => errors.push(args);
+    try {
+      target.debug = false;
+      target.onScan('x');
+      target.onConnect('SENSOR_VALUES');
+      target.onDisconnect();
+      assert.equal(logs.length, 0, 'default callbacks are silent without debug');
+      target.debug = true;
+      target.onScan('x');
+      assert.equal(logs.length, 1, 'debug=true restores progress logs');
+      target.debug = false;
+      target.onError(new Error('always visible'));
+      assert.equal(errors.length, 1, 'onError logs regardless of debug');
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+  }
+
   // ── 既存パーサが壊れていないこと（スモーク） ───────────────────
   {
     const data = new DataView(new ArrayBuffer(104));
