@@ -14,11 +14,12 @@
 | PR#2 | setup() options 正規化 + serial wraparound 修正 | ✅ マージ済み（GitHub #16） |
 | PR#3 | TypeScript 型定義 | ✅ マージ済み（GitHub #17。レビューfixup: lockfile同期・setup options型の部分指定対応） |
 | PR#5 | OrpheInsoleSimulator | ✅ マージ済み（GitHub #15。レビューfixup: simulatorテストを test:unit に登録） |
-| PR#4 | characteristic UUID 別管理 | ⛔ 未着手（Track A の次番・**マージに実機確認必須**） |
+| PR#4 | characteristic UUID 別管理 | ✅ マージ済み（GitHub #19。実機チェック 2026-07-12 通過: 自動テストT1〜T6全PASS + デバイス切替OK。`examples/device-test/` に実機チェックページ追加） |
 | PR#6〜#10 | showcase移行 / InsoleUtils / examples整理 / docs再建 / エラーモデル | ⛔ 未着手 |
 
-> **次の一手**: PR#4（Track A）と PR#7 InsoleUtils（Track B/C 相当・src不触）は並行着手可。
+> **P0 バグはすべて解消。次の一手**: PR#7 InsoleUtils（新規モジュール・src不触）と PR#6 showcase/Simulator 移行が並行着手可。Track A の残りは PR#10（エラー/接続状態モデル、要事前相談）。
 > 積み残し（PR#3/#5 レビューより）: `types/orphe-insole.d.ts` に `OrpheInsoleSimulator` の型が未定義（PR#6 で `buildInsoleToolkit {simulator:true}` と併せて対応推奨）。
+> 実機チェックの注意: INSOLE は物理スイッチがないため「電源OFF→ON」項目は電波範囲外への移動で代替するか省略（再接続経路はユニットテストで担保）。
 
 ---
 
@@ -193,7 +194,7 @@
 
 ---
 
-## 5. PR#4 `fix: characteristic を UUID 別管理にし通知中の read/write 競合を解消` — ⛔ 未着手（Track A 直列・実機確認必須）
+## 5. PR#4 `fix: characteristic を UUID 別管理にし通知中の read/write 競合を解消` — ✅マージ済み（GitHub PR #19、実機チェック通過）
 
 **目的**: P0-3。SENSOR_VALUES 通知中に `getDeviceInformation()` / `setDataStreamingMode()` / `syncCoreTime()` を呼ぶと `this.dataCharacteristic` が上書きされ、`stopNotify` が誤対象に効く設計欠陥の修正。**このPRは挙動の中核に触るため、他PRと混ぜない。**
 
