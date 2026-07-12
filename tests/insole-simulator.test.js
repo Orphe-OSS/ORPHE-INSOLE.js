@@ -121,6 +121,41 @@ async function main() {
         assert.equal(calls.quat[0].w, frame.quat.w);
         assert.equal(calls.euler[0].pitch, frame.euler.pitch);
     }
+
+    // ── InsoleToolkit 互換メソッド（PR#6 で追加） ──────────────────
+    {
+        const simulator = new OrpheInsoleSimulator(1);
+
+        // getDeviceInformation は begin 前でも既定値を返す
+        const info = await simulator.getDeviceInformation();
+        assert.equal(info.mount_position, 1, 'id=1 → RIGHT');
+        assert.deepEqual(info.range, { acc: 3, gyro: 3 });
+
+        // setDataStreamingMode: 実行中のモード切替が次 tick から反映される
+        const calls = { press: [], quat: [] };
+        simulator.gotPress = (value) => calls.press.push(value);
+        simulator.gotQuat = (value) => calls.quat.push(value);
+        await simulator.begin({ preset: 'stand', streamingMode: 4 });
+        assert.equal(simulator.streaming_mode, 4);
+        await wait(100);
+        assert.ok(calls.quat.length > 0, 'mode 4 emits quat');
+
+        await simulator.setDataStreamingMode(3);
+        assert.equal(simulator.streaming_mode, 3);
+        const quatCountAtSwitch = calls.quat.length;
+        const pressCountAtSwitch = calls.press.length;
+        await wait(120);
+        assert.equal(calls.quat.length, quatCountAtSwitch, 'mode 3 stops quat');
+        assert.ok(calls.press.length > pressCountAtSwitch, 'press keeps flowing after switch');
+
+        // 実SDKと同じエラーメッセージで不正モードを拒否
+        await assert.rejects(() => simulator.setDataStreamingMode(2), /Invalid ORPHE INSOLE data streaming mode/);
+        assert.equal(simulator.streaming_mode, 3, 'invalid mode does not change state');
+
+        // resetAnalysisLogs は no-op（例外を投げない）
+        simulator.resetAnalysisLogs();
+        simulator.stop();
+    }
 }
 
 main().then(() => {

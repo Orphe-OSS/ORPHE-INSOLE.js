@@ -244,6 +244,7 @@ class OrpheInsoleSimulator {
             const beginOptions = normalizeBeginArgs(type, options);
             this.stop({ silent: true });
             this._streamingMode = normalizeStreamingMode(beginOptions.streamingMode);
+            this.streaming_mode = this._streamingMode;
             this._preset = beginOptions.preset === 'stand' || beginOptions.preset === 'sway' ? beginOptions.preset : 'walk';
             this._frames = this._normalizeFrames(beginOptions.frames);
             this._loop = beginOptions.loop !== false;
@@ -298,6 +299,41 @@ class OrpheInsoleSimulator {
     isConnected() {
         return this._connected;
     }
+
+    /**
+     * ストリーミングモードを切り替える（実SDK 互換）。
+     * 実行中でも次 tick から新モードのデータ有無・サンプル数が反映される。
+     * @param {1|3|4} mode
+     */
+    async setDataStreamingMode(mode) {
+        // 実SDK と同じ検証・同じエラーメッセージ
+        const normalized = Number(mode);
+        if (normalized !== 1 && normalized !== 3 && normalized !== 4) {
+            const error = new TypeError('Invalid ORPHE INSOLE data streaming mode');
+            this.onError(error);
+            throw error;
+        }
+        this._streamingMode = normalized;
+        this.streaming_mode = normalized;
+    }
+
+    /**
+     * デバイス情報を返す（実SDK 互換）。begin 前でも既定値を返す。
+     * @returns {Promise<{battery:number, mount_position:number, range:{acc:number,gyro:number}}>}
+     */
+    async getDeviceInformation() {
+        if (!this.device_information) {
+            this.device_information = {
+                battery: 2,
+                mount_position: this.id === 0 ? 0 : 1,
+                range: { acc: 3, gyro: 3 }
+            };
+        }
+        return this.device_information;
+    }
+
+    /** 実SDK 互換の no-op（シミュレータに解析ログはない）。 */
+    resetAnalysisLogs() { }
 
     _normalizeFrames(frames) {
         if (!Array.isArray(frames) || frames.length === 0) return null;

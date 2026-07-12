@@ -24,6 +24,8 @@ module.exports = [
                 p5: 'readonly',
                 bootstrap: 'readonly',
                 OrpheInsole: 'writable',
+                OrpheInsoleSimulator: 'readonly',
+                OrpheInsoleUtils: 'readonly',
                 Orphe: 'writable',
                 insoles: 'writable',
                 bles: 'writable',

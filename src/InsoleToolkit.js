@@ -32,11 +32,25 @@ var cores = insoles;
  * @param {Element} parent_element - InsoleToolkitを追加する親要素
  * @param {string} title - タイトル。トグルボタンの横に表示される
  * @param {number} [insole_id=0]  - 0,1のどちらかを指定する。インソールは最大2つまで
- * @param {object} [options] - {streamingMode: 1|3|4, autoReconnect: boolean}
+ * @param {object} [options] - {streamingMode: 1|3|4, autoReconnect: boolean, simulator: boolean}
+ *   simulator: true にすると実機の代わりに OrpheInsoleSimulator を使う
+ *   （要 InsoleSimulator.js の読み込み。実機なしのデモ・開発用）。
  */
 function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) {
     if (typeof options.streamingMode === 'undefined') options.streamingMode = 4;
     if (typeof options.autoReconnect === 'undefined') options.autoReconnect = true;
+
+    // simulator オプション: このスロットをシミュレータ実装に差し替える。
+    // insoles/bles/cores は同一配列を指すため、要素の差し替えで全エイリアスに反映される。
+    if (options.simulator === true) {
+        if (typeof OrpheInsoleSimulator === 'undefined') {
+            throw new Error('buildInsoleToolkit: {simulator: true} には InsoleSimulator.js の読み込みが必要です。<script src=".../src/InsoleSimulator.js"></script> を ORPHE-INSOLE.js の後に追加してください。');
+        }
+        if (!(insoles[insole_id] instanceof OrpheInsoleSimulator)) {
+            insoles[insole_id] = new OrpheInsoleSimulator(insole_id);
+            insoles[insole_id].setup();
+        }
+    }
     insoles[insole_id]._insoleToolkitOptions = options;
 
     let div_form_check = ITbuildElement('div', '', 'form-check form-switch d-flex', '', parent_element);

@@ -341,9 +341,70 @@ export class OrpheInsole {
 
 export { OrpheInsole as Orphe };
 
-export interface BuildInsoleToolkitOptions extends InsoleBeginOptions {}
+// ── InsoleSimulator (src/InsoleSimulator.js) — 実機なし開発・デモ基盤 ──
+
+export interface InsoleSimulatorFrame {
+    device?: number;
+    t?: number;
+    serial?: number;
+    packet_number?: number;
+    press?: number[] | null;
+    acc?: InsoleVector3 | null;
+    gyro?: InsoleVector3 | null;
+    quat?: InsoleQuatSampleBase | null;
+    euler?: InsoleEuler | null;
+}
+
+export interface InsoleSimulatorBeginOptions {
+    streamingMode?: InsoleStreamingMode;
+    /** 合成データのプリセット（既定 'walk'）。frames 指定時は無視される */
+    preset?: 'walk' | 'stand' | 'sway';
+    /** CSV等から作ったフレーム配列の再生 */
+    frames?: InsoleSimulatorFrame[];
+    /** frames 再生をループするか（既定 true） */
+    loop?: boolean;
+}
+
+export declare class OrpheInsoleSimulator {
+    constructor(id?: number);
+    id: number;
+    debug: boolean;
+    device_information: InsoleDeviceInformation | { battery: number; mount_position: number; range: { acc: number; gyro: number } } | null;
+    streaming_mode?: InsoleStreamingMode;
+    setup(names?: InsoleSetupName[], options?: InsoleSetupOptions): this;
+    begin(type?: InsoleBeginType, options?: InsoleSimulatorBeginOptions): Promise<string>;
+    begin(options: InsoleSimulatorBeginOptions): Promise<string>;
+    stop(): string;
+    reset(): void;
+    isConnected(): boolean;
+    setDataStreamingMode(mode: InsoleStreamingMode): Promise<void>;
+    getDeviceInformation(): Promise<{ battery: number; mount_position: number; range: { acc: number; gyro: number } }>;
+    resetAnalysisLogs(): void;
+
+    gotPress: (press: InsolePressSample) => void;
+    gotAcc: (acc: InsoleVector3Sample) => void;
+    gotGyro: (gyro: InsoleVector3Sample) => void;
+    gotQuat: (quat: InsoleQuatSample) => void;
+    gotEuler: (euler: InsoleEuler & InsoleSampleBase) => void;
+    gotConvertedAcc: (acc: InsoleVector3Sample) => void;
+    gotConvertedGyro: (gyro: InsoleVector3Sample) => void;
+    gotBLEFrequency: (frequency: number) => void;
+    lostData: (serial_number: number, serial_number_prev: number) => void;
+    onConnect: (uuid: string) => void;
+    onDisconnect: () => void;
+    onError: (error: unknown) => void;
+    onScan: (deviceName: string) => void;
+    onStartNotify: (uuid: string) => void;
+    onReset: () => void;
+}
+
+export interface BuildInsoleToolkitOptions extends InsoleBeginOptions {
+    /** true にすると実機の代わりに OrpheInsoleSimulator を使う（要 InsoleSimulator.js） */
+    simulator?: boolean;
+}
 
 type OrpheInsoleConstructor = typeof OrpheInsole;
+type OrpheInsoleSimulatorConstructor = typeof OrpheInsoleSimulator;
 type FixedSizeArrayConstructor = typeof FixedSizeArray;
 type OrpheTimestampConstructor = typeof OrpheTimestamp;
 type ParseInsoleSensorValues = typeof parseInsoleSensorValues;
@@ -357,9 +418,10 @@ type BuildInsoleToolkit = (
 declare global {
     var OrpheInsole: OrpheInsoleConstructor;
     var Orphe: OrpheInsoleConstructor;
-    var insoles: OrpheInsole[];
-    var bles: OrpheInsole[];
-    var cores: OrpheInsole[];
+    var OrpheInsoleSimulator: OrpheInsoleSimulatorConstructor;
+    var insoles: Array<OrpheInsole | OrpheInsoleSimulator>;
+    var bles: Array<OrpheInsole | OrpheInsoleSimulator>;
+    var cores: Array<OrpheInsole | OrpheInsoleSimulator>;
     var FixedSizeArray: FixedSizeArrayConstructor;
     var OrpheTimestamp: OrpheTimestampConstructor;
     var parseInsoleSensorValues: ParseInsoleSensorValues;
