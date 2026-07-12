@@ -46,6 +46,20 @@ https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
 ```
 `OrpheInsole` は `Orphe` と同じクラスを指す別名です。既存コードの `new Orphe(0)` は引き続き利用できます。
 
+### 実機がない場合（シミュレータ）
+実機なしの開発やデモでは `OrpheInsoleSimulator` を使えます。`OrpheInsole` と同じ主なコールバックで、歩行・静止・重心揺れの合成データまたはCSV由来のフレーム配列を再生します。
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/src/InsoleSimulator.js"></script>
+<script>
+const insole = new OrpheInsoleSimulator(0);
+insole.setup();
+insole.gotPress = press => console.log(press.values);
+insole.gotConvertedAcc = acc => console.log(acc); // acc[G]
+insole.begin({ preset: 'walk', streamingMode: 4 });
+</script>
+```
+
 ### Tutorial
   * https://github.com/Orphe-OSS/ORPHE-INSOLE.js/wiki
 
