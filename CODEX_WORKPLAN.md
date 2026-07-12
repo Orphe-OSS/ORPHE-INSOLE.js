@@ -15,10 +15,18 @@
 | PR#3 | TypeScript 型定義 | ✅ マージ済み（GitHub #17。レビューfixup: lockfile同期・setup options型の部分指定対応） |
 | PR#5 | OrpheInsoleSimulator | ✅ マージ済み（GitHub #15。レビューfixup: simulatorテストを test:unit に登録） |
 | PR#4 | characteristic UUID 別管理 | ✅ マージ済み（GitHub #19。実機チェック 2026-07-12 通過: 自動テストT1〜T6全PASS + デバイス切替OK。`examples/device-test/` に実機チェックページ追加） |
-| PR#6〜#10 | showcase移行 / InsoleUtils / examples整理 / docs再建 / エラーモデル | ⛔ 未着手 |
+| PR#7 | InsoleUtils（検証・キャリブレーション・CoP・接地検出） | ✅ マージ済み（GitHub #21。型定義込み。examples 移行は PR#8 へ） |
+| PR#9 | docs 再建（docs README / SENSOR_SPEC / TROUBLESHOOTING / 医療注意書き / CLAUDE.md 同期） | ✅ マージ済み（GitHub #22。ルート README は music-shoe 並行作業との競合回避で未変更） |
+| PR#6 | `buildInsoleToolkit {simulator:true}` + Simulator 型定義 | ✅ マージ済み（GitHub #23。ヘッドレス Chrome で11チェック検証。**showcase/balance-* 内部の Simulator 移行は PR#8 へ延期** — 公開ページの視覚回帰は目視確認とセットで行うため） |
+| PR#8 | examples の InsoleUtils/Simulator 移行 + examples/README.md（マトリクス） | ⛔ 未着手（**目視確認体制が前提**。旧 p5 例は既にリポジトリ外へ退避済み） |
+| PR#10 | エラー/接続状態モデル | ⛔ 未着手（**要事前相談**、下記） |
 
-> **P0 バグはすべて解消。次の一手**: PR#7 InsoleUtils（新規モジュール・src不触）と PR#6 showcase/Simulator 移行が並行着手可。Track A の残りは PR#10（エラー/接続状態モデル、要事前相談）。
-> 積み残し（PR#3/#5 レビューより）: `types/orphe-insole.d.ts` に `OrpheInsoleSimulator` の型が未定義（PR#6 で `buildInsoleToolkit {simulator:true}` と併せて対応推奨）。
+> **PR#10 の相談ポイント（着手前に菊川の判断が必要）**:
+> 1. 既定 on* コールバックの console.log を `debug` 時のみに抑制する挙動変更を入れるか（利用者の「動かなくなった」誤認リスク vs コンソール汚染。入れるなら minor リリース + README 案内）
+> 2. `begin({connectTimeoutMs})` の既定値を設けるか（推奨: 既定なし = 現状維持、opt-in）
+> 3. Error+code 統一（`error.code = 'NO_DEVICE'` 等、メッセージ文字列は互換維持）と `connectionState` getter（disconnected/connecting/connected/reconnecting）は追加的で低リスク
+> 4. Track A（src 中核）なので**マージに実機チェック必須**（device-test ページに接続タイムアウト・状態遷移の項目を追加して検証）
+>
 > 実機チェックの注意: INSOLE は物理スイッチがないため「電源OFF→ON」項目は電波範囲外への移動で代替するか省略（再接続経路はユニットテストで担保）。
 
 ---
@@ -246,11 +254,11 @@
 
 | # | 内容 | 参照 |
 |---|---|---|
-| PR#6 | showcase / balance-* を Simulator・共通化へ移行 + `buildInsoleToolkit` に `{simulator:true}` | P1-1後半, P1-3 |
-| PR#7 | `src/InsoleUtils.js`（validatePress / PressureCalibrator / SENSOR_LAYOUT / computeCoP / ContactDetector / sideFromMountPosition）+ ユニットテスト。examples 移行は PR#8 | P1-2（仕様詳細は IMPROVEMENT_PLAN 参照） |
-| PR#8 | examples の InsoleUtils 移行 + examples/README.md（マトリクス）+ 旧 p5 例の archive 移動 | P1-3 |
-| PR#9 | docs 再建（docs/README.md, TROUBLESHOOTING.md, SENSOR_SPEC.md, 医療注意書き統一） | P1-6 |
-| PR#10 | エラー/接続状態モデル（Error+code, connectionState, connectTimeoutMs）※挙動変更を含むため要事前相談 | P1-4 |
+| ~~PR#6~~ | ✅完了（GitHub #23）: `buildInsoleToolkit {simulator:true}` + Simulator 型定義。showcase / balance-* の内部移行は PR#8 へ | P1-1後半, P1-3 |
+| ~~PR#7~~ | ✅完了（GitHub #21）: `src/InsoleUtils.js` + ユニットテスト + 型定義 | P1-2 |
+| PR#8 | examples の InsoleUtils/Simulator 移行 + examples/README.md（マトリクス）。**マージ前に全example の目視確認必須**（公開ページの視覚回帰） | P1-3 |
+| ~~PR#9~~ | ✅完了（GitHub #22）: docs 再建（docs/README.md, TROUBLESHOOTING.md, SENSOR_SPEC.md, 医療注意書き統一, CLAUDE.md 同期） | P1-6 |
+| PR#10 | エラー/接続状態モデル（Error+code, connectionState, connectTimeoutMs）※挙動変更を含むため要事前相談（冒頭の相談ポイント参照）+ 実機チェック必須 | P1-4 |
 
 ---
 
