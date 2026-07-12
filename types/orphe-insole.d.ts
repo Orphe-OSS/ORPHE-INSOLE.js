@@ -365,3 +365,92 @@ declare global {
     var parseInsoleSensorValues: ParseInsoleSensorValues;
     var buildInsoleToolkit: BuildInsoleToolkit;
 }
+
+// ── InsoleUtils (src/InsoleUtils.js) — 圧力データ処理ユーティリティ ──
+
+export interface InsolePressValidation {
+    ok: boolean;
+    /** クランプ・補完済みの安全な6要素配列 */
+    values: number[];
+    flags: Array<'BAD_LENGTH' | 'NOT_FINITE' | 'NEGATIVE' | 'SATURATED_CH'>;
+    channels: { saturated: number[] };
+}
+
+export interface InsoleSensorPoint {
+    x: number;
+    y: number;
+    label?: string;
+}
+
+export interface InsoleCoP {
+    x: number;
+    y: number;
+    load: number;
+    isValid: boolean;
+    flags: string[];
+}
+
+export interface InsoleContactDownEvent {
+    event: 'down';
+    timestamp: number;
+    flightMs: number | null;
+}
+
+export interface InsoleContactUpEvent {
+    event: 'up';
+    timestamp: number;
+    stanceMs: number | null;
+}
+
+export interface InsoleMountInfo {
+    side: 'left' | 'right';
+    surface: 'plantar' | 'dorsal';
+    isRight: boolean;
+    isDorsal: boolean;
+}
+
+export declare class InsolePressureCalibrator {
+    zero: number[];
+    full: number[];
+    isCalibrated(): boolean;
+    setZero(samples: number[][]): void;
+    setFull(samples: number[][]): void;
+    normalize(values: number[]): number[];
+    toJSON(): { zero: number[]; full: number[] };
+    static fromJSON(json: { zero: number[]; full: number[] } | null): InsolePressureCalibrator;
+}
+
+export declare class InsoleContactDetector {
+    constructor(options: { on: number; off: number; minContactMs?: number; minFlightMs?: number });
+    on: number;
+    off: number;
+    isContact: boolean;
+    footDown: (info: InsoleContactDownEvent) => void;
+    footUp: (info: InsoleContactUpEvent) => void;
+    update(total: number, timestampMs: number): InsoleContactDownEvent | InsoleContactUpEvent | null;
+    reset(): void;
+}
+
+export declare class InsoleStuckChannelMonitor {
+    constructor(options?: { windowFrames?: number; minTotalLoad?: number });
+    update(values: number[]): number[];
+    reset(): void;
+}
+
+export interface InsoleUtilsModule {
+    SENSOR_COUNT: 6;
+    MAX_UINT16: 65535;
+    SENSOR_LAYOUT: InsoleSensorPoint[];
+    mirrorForSide(layout: InsoleSensorPoint[], side: 'left' | 'right'): InsoleSensorPoint[];
+    validatePress(values: number[] | null | undefined, options?: { saturationValue?: number }): InsolePressValidation;
+    StuckChannelMonitor: typeof InsoleStuckChannelMonitor;
+    PressureCalibrator: typeof InsolePressureCalibrator;
+    computeCoP(values: number[], layout?: InsoleSensorPoint[], options?: { minLoad?: number }): InsoleCoP;
+    ContactDetector: typeof InsoleContactDetector;
+    sideFromMountPosition(mountPosition: number | undefined): InsoleMountInfo | null;
+}
+
+declare global {
+    // script タグで src/InsoleUtils.js を読み込んだ場合のグローバル
+    var OrpheInsoleUtils: InsoleUtilsModule;
+}
