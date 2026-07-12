@@ -25,17 +25,25 @@ ORPHE-INSOLE.js は [ORPHE-CORE.js](https://github.com/Orphe-OSS/ORPHE-CORE.js) 
 ORPHE-INSOLE.js/
 ├── src/
 │   ├── ORPHE-INSOLE.js        # Main SDK
-│   └── InsoleToolkit.js       # Connection UI toolkit
+│   ├── InsoleToolkit.js       # Connection UI toolkit
+│   ├── InsoleSimulator.js     # 実機なし開発用シミュレータ（OrpheInsoleSimulator）
+│   └── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
 │   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
+├── types/
+│   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
 │   ├── VISUALIZE/             # センサ可視化（推奨スターター）
+│   ├── showcase/              # 製品紹介ショーケース（デモ再生つき）
 │   ├── sensor-dashboard/      # 2台同時ダッシュボード
+│   ├── balance-sway/          # 重心動揺の可視化
+│   ├── balance-tuner/         # バランスの可聴化
 │   ├── hula-motion-sonifier/  # 動作の可聴化（Web Audio）
+│   ├── device-test/           # 実機チェックリスト（リリース前検証）
 │   └── terminal/              # 生データデバッグ
-├── tests/                     # node 単体テスト（npm test）
-└── docs/                      # JSDoc
+├── tests/                     # node 単体テスト + 型テスト（npm test）
+└── docs/                      # JSDoc + SENSOR_SPEC / TROUBLESHOOTING / PRESSURE_RECIPES
 ```
 
 ## Quick Start
@@ -402,6 +410,13 @@ npm run generate-docs  # JSDoc
 | App Type | Reference | Key Patterns |
 |---|---|---|
 | 可視化 | examples/VISUALIZE | 6chチャート、描画スロットリング |
+| 製品ショーケース | examples/showcase | LIVE/DEMO切替、CSV再生、i18n |
 | ダッシュボード | examples/sensor-dashboard | 2台接続、L/R自動マッピング |
-| 可聴化 | examples/hula-motion-sonifier | Web Audio、状態遷移発音 |
+| 重心動揺 | examples/balance-sway | CoP軌跡、圧力検証、医療注意書き |
+| 可聴化（バランス） | examples/balance-tuner | 荷重→音マッピング |
+| 可聴化（動作） | examples/hula-motion-sonifier | Web Audio、状態遷移発音 |
+| 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
+
+圧力データの検証・キャリブレーション・CoP・接地検出は `src/InsoleUtils.js`（`OrpheInsoleUtils`）に
+共通実装があります。新規アプリでは自前実装せずこちらを使ってください。
