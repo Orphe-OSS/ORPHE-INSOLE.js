@@ -6,19 +6,19 @@
 
 ---
 
-## 現在の進捗（2026-07-11 時点）
+## 現在の進捗（2026-07-12 時点）
 
 | PR | 内容 | 状態 |
 |---|---|---|
 | PR#1 | CI・ESLint 導入 / package衛生化 | ✅ マージ済み（GitHub #14） |
 | PR#2 | setup() options 正規化 + serial wraparound 修正 | ✅ マージ済み（GitHub #16） |
-| PR#3 | TypeScript 型定義 | 🟡 DRAFT・レビュー待ち（GitHub #17） |
-| PR#5 | OrpheInsoleSimulator | 🟡 DRAFT・レビュー待ち（GitHub #15） |
-| PR#4 | characteristic UUID 別管理 | ⛔ 未着手（Track A 直列・**実機確認必須**） |
+| PR#3 | TypeScript 型定義 | ✅ マージ済み（GitHub #17。レビューfixup: lockfile同期・setup options型の部分指定対応） |
+| PR#5 | OrpheInsoleSimulator | ✅ マージ済み（GitHub #15。レビューfixup: simulatorテストを test:unit に登録） |
+| PR#4 | characteristic UUID 別管理 | ⛔ 未着手（Track A の次番・**マージに実機確認必須**） |
 | PR#6〜#10 | showcase移行 / InsoleUtils / examples整理 / docs再建 / エラーモデル | ⛔ 未着手 |
 
-> 次の一手候補: (a) PR#3/#5 のレビュー→マージ、(b) Track A の PR#4 着手（実機確認前提）。
-> Track A（src系・直列）の本来の順序は PR#2 → **PR#4** → PR#10。PR#4 が飛ばされている点に注意。
+> **次の一手**: PR#4（Track A）と PR#7 InsoleUtils（Track B/C 相当・src不触）は並行着手可。
+> 積み残し（PR#3/#5 レビューより）: `types/orphe-insole.d.ts` に `OrpheInsoleSimulator` の型が未定義（PR#6 で `buildInsoleToolkit {simulator:true}` と併せて対応推奨）。
 
 ---
 
@@ -174,7 +174,7 @@
 
 ---
 
-## 4. PR#3 `feat: TypeScript 型定義 (types/orphe-insole.d.ts)` — 🟡 DRAFT・レビュー待ち（GitHub PR #17）
+## 4. PR#3 `feat: TypeScript 型定義 (types/orphe-insole.d.ts)` — ✅マージ済み（GitHub PR #17）
 
 **目的**: P0-6。ランタイム変更ゼロで型と補完を提供し、未実装APIを型レベルで明示。
 
@@ -217,7 +217,7 @@
 
 ---
 
-## 6. PR#5 `feat: OrpheInsoleSimulator（実機なし開発・デモ基盤）` — 🟡 DRAFT・レビュー待ち（GitHub PR #15）
+## 6. PR#5 `feat: OrpheInsoleSimulator（実機なし開発・デモ基盤）` — ✅マージ済み（GitHub PR #15）
 
 **目的**: P1-1。`OrpheInsole` と同じコールバック面を持つシミュレータを SDK に追加し、実機ゼロで examples・E2E・営業デモを回せるようにする。
 
