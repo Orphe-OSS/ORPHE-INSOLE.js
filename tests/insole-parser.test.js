@@ -161,6 +161,61 @@ async function main() {
     assert.deepEqual(written, { uuid: 'DEVICE_INFORMATION', data: [0x0D, 4] });
     await assert.rejects(() => insole.setDataStreamingMode(2), /Invalid ORPHE INSOLE data streaming mode/);
   }
+
+  {
+    const insole = new Orphe(0);
+    assert.doesNotThrow(() => insole.setup(['SENSOR_VALUES']));
+    assert.equal(insole.interpolation.enabled, false);
+    assert.equal(insole.interpolation.max_consecutive_missing, 1);
+    assert.equal(insole.history_sensor_values.press.size, 1);
+
+    assert.doesNotThrow(() => insole.setup(['SENSOR_VALUES'], {}));
+    assert.equal(insole.interpolation.enabled, false);
+    assert.equal(insole.interpolation.max_consecutive_missing, 1);
+
+    assert.doesNotThrow(() => insole.setup(['SENSOR_VALUES'], { interpolation: { enabled: true } }));
+    assert.equal(insole.interpolation.enabled, true);
+    assert.equal(insole.interpolation.max_consecutive_missing, 1);
+  }
+
+  {
+    const insole = new Orphe(0);
+    const lost = [];
+    insole.lostData = (current, previous) => lost.push({ current, previous });
+    for (const serial of [65534, 65535, 0, 1]) {
+      insole.onRead(createPacket(56, serial), 'SENSOR_VALUES');
+    }
+    assert.deepEqual(lost, []);
+  }
+
+  {
+    const insole = new Orphe(0);
+    const lost = [];
+    insole.onClear = () => {};
+    insole.lostData = (current, previous) => lost.push({ current, previous });
+    for (const serial of [65534, 65535, 1]) {
+      insole.onRead(createPacket(56, serial), 'SENSOR_VALUES');
+    }
+    assert.deepEqual(lost, [{ current: 1, previous: 65535 }]);
+
+    insole.clear();
+    insole.onRead(createPacket(56, 200), 'SENSOR_VALUES');
+    assert.deepEqual(lost, [{ current: 1, previous: 65535 }]);
+  }
+
+  {
+    const insole = new Orphe(0);
+    const lost = [];
+    insole.gotData = () => {};
+    insole.lostData = (current, previous) => lost.push({ current, previous });
+    for (const serial of [65534, 65535, 0, 1]) {
+      insole.onRead(createPacket(56, serial), 'SENSOR_VALUES');
+    }
+    assert.deepEqual(lost, []);
+
+    insole.onRead(createPacket(56, 3), 'SENSOR_VALUES');
+    assert.deepEqual(lost, [{ current: 3, previous: 1 }]);
+  }
 }
 
 main().then(() => {
