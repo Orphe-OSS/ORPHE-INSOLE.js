@@ -114,9 +114,13 @@ export interface InsoleBeginOptions {
 }
 
 export interface InsoleSetupOptions {
-    interpolation: {
-        enabled: boolean;
-        max_consecutive_missing: number;
+    /**
+     * 省略・部分指定可。実装側で既定値
+     * `{ enabled: false, max_consecutive_missing: 1 }` とマージされる。
+     */
+    interpolation?: {
+        enabled?: boolean;
+        max_consecutive_missing?: number;
     };
 }
 

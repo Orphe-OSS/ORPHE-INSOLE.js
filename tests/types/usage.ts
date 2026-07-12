@@ -19,6 +19,12 @@ insole.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES'], {
     }
 });
 
+// setup() options は省略・部分指定可（実装側で既定値とマージされる）
+insole.setup();
+insole.setup(['SENSOR_VALUES']);
+insole.setup(['SENSOR_VALUES'], {});
+insole.setup(['SENSOR_VALUES'], { interpolation: { enabled: true } });
+
 void insole.begin();
 void insole.begin('SENSOR_VALUES', { streamingMode: 4, autoReconnect: true });
 void insole.begin({ streamingMode: 3, reconnectIntervalMs: 1000, reconnectMaxAttempts: 2 });
