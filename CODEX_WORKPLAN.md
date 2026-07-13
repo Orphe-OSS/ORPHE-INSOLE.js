@@ -20,7 +20,9 @@
 | PR#6 | `buildInsoleToolkit {simulator:true}` + Simulator 型定義 | ✅ マージ済み（GitHub #23。ヘッドレス Chrome で11チェック検証。**showcase/balance-* 内部の Simulator 移行は PR#8 へ延期** — 公開ページの視覚回帰は目視確認とセットで行うため） |
 | PR#8 | examples の座標を InsoleUtils 共通定義へ + examples/README.md（マトリクス） | ✅ マージ済み（GitHub #25。菊川の目視+実機確認 2026-07-13 通過。hula-detector は別座標系のため対象外と判断） |
 | hotfix | 物理切断→自動再接続が stale characteristic で永続失敗するリグレッション（PR#4 由来・実機で発見） | ✅ マージ済み（GitHub #27。red→green 回帰テスト付き。実機での再接続確認は PR#10 のチェックパスに含む） |
-| PR#10 | エラー/接続状態モデル（error.code / connectionState / connectTimeoutMs / ログのdebugゲート） | 🟡 実装済み・**実機チェック待ち**（GitHub #26 draft・v1.2.0。device-test の T1〜T8 + タイムアウトボタン + 再接続テストで検証） |
+| PR#10 | エラー/接続状態モデル（error.code / connectionState / connectTimeoutMs / ログのdebugゲート） | ✅ マージ済み（GitHub #26・**v1.2.0**。実機チェック 2026-07-13 通過: T1〜T8 全PASS + 再接続（hotfix検証込み）+ CONNECT_TIMEOUT×3 + デバイス切替） |
+
+**🏁 計画の PR#1〜#10 + 再接続hotfix がすべて完了（2026-07-13）。** 残課題は IMPROVEMENT_PLAN の P2 バックログ（ESM/npm publish・E2E・Recorder 等）と、実機テストで観測された一過性エラーの改善余地（高速デバイス切替中の InvalidStateError → begin() 自動リトライ検討）。
 
 > **PR#10 の相談ポイント（着手前に菊川の判断が必要）**:
 > 1. 既定 on* コールバックの console.log を `debug` 時のみに抑制する挙動変更を入れるか（利用者の「動かなくなった」誤認リスク vs コンソール汚染。入れるなら minor リリース + README 案内）
