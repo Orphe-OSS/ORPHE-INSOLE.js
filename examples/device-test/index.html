@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ORPHE INSOLE 実機チェック（PR#4: characteristic UUID別管理）</title>
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <style>
+    body { font-family: -apple-system, "Hiragino Sans", sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 1.3rem; }
+    h2 { font-size: 1.05rem; border-bottom: 2px solid #eee; padding-bottom: 4px; margin-top: 28px; }
+    button { font-size: 0.95rem; padding: 8px 18px; margin: 4px 6px 4px 0; border-radius: 6px; border: 1px solid #888; background: #fff; cursor: pointer; }
+    button.primary { background: #0b57d0; border-color: #0b57d0; color: #fff; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 6px 10px; font-size: 0.9rem; text-align: left; }
+    th { background: #f7f7f7; }
+    td.status { width: 4.5em; text-align: center; font-size: 1.05rem; }
+    #live { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 0; }
+    #live .metric { background: #f4f6fa; border-radius: 8px; padding: 8px 14px; min-width: 130px; }
+    #live .metric b { display: block; font-size: 1.25rem; }
+    #log { background: #101418; color: #c8e6c9; font-family: monospace; font-size: 12px; padding: 10px; height: 200px; overflow-y: auto; white-space: pre-wrap; border-radius: 6px; }
+    .warn { color: #b00020; font-weight: 600; }
+    .note { background: #fff8e1; border-left: 4px solid #f5b301; padding: 8px 12px; font-size: 0.88rem; }
+    ul.manual li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>ORPHE INSOLE 実機チェック — PR#4: characteristic UUID別管理</h1>
+  <p class="note">
+    このページは <b>src/ORPHE-INSOLE.js（PR#4 修正版）</b> を直接読み込みます。
+    通知（SENSOR_VALUES）中に read/write（DEVICE_INFORMATION）を行っても
+    通知が壊れないことを実機で確認するためのチェックリストです。
+    Chrome / Edge（Web Bluetooth 対応ブラウザ）で開いてください。
+  </p>
+
+  <h2>1. 接続</h2>
+  <button id="btnConnect" class="primary">接続して開始（mode 4）</button>
+  <button id="btnDisconnect" disabled>切断 (reset)</button>
+  <div id="live">
+    <div class="metric">状態<b id="mConn">未接続</b></div>
+    <div class="metric">BLE周波数<b id="mFreq">–</b></div>
+    <div class="metric">press レート<b id="mPress">–</b></div>
+    <div class="metric">quat レート<b id="mQuat">–</b></div>
+    <div class="metric">lostData<b id="mLost">0</b></div>
+    <div class="metric">バッテリー<b id="mBatt">–</b></div>
+  </div>
+
+  <h2>2. 自動テスト（PR#4 の検証本体）</h2>
+  <p>接続後にボタンを押すと以下を順に実行します（約40秒）。</p>
+  <button id="btnRun" class="primary" disabled>自動テストを実行</button>
+  <button id="btnCopy" disabled>結果をコピー（PRに貼る用）</button>
+  <table>
+    <thead><tr><th style="width:3em">#</th><th>テスト内容</th><th class="status">結果</th><th>観測値</th></tr></thead>
+    <tbody id="testRows"></tbody>
+  </table>
+
+  <h2>3. 手動チェック（自動化できない項目）</h2>
+  <ul class="manual" id="manualChecks">
+    <li><label><input type="checkbox" data-key="reconnect"> INSOLE を電波範囲外へ移動（別の部屋など）→「状態」が <b>reconnecting</b> になり、<b>INSOLE を軽く動かして起こしながら</b>戻すと自動再接続してデータ受信が再開する（切断後しばらくすると INSOLE がスリープするため、動かして広告を再開させるのがコツ。再接続は最大6分間リトライします）</label></li>
+    <li><label><input type="checkbox" data-key="switch"> <button id="btnSelect" disabled>selectBluetoothDevice()</button> で別デバイスへ切替後、データ受信できる</label></li>
+    <li><label><input type="checkbox" data-key="timeout"> <button id="btnTimeout">接続タイムアウトテスト (1ms)</button> — 切断状態で押し、chooser でデバイス選択後に <b>CONNECT_TIMEOUT</b> エラーがログに出る（PR#10 の connectTimeoutMs 検証。終わったら再度「接続して開始」）</label></li>
+    <li><label><input type="checkbox" data-key="soak"> 5分以上ストリーミングして lostData が異常増加しない・タブが固まらない（開始時と終了時の lostData 値をメモ。毎分数件以下なら正常）</label></li>
+  </ul>
+
+  <h2>ログ</h2>
+  <div id="log"></div>
+
+  <script src="device-test.js"></script>
+</body>
+</html>

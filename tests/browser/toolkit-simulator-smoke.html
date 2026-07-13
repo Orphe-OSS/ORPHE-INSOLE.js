@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>InsoleToolkit simulator smoke test</title>
+  <!--
+    buildInsoleToolkit({simulator:true}) のブラウザ smoke テスト。
+    CI には組み込まず、ヘッドレス Chrome で実行して結果を DOM から回収する:
+
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+        --headless --dump-dom --virtual-time-budget=5000 \
+        "file://$(pwd)/tests/browser/toolkit-simulator-smoke.html" | grep SMOKE_RESULT
+
+    期待: SMOKE_RESULT:{"pass":true,...}
+  -->
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleSimulator.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+</head>
+<body>
+  <div id="toolkit"></div>
+  <pre id="result">running...</pre>
+
+  <script>
+    (async function () {
+      const checks = {};
+      function report(pass, detail) {
+        const payload = Object.assign({ pass: pass }, detail);
+        document.getElementById('result').textContent = 'SMOKE_RESULT:' + JSON.stringify(payload);
+      }
+      try {
+        // 1. simulator なしで {simulator:true} 相当の差し替えが行われること
+        buildInsoleToolkit(document.getElementById('toolkit'), 'SIM 0', 0, { simulator: true, streamingMode: 4 });
+        checks.slotIsSimulator = insoles[0] instanceof OrpheInsoleSimulator;
+        checks.aliasesShareSlot = (bles[0] === insoles[0]) && (cores[0] === insoles[0]);
+
+        // 2. UI が構築されていること
+        const toggle = document.querySelector('#switch_ble0');
+        checks.uiBuilt = !!toggle;
+
+        // 3. コールバック購読 → トグルON（実機なら chooser が出る操作）でデータが流れること
+        let pressCount = 0;
+        let quatCount = 0;
+        insoles[0].gotPress = function () { pressCount++; };
+        insoles[0].gotQuat = function () { quatCount++; };
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('change'));
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        checks.pressFlows = pressCount > 30;   // 800ms @100Hz → 80前後
+        checks.quatFlows = quatCount > 30;
+        checks.connected = insoles[0].isConnected();
+
+        // 4. L/R バッジが mount_position から更新されること（id=0 → L）
+        const badge = document.querySelector('#lr_badge0');
+        checks.lrBadge = !!badge && badge.innerText === 'L';
+
+        // 5. ストリーミングモード切替（設定モーダル相当の呼び出し）で quat が止まること
+        await insoles[0].setDataStreamingMode(3);
+        const quatAtSwitch = quatCount;
+        const pressAtSwitch = pressCount;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        checks.mode3StopsQuat = quatCount === quatAtSwitch;
+        checks.mode3KeepsPress = pressCount > pressAtSwitch;
+
+        // 6. トグルOFF（reset）でデータ停止
+        toggle.checked = false;
+        toggle.dispatchEvent(new Event('change'));
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const pressAtStop = pressCount;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        checks.stopsOnToggleOff = pressCount === pressAtStop && !insoles[0].isConnected();
+
+        // 7. simulator 未読込 + {simulator:true} は明確なエラーを投げること
+        const savedSimulator = window.OrpheInsoleSimulator;
+        try {
+          window.OrpheInsoleSimulator = undefined;
+          insoles[1] = new OrpheInsole(1); // スロット1で検証
+          let threw = false;
+          try {
+            buildInsoleToolkit(document.getElementById('toolkit'), 'SIM 1', 1, { simulator: true });
+          } catch (error) {
+            threw = /InsoleSimulator\.js/.test(String(error));
+          }
+          checks.clearErrorWithoutSimulatorJs = threw;
+        } finally {
+          window.OrpheInsoleSimulator = savedSimulator;
+        }
+
+        const pass = Object.values(checks).every(Boolean);
+        report(pass, { checks: checks, pressCount: pressCount, quatCount: quatCount });
+      } catch (error) {
+        report(false, { error: String(error), checks: checks });
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -135,6 +135,359 @@ async function main() {
     assert.equal(target._autoReconnectOptions.forceDeviceSelection, undefined);
   }
 
+  // ── characteristic の UUID 別管理（notify 中の read/write 競合） ──
+  // モックGATT: UUID ごとに別の characteristic スパイを返す
+  function createMockGATT() {
+    const characteristics = {}; // characteristicUUID -> spy
+    const stats = { connectCalls: 0, characteristicRequests: {} };
+    function charFor(charUUID) {
+      if (!characteristics[charUUID]) {
+        const spy = {
+          uuid: charUUID,
+          listeners: [],
+          startNotifyCalls: 0,
+          stopNotifyCalls: 0,
+          readCalls: 0,
+          writeCalls: 0,
+          // startNotifications の解決を外部から制御できるようにする
+          _holdStartNotifications: false,
+          releaseStartNotifications: null,
+          holdNextStartNotifications() {
+            this._holdStartNotifications = true;
+          },
+          startNotifications() {
+            this.startNotifyCalls++;
+            if (this._holdStartNotifications) {
+              this._holdStartNotifications = false;
+              return new Promise((resolve) => {
+                this.releaseStartNotifications = () => resolve(this);
+              });
+            }
+            return Promise.resolve(this);
+          },
+          stopNotifications() {
+            this.stopNotifyCalls++;
+            return Promise.resolve(this);
+          },
+          readValue() {
+            this.readCalls++;
+            const data = new DataView(new ArrayBuffer(20));
+            data.setUint8(0, 1); // battery
+            data.setUint8(1, 0); // mount_position
+            data.setUint8(8, 3);
+            data.setUint8(9, 3);
+            return Promise.resolve(data);
+          },
+          writeValue() {
+            this.writeCalls++;
+            return Promise.resolve();
+          },
+          addEventListener(_type, handler) { this.listeners.push(handler); },
+          removeEventListener(_type, handler) {
+            const i = this.listeners.indexOf(handler);
+            if (i >= 0) this.listeners.splice(i, 1);
+          },
+        };
+        characteristics[charUUID] = spy;
+      }
+      return characteristics[charUUID];
+    }
+    const gatt = {
+      connected: true,
+      connect() {
+        stats.connectCalls++;
+        gatt.connected = true;
+        return Promise.resolve({
+          getPrimaryService() {
+            return Promise.resolve({
+              getCharacteristic(charUUID) {
+                stats.characteristicRequests[charUUID] = (stats.characteristicRequests[charUUID] || 0) + 1;
+                return Promise.resolve(charFor(charUUID));
+              },
+            });
+          },
+        });
+      },
+      disconnect() { gatt.connected = false; },
+    };
+    return { gatt, charFor, stats };
+  }
+
+  function makeGATTTestTarget() {
+    const target = new OrpheInsole(0);
+    target.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    const env = createMockGATT();
+    target.bluetoothDevice = { gatt: env.gatt, name: 'MOCK-INSOLE' };
+    target.scan = async () => {}; // requestDevice をスキップ
+    const sensorChar = env.charFor(target.ORPHE_SENSOR_VALUES);
+    const deviceInfoChar = env.charFor(target.ORPHE_DEVICE_INFORMATION);
+    return { target, env, sensorChar, deviceInfoChar };
+  }
+
+  // シナリオA（競合の核心）: SENSOR_VALUES の startNotifications() 待機中に
+  // DEVICE_INFORMATION の read が完了しても、通知リスナーは SENSOR_VALUES 側に付くこと。
+  // （単一 dataCharacteristic スロットの現行実装では、await 中にスロットが
+  //   DEVICE_INFORMATION へ差し替わり、リスナーが誤対象に付いてデータが届かなくなる）
+  {
+    const { target, sensorChar, deviceInfoChar } = makeGATTTestTarget();
+    sensorChar.holdNextStartNotifications();
+    const notifyPromise = target.startNotify('SENSOR_VALUES');
+    // startNotifications() の待機点までチェーンを進める
+    while (!sensorChar.releaseStartNotifications) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    await target.read('DEVICE_INFORMATION'); // 通知確立中に割り込む read
+    sensorChar.releaseStartNotifications();
+    await notifyPromise;
+    assert.equal(sensorChar.listeners.length, 1,
+      'notify listener must be attached to the SENSOR_VALUES characteristic');
+    assert.equal(deviceInfoChar.listeners.length, 0,
+      'DEVICE_INFORMATION characteristic must not receive the notify listener');
+    assert.equal(deviceInfoChar.readCalls, 1);
+  }
+
+  // シナリオB: startNotify → read → stopNotify の直列実行で、
+  // stop 系が SENSOR_VALUES 側にのみ作用し、キャッシュにより characteristic の
+  // 再取得が発生しないこと（現行実装は uuid が交互になるたび再取得する）。
+  {
+    const { target, env, sensorChar, deviceInfoChar } = makeGATTTestTarget();
+    await target.startNotify('SENSOR_VALUES');
+    assert.equal(sensorChar.listeners.length, 1);
+    await target.read('DEVICE_INFORMATION');
+    await target.write('DEVICE_INFORMATION', [0x0D, 4]);
+    assert.equal(sensorChar.listeners.length, 1, 'listener count unchanged by read/write during notify');
+    await target.stopNotify('SENSOR_VALUES');
+    assert.equal(sensorChar.stopNotifyCalls, 1, 'stopNotifications must hit SENSOR_VALUES');
+    assert.equal(deviceInfoChar.stopNotifyCalls, 0, 'stopNotifications must not hit DEVICE_INFORMATION');
+    assert.equal(sensorChar.listeners.length, 0, 'listener removed from SENSOR_VALUES');
+    assert.equal(env.stats.characteristicRequests[target.ORPHE_SENSOR_VALUES], 1,
+      'SENSOR_VALUES characteristic must be fetched once and cached');
+    assert.equal(env.stats.characteristicRequests[target.ORPHE_DEVICE_INFORMATION], 1,
+      'DEVICE_INFORMATION characteristic must be fetched once and cached');
+  }
+
+  // シナリオC: clear() / selectBluetoothDevice() で characteristic キャッシュが破棄されること
+  {
+    const { target } = makeGATTTestTarget();
+    await target.startNotify('SENSOR_VALUES');
+    assert.ok(target._characteristics && Object.keys(target._characteristics).length > 0,
+      'characteristics cache should be populated after startNotify');
+    target.clear();
+    assert.deepEqual(target._characteristics, {}, 'clear() must reset the characteristics cache');
+  }
+  {
+    const { target } = makeGATTTestTarget();
+    await target.startNotify('SENSOR_VALUES');
+    target.requestDevice = async () => {}; // navigator.bluetooth 呼び出しをスキップ
+    await target.selectBluetoothDevice();
+    assert.deepEqual(target._characteristics, {}, 'selectBluetoothDevice() must reset the characteristics cache');
+  }
+
+  // ── エラーcode / connectionState / connectTimeoutMs / ログ抑制（PR#10） ──
+  {
+    // NO_DEVICE: connectGATT はデバイスなしで code 付き Error で reject
+    const target = new OrpheInsole(0);
+    target.onError = () => { };
+    await assert.rejects(() => target.connectGATT('DEVICE_INFORMATION'), (error) => {
+      assert.equal(error.code, 'NO_DEVICE');
+      assert.equal(error.message, 'No Bluetooth Device', 'message string is backward compatible');
+      return true;
+    });
+
+    // ALREADY_DISCONNECTED: disconnect() は onError に code 付き Error を渡す
+    const reported = [];
+    target.onError = (error) => reported.push(error);
+    target.bluetoothDevice = { gatt: { connected: false }, name: 'X' };
+    target.stopWatchingAdvertisements = () => { };
+    target.disconnect();
+    assert.equal(reported[0].code, 'ALREADY_DISCONNECTED');
+    assert.equal(reported[0].message, 'Bluetooth Device is already disconnected');
+
+    // INVALID_MODE
+    const modeTarget = new OrpheInsole(0);
+    modeTarget.onError = () => { };
+    await assert.rejects(() => modeTarget.setDataStreamingMode(2), (error) => {
+      assert.equal(error.code, 'INVALID_MODE');
+      return true;
+    });
+  }
+
+  {
+    // connectionState の遷移
+    const target = new OrpheInsole(0);
+    assert.equal(target.connectionState, 'disconnected');
+    target.bluetoothDevice = { gatt: { connected: true } };
+    assert.equal(target.connectionState, 'connected');
+    target.bluetoothDevice = { gatt: { connected: false } };
+    target._autoReconnectInProgress = true;
+    assert.equal(target.connectionState, 'reconnecting');
+    target._autoReconnectInProgress = false;
+    assert.equal(target.connectionState, 'disconnected');
+
+    // begin() 実行中は 'connecting'、成功後は finally でフラグ解除
+    const beginTarget = new OrpheInsole(0);
+    const statesDuringBegin = [];
+    beginTarget.getDeviceInformation = async () => { statesDuringBegin.push(beginTarget.connectionState); };
+    beginTarget.setDataStreamingMode = async () => { };
+    beginTarget.syncCoreTime = async () => { };
+    beginTarget.startNotify = async () => { };
+    await beginTarget.begin('SENSOR_VALUES', {});
+    assert.deepEqual(statesDuringBegin, ['connecting']);
+    assert.equal(beginTarget._connecting, false, 'flag cleared after begin');
+
+    // begin() 失敗時も finally でフラグ解除
+    const failTarget = new OrpheInsole(0);
+    failTarget.onError = () => { };
+    failTarget.getDeviceInformation = async () => { throw new Error('boom'); };
+    await assert.rejects(() => failTarget.begin('SENSOR_VALUES', {}));
+    assert.equal(failTarget._connecting, false, 'flag cleared after failed begin');
+  }
+
+  {
+    // connectTimeoutMs: gatt.connect() が解決しない場合 CONNECT_TIMEOUT で reject
+    const target = new OrpheInsole(0);
+    target.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    target.onError = () => { };
+    target.scan = async () => { };
+    let disconnectCalled = false;
+    target.bluetoothDevice = {
+      gatt: {
+        connected: false,
+        connect: () => new Promise(() => { }), // 永遠に解決しない
+        disconnect: () => { disconnectCalled = true; },
+      },
+    };
+    const startedAt = Date.now();
+    await assert.rejects(() => target.read('DEVICE_INFORMATION', { connectTimeoutMs: 80 }), (error) => {
+      assert.equal(error.code, 'CONNECT_TIMEOUT');
+      return true;
+    });
+    assert.ok(Date.now() - startedAt < 2000, 'rejects promptly');
+    assert.ok(disconnectCalled, 'gatt.disconnect() is attempted on timeout');
+
+    // connectTimeoutMs 未指定なら従来どおりタイムアウトしない（100ms 待って未解決のまま）
+    const noTimeoutTarget = new OrpheInsole(0);
+    noTimeoutTarget.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    noTimeoutTarget.onError = () => { };
+    noTimeoutTarget.scan = async () => { };
+    noTimeoutTarget.bluetoothDevice = { gatt: { connected: false, connect: () => new Promise(() => { }) } };
+    let settled = false;
+    noTimeoutTarget.read('DEVICE_INFORMATION').then(() => { settled = true; }, () => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(settled, false, 'no implicit default timeout');
+  }
+
+  {
+    // 既定コールバックのログは debug 時のみ / onError は常時 console.error
+    const target = new OrpheInsole(0);
+    const logs = [];
+    const errors = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args) => logs.push(args);
+    console.error = (...args) => errors.push(args);
+    try {
+      target.debug = false;
+      target.onScan('x');
+      target.onConnect('SENSOR_VALUES');
+      target.onDisconnect();
+      assert.equal(logs.length, 0, 'default callbacks are silent without debug');
+      target.debug = true;
+      target.onScan('x');
+      assert.equal(logs.length, 1, 'debug=true restores progress logs');
+      target.debug = false;
+      target.onError(new Error('always visible'));
+      assert.equal(errors.length, 1, 'onError logs regardless of debug');
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+  }
+
+  // ── 物理切断→再接続後に stale characteristic を使わないこと ──────
+  // （実機で確認された再接続リグレッションの回帰テスト。
+  //   電波範囲外→gattserverdisconnected→自動再接続の begin() リトライで、
+  //   旧接続の characteristic がキャッシュから返され続けると再接続が永遠に失敗する）
+  {
+    // 世代付きモックGATT: 切断後に古い世代の characteristic 操作は throw する
+    let generation = 1;
+    const fetchCounts = {};
+    function makeGenerationalChar(charUUID) {
+      const bornGeneration = generation;
+      return {
+        uuid: charUUID,
+        bornGeneration,
+        listeners: [],
+        _assertAlive() {
+          if (bornGeneration !== generation) {
+            throw new Error('GATT operation failed: characteristic from a previous connection');
+          }
+        },
+        startNotifications() { this._assertAlive(); return Promise.resolve(this); },
+        stopNotifications() { this._assertAlive(); return Promise.resolve(this); },
+        readValue() {
+          this._assertAlive();
+          const data = new DataView(new ArrayBuffer(20));
+          data.setUint8(0, 1);
+          data.setUint8(8, 3);
+          data.setUint8(9, 3);
+          return Promise.resolve(data);
+        },
+        writeValue() { this._assertAlive(); return Promise.resolve(); },
+        addEventListener(_type, handler) { this.listeners.push(handler); },
+        removeEventListener(_type, handler) {
+          const i = this.listeners.indexOf(handler);
+          if (i >= 0) this.listeners.splice(i, 1);
+        },
+      };
+    }
+    const gatt = {
+      connected: true,
+      connect() {
+        gatt.connected = true;
+        return Promise.resolve({
+          getPrimaryService() {
+            return Promise.resolve({
+              getCharacteristic(charUUID) {
+                fetchCounts[charUUID] = (fetchCounts[charUUID] || 0) + 1;
+                return Promise.resolve(makeGenerationalChar(charUUID));
+              },
+            });
+          },
+        });
+      },
+      disconnect() { gatt.connected = false; },
+    };
+
+    const target = new OrpheInsole(0);
+    target.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    target.onError = () => { };
+    target.scan = async () => { };
+    target.bluetoothDevice = { gatt, name: 'MOCK' };
+
+    // 1st connection: 通知 + DEVICE_INFORMATION/DATE_TIME を触ってキャッシュを埋める
+    await target.startNotify('SENSOR_VALUES');
+    await target.read('DEVICE_INFORMATION');
+    await target.read('DATE_TIME');
+
+    // 物理切断（電波範囲外相当）: gatt が落ち、旧 characteristic は無効になる
+    gatt.connected = false;
+    generation = 2;
+
+    // 再接続後の begin() 相当のシーケンスが stale を掴まず全て成功すること
+    // （現行実装では最初の read で gatt.connect() 後、以降の uuid が
+    //   旧世代キャッシュにヒットして throw する = レッド）
+    const info = await target.read('DEVICE_INFORMATION');
+    assert.ok(info, 'read after physical reconnect succeeds');
+    await target.write('DEVICE_INFORMATION', [0x0D, 4]);
+    await target.read('DATE_TIME');
+    await target.startNotify('SENSOR_VALUES');
+    assert.equal(fetchCounts[target.ORPHE_DATE_TIME], 2,
+      'DATE_TIME characteristic is re-fetched after physical disconnect');
+    assert.equal(fetchCounts[target.ORPHE_SENSOR_VALUES], 2,
+      'SENSOR_VALUES characteristic is re-fetched after physical disconnect');
+  }
+
   // ── 既存パーサが壊れていないこと（スモーク） ───────────────────
   {
     const data = new DataView(new ArrayBuffer(104));

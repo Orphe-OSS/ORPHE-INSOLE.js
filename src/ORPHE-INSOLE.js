@@ -121,6 +121,19 @@ function _orpheInsoleTimestampToday(hours, minutes, seconds, milliseconds) {
 }
 
 /**
+ * code プロパティ付き Error を生成する（エラー種別のプログラム判定用）。
+ * message は従来の文字列エラーと同一文字列を維持する（後方互換）。
+ * @param {string} code 'NO_DEVICE' | 'ALREADY_DISCONNECTED' | 'CONNECT_TIMEOUT' | 'INVALID_MODE'
+ * @param {string} message
+ * @returns {Error}
+ */
+function _insoleError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+/**
  * ORPHE INSOLE SENSOR_VALUES packet parser.
  * @param {DataView} data
  * @param {object} options
@@ -307,7 +320,8 @@ class OrpheInsole {
 
     // Initialize member variables
     this.bluetoothDevice = null;
-    this.dataCharacteristic = null;// 通知を行うcharacteristicを保持する
+    this.dataCharacteristic = null;// 最後に操作した characteristic（後方互換のために残す参照）
+    this._characteristics = {}; // uuid名 -> characteristic。read/write/notify は必ずこちらを参照する
     this.dataChangedEventHandlerMap = {}; // イベントハンドラを保持するマップ
     this.hashUUID = {}; // UUIDを保持するハッシュ
     this.hashUUID_lastConnected; // 最後に接続したUUIDを保持する
@@ -330,6 +344,7 @@ class OrpheInsole {
     // 自動再接続
     this._autoReconnectEnabled = false;
     this._autoReconnectInProgress = false;
+    this._connecting = false; // begin() による接続処理中フラグ（connectionState 用）
     this._autoReconnectOptions = {};
     this._autoReconnectDevice = null;
     this._autoReconnectDisconnectHandler = (event) => this._handleAutoReconnectDisconnect(event);
@@ -593,6 +608,7 @@ class OrpheInsole {
       this._disableAutoReconnect();
     }
 
+    this._connecting = true;
     try {
       await this.getDeviceInformation(options);
 
@@ -618,6 +634,8 @@ class OrpheInsole {
     } catch (error) {
       this._reportError(error);
       throw error;
+    } finally {
+      this._connecting = false;
     }
   }
 
@@ -758,6 +776,7 @@ class OrpheInsole {
     }
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this._characteristics = {};
     this._usingRememberedBluetoothDevice = false;
     this._rememberedBluetoothDeviceUnavailable = false;
     return this.requestDevice(uuid);
@@ -1035,26 +1054,50 @@ class OrpheInsole {
    * @param {string} uuid
    *
    */
-  connectGATT(uuid) {
+  connectGATT(uuid, options = {}) {
     this._log('connectGATT() start', {
       uuid,
       hasBluetoothDevice: !!this.bluetoothDevice,
       gattConnected: !!(this.bluetoothDevice && this.bluetoothDevice.gatt && this.bluetoothDevice.gatt.connected),
-      hasDataCharacteristic: !!this.dataCharacteristic,
+      hasCachedCharacteristic: !!this._characteristics[uuid],
       lastConnected: this.hashUUID_lastConnected
     });
     if (!this.bluetoothDevice) {
-      var error = "No Bluetooth Device";
+      var error = _insoleError('NO_DEVICE', "No Bluetooth Device");
       this._reportError(error);
       return Promise.reject(error);
     }
-    if (this.bluetoothDevice.gatt.connected && this.dataCharacteristic) {
-      if (this.hashUUID_lastConnected == uuid)
-        return Promise.resolve();
+    // UUID ごとにキャッシュした characteristic があればそのまま使う。
+    if (this.bluetoothDevice.gatt.connected && this._characteristics[uuid]) {
+      this.hashUUID_lastConnected = uuid; // 後方互換のため代入は残す
+      this.dataCharacteristic = this._characteristics[uuid];
+      return Promise.resolve();
+    }
+    // GATT リンクが切れている場合、旧接続の characteristic はすべて無効。
+    // ここで破棄しないと、物理切断→自動再接続後に別 UUID の操作が
+    // stale なキャッシュにヒットして失敗し続ける（実機で確認された再接続バグ）。
+    if (!this.bluetoothDevice.gatt.connected) {
+      this._characteristics = {};
     }
     this.hashUUID_lastConnected = uuid;
 
-    return this.bluetoothDevice.gatt.connect()
+    // connectTimeoutMs（opt-in・既定なし）: gatt.connect() のハング対策
+    let connectPromise = this.bluetoothDevice.gatt.connect();
+    const timeoutMs = Number(options.connectTimeoutMs);
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      let timeoutTimer;
+      connectPromise = Promise.race([
+        connectPromise.finally(() => clearTimeout(timeoutTimer)),
+        new Promise((_, reject) => {
+          timeoutTimer = setTimeout(() => {
+            try { this.bluetoothDevice?.gatt?.disconnect(); } catch (cleanupError) { void cleanupError; /* タイムアウト後の切断失敗は無視 */ }
+            reject(_insoleError('CONNECT_TIMEOUT', `GATT connect timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
+        })
+      ]);
+    }
+
+    return connectPromise
       .then(server => {
         return server.getPrimaryService(this.hashUUID[uuid].serviceUUID);
       })
@@ -1062,6 +1105,10 @@ class OrpheInsole {
         return service.getCharacteristic(this.hashUUID[uuid].characteristicUUID);
       })
       .then(characteristic => {
+        // UUID 別に保持する。dataCharacteristic は「最後に触った characteristic」
+        // として後方互換のために残すが、内部の read/write/notify は
+        // this._characteristics[uuid] のみを参照する。
+        this._characteristics[uuid] = characteristic;
         this.dataCharacteristic = characteristic;
         this.onConnectGATT(uuid);
         this.onConnect(uuid);
@@ -1078,9 +1125,21 @@ class OrpheInsole {
           this._usingRememberedBluetoothDevice = false;
           this.bluetoothDevice = null;
           this.dataCharacteristic = null;
+          this._characteristics = {};
         }
         throw error;
       });
+  }
+  /**
+   * uuid 名に対応する characteristic を返す（内部用）。
+   * 通常は connectGATT() が UUID 別に保持したものを返す。
+   * 後方互換のため、キャッシュ未登録時は dataCharacteristic にフォールバックする
+   * （dataCharacteristic を直接注入している既存コード・テストを壊さない）。
+   * @param {string} uuid
+   * @returns {BluetoothRemoteGATTCharacteristic}
+   */
+  _characteristicFor(uuid) {
+    return this._characteristics[uuid] || this.dataCharacteristic;
   }
   /**
    * サーバからのデータを受信したときに呼び出される関数です。この関数は、characteristicvaluechangedイベントが発生したときに呼び出されます。
@@ -1101,10 +1160,10 @@ class OrpheInsole {
   read(uuid, options = {}) {
     return (this.scan(uuid, options))
       .then(() => {
-        return this.connectGATT(uuid);
+        return this.connectGATT(uuid, options);
       })
       .then(() => {
-        return this.dataCharacteristic.readValue();
+        return this._characteristicFor(uuid).readValue();
       })
       .catch(error => {
         this._reportError(error);
@@ -1120,11 +1179,11 @@ class OrpheInsole {
   write(uuid, array_value, options = {}) {
     return (this.scan(uuid, options))
       .then(() => {
-        return this.connectGATT(uuid);
+        return this.connectGATT(uuid, options);
       })
       .then(() => {
         const data = Uint8Array.from(array_value);
-        return this.dataCharacteristic.writeValue(data);
+        return this._characteristicFor(uuid).writeValue(data);
       })
       .then(() => {
         this.onWrite(uuid);
@@ -1141,11 +1200,11 @@ class OrpheInsole {
    */
   startNotify(uuid, options = {}) {
     return this.scan(uuid, options)
-      .then(() => this.connectGATT(uuid))
-      .then(() => this.dataCharacteristic.startNotifications())
+      .then(() => this.connectGATT(uuid, options))
+      .then(() => this._characteristicFor(uuid).startNotifications())
       .then(() => {
         this.dataChangedEventHandlerMap[uuid] = this.dataChanged(this, uuid);
-        this.dataCharacteristic.addEventListener('characteristicvaluechanged', this.dataChangedEventHandlerMap[uuid]);
+        this._characteristicFor(uuid).addEventListener('characteristicvaluechanged', this.dataChangedEventHandlerMap[uuid]);
         this.onStartNotify(uuid);
       })
       .catch(error => {
@@ -1162,17 +1221,17 @@ class OrpheInsole {
   stopNotify(uuid, options = {}) {
     return this.scan(uuid, options) // BLEデバイスのスキャンを開始します。
       .then(() => {
-        return this.connectGATT(uuid); // GATTサーバーに接続します。
+        return this.connectGATT(uuid, options); // GATTサーバーに接続します。
       })
       .then(() => {
         // stopNotificationsメソッドを呼び出してNotificationを停止します。
         // このメソッドはPromiseを返すため、その完了を待つ必要があります。
-        return this.dataCharacteristic.stopNotifications();
+        return this._characteristicFor(uuid).stopNotifications();
       })
       .then(() => {
         // イベントハンドラを解除
         if (this.dataChangedEventHandlerMap[uuid]) {
-          this.dataCharacteristic.removeEventListener(
+          this._characteristicFor(uuid).removeEventListener(
             'characteristicvaluechanged',
             this.dataChangedEventHandlerMap[uuid]
           );
@@ -1194,12 +1253,27 @@ class OrpheInsole {
   }
 
   /**
+   * 接続状態を返す（UI 表示用）。
+   * - 'connected'    : GATT 接続中
+   * - 'reconnecting' : 自動再接続の試行中
+   * - 'connecting'   : begin() による接続処理中
+   * - 'disconnected' : 上記以外
+   * @returns {'disconnected'|'connecting'|'connected'|'reconnecting'}
+   */
+  get connectionState() {
+    if (this.isConnected()) return 'connected';
+    if (this._autoReconnectInProgress) return 'reconnecting';
+    if (this._connecting) return 'connecting';
+    return 'disconnected';
+  }
+
+  /**
    * BLEデバイスとの接続を切断します。デバイス接続をマニュアルで切断する場合には reset() を利用してください。切断だけでなくクラス内のメンバ変数もクリア初期化する必要があり、reset()を利用するとそれらの処理が行われます。
    *
    */
   disconnect() {
     if (!this.bluetoothDevice) {
-      var error = "No Bluetooth Device";
+      var error = _insoleError('NO_DEVICE', "No Bluetooth Device");
       this._reportError(error);
       return;
     }
@@ -1209,8 +1283,10 @@ class OrpheInsole {
 
     if (this.bluetoothDevice.gatt.connected) {
       this.bluetoothDevice.gatt.disconnect();
+      // 切断後の再接続では characteristic を取り直す
+      this._characteristics = {};
     } else {
-      var error = "Bluetooth Device is already disconnected";
+      var error = _insoleError('ALREADY_DISCONNECTED', "Bluetooth Device is already disconnected");
       this._reportError(error);
       return;
     }
@@ -1239,7 +1315,7 @@ class OrpheInsole {
     const normalizedMode = Number(mode);
     const supportedModes = [1, 3, 4];
     if (!Number.isInteger(normalizedMode) || !supportedModes.includes(normalizedMode)) {
-      throw new Error(`Invalid ORPHE INSOLE data streaming mode: ${mode}. Use 1, 3, or 4.`);
+      throw _insoleError('INVALID_MODE', `Invalid ORPHE INSOLE data streaming mode: ${mode}. Use 1, 3, or 4.`);
     }
     const data = new Uint8Array([0x0D, normalizedMode]);
     await this.write('DEVICE_INFORMATION', data, options);
@@ -1300,6 +1376,7 @@ class OrpheInsole {
   clear() {
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
+    this._characteristics = {};
     this._serialInitialized = false;
     this.isFirstAdvertisementReceived = false; // フラグをリセット
     this.onClear();
@@ -1650,13 +1727,15 @@ class OrpheInsole {
    */
   lostData(serial_number, serial_number_prev) { }
 
-  onScan(deviceName) { console.log("onScan"); }
-  onConnectGATT(uuid) { console.log("onConnectGATT"); }
-  onConnect(uuid) { console.log("onConnect"); }
-  onWrite(uuid) { console.log("onWrite"); }
-  onStartNotify(uuid) { console.log("onStartNotify", uuid); }
-  onStopNotify(uuid) { console.log("onStopNotify", uuid); }
-  onDisconnect() { console.log("onDisconnect"); }
+  // 既定の進行ログは debug 時のみ出力する（v1.2.0 での挙動変更）。
+  // 従来どおり常時ログを出したい場合は insole.debug = true にするか、各コールバックを上書きする。
+  onScan(deviceName) { if (this.debug) console.log("onScan"); }
+  onConnectGATT(uuid) { if (this.debug) console.log("onConnectGATT"); }
+  onConnect(uuid) { if (this.debug) console.log("onConnect"); }
+  onWrite(uuid) { if (this.debug) console.log("onWrite"); }
+  onStartNotify(uuid) { if (this.debug) console.log("onStartNotify", uuid); }
+  onStopNotify(uuid) { if (this.debug) console.log("onStopNotify", uuid); }
+  onDisconnect() { if (this.debug) console.log("onDisconnect"); }
 
   /**
    * 自動再接続の試行開始時に呼び出される
@@ -1678,16 +1757,17 @@ class OrpheInsole {
    * アドバタイズメントデータを受信した時に呼び出される
    * @param {BluetoothAdvertisingEvent} event - アドバタイズメントイベント
    */
-  onAdvertisement(event) { console.log("onAdvertisement", event); }
+  onAdvertisement(event) { if (this.debug) console.log("onAdvertisement", event); }
 
   /**
    * notification frequencyの実測値を取得する
    * @param {float} frequency
    */
   gotBLEFrequency(frequency) { }
-  onClear() { console.log("onClear"); }
-  onReset() { console.log("onReset"); }
-  onError(error) { console.log("onError: ", error); }
+  onClear() { if (this.debug) console.log("onClear"); }
+  onReset() { if (this.debug) console.log("onReset"); }
+  // エラーは debug に関係なく常時出力する（console.error に格上げ）
+  onError(error) { console.error("onError: ", error); }
 
   //一般開発ユーザからアクセス可能な関数の定義ここまで
   //--------------------------------------------------
