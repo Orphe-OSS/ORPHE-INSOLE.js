@@ -25,7 +25,7 @@ INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-sho
       <h1>Hello, ORPHE-INSOLE.js!</h1>
       <button onclick="insole.begin();">connect</button>
       <p id="sensor-data"></p>
-      <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/dist/orphe-insole.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.2.0/dist/orphe-insole.min.js"></script>
       <script>
       var insole = new OrpheInsole(0);
       window.onload = function () {
@@ -44,7 +44,7 @@ https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
 
 ### CDN
 ```
-<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/dist/orphe-insole.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.2.0/dist/orphe-insole.min.js"></script>
 ```
 `OrpheInsole` は `Orphe` と同じクラスを指す別名です。既存コードの `new Orphe(0)` は引き続き利用できます。
 
@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
 実機なしの開発やデモでは `OrpheInsoleSimulator` を使えます。`OrpheInsole` と同じ主なコールバックで、歩行・静止・重心揺れの合成データまたはCSV由来のフレーム配列を再生します。
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/src/InsoleSimulator.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.2.0/src/InsoleSimulator.js"></script>
 <script>
 const insole = new OrpheInsoleSimulator(0);
 insole.setup();
