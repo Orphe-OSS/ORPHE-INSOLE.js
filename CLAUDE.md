@@ -419,6 +419,8 @@ npm run generate-docs  # JSDoc
 | 重心動揺 | examples/balance-sway | CoP軌跡、圧力検証、医療注意書き |
 | 可聴化（バランス） | examples/balance-tuner | 荷重→音マッピング |
 | 可聴化（動作） | examples/hula-motion-sonifier | Web Audio、状態遷移発音 |
+| ジェスチャ楽器 | examples/music-shoe | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、イベントルーパー、加算残光ビジュアライザ |
+| ジェスチャ収録 | examples/music-shoe/lab.html | ラベル付きCSV記録（しきい値設計用） |
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 

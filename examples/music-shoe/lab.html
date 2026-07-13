@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja" data-bs-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GESTURE LAB — INSOLE MUSIC SHOE</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <style>
+    :root {
+      --volt: #cdff00;
+      --volt-dim: rgba(205, 255, 0, 0.35);
+      --volt-faint: rgba(205, 255, 0, 0.12);
+      --bg: #050507;
+      --panel: #0b0d0f;
+      --panel-edge: #17191c;
+      --ink: #e8e8e6;
+      --ink-dim: #7a7d80;
+      --rec: #ff4040;
+      --mono: "SF Mono", "Monaco", "Menlo", "Consolas", "Courier New", monospace;
+    }
+
+    html, body { background: var(--bg); color: var(--ink); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    .lab-wrap { max-width: 1080px; margin: 0 auto; padding: 14px 16px 28px; }
+
+    .lab-header {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 24px;
+      border-bottom: 1px solid var(--panel-edge); padding-bottom: 12px; margin-bottom: 14px;
+    }
+    .lab-header h1 { font-size: clamp(22px, 3.6vw, 34px); font-weight: 800; margin: 0; text-transform: uppercase; }
+    .lab-header h1 .volt { color: var(--volt); }
+    .lab-header .sub { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; color: var(--ink-dim); margin-top: 5px; }
+    .lab-header .toolkits { margin-left: auto; font-family: var(--mono); font-size: 12px; }
+    .lab-header a { color: var(--ink-dim); font-family: var(--mono); font-size: 11px; }
+
+    .panel { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 3px; padding: 10px 12px; margin-bottom: 10px; }
+    .panel .panel-label {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.24em;
+      color: var(--ink-dim); text-transform: uppercase; margin-bottom: 8px;
+      display: flex; justify-content: space-between;
+    }
+
+    /* gesture chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+      background: #101214; color: var(--ink); border: 1px solid var(--panel-edge);
+      border-radius: 2px; padding: 6px 10px; cursor: pointer; user-select: none;
+    }
+    .chip:hover { border-color: var(--volt-dim); }
+    .chip.on { background: var(--volt); color: #000; border-color: var(--volt); font-weight: 700; }
+    .chip .jp { opacity: 0.6; margin-left: 4px; }
+    #custom_label {
+      font-family: var(--mono); font-size: 11px; background: #101214; color: var(--ink);
+      border: 1px solid var(--panel-edge); border-radius: 2px; padding: 6px 10px; width: 180px;
+    }
+
+    /* record row */
+    .rec-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+    #rec_btn {
+      font-family: var(--mono); font-size: 14px; font-weight: 800; letter-spacing: 0.12em;
+      background: #101214; color: var(--rec); border: 2px solid var(--rec); border-radius: 2px;
+      padding: 12px 28px; min-width: 190px;
+    }
+    #rec_btn.recording { background: var(--rec); color: #fff; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { filter: brightness(0.75); } }
+    .rec-stat { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+    .rec-stat .volt { color: var(--volt); }
+
+    /* live view */
+    canvas { display: block; width: 100%; background: transparent; }
+    .live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 760px) { .live-grid { grid-template-columns: 1fr; } }
+
+    /* takes table */
+    table { width: 100%; font-family: var(--mono); font-size: 11px; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid var(--panel-edge); padding: 5px 8px; text-align: left; color: var(--ink); }
+    th { color: var(--ink-dim); font-weight: 400; letter-spacing: 0.1em; }
+    .btn-xs {
+      font-family: var(--mono); font-size: 10px; background: #101214; color: var(--ink);
+      border: 1px solid var(--panel-edge); border-radius: 2px; padding: 3px 8px;
+    }
+    .btn-xs:hover { border-color: var(--volt-dim); color: var(--volt); }
+    .btn-volt {
+      font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em;
+      background: var(--volt); color: #000; border: none; border-radius: 2px; padding: 8px 16px;
+    }
+
+    .guide { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); line-height: 1.8; }
+    .guide .volt { color: var(--volt); }
+
+    .modal-content { background: #f2f2f3; color: #111; }
+    .form-check-input:checked { background-color: var(--volt); border-color: var(--volt); }
+  </style>
+</head>
+
+<body>
+  <div class="lab-wrap">
+
+    <div class="lab-header">
+      <div>
+        <h1>GESTURE <span class="volt">LAB</span></h1>
+        <div class="sub">RECORD RAW SENSOR DATA PER GESTURE → CSV</div>
+      </div>
+      <div class="toolkits">
+        <div id="toolkit_placeholder0"></div>
+        <div id="toolkit_placeholder1"></div>
+      </div>
+      <a href="./index.html"><i class="bi bi-arrow-left"></i> INSTRUMENT</a>
+    </div>
+
+    <!-- gesture selection -->
+    <div class="panel">
+      <div class="panel-label"><span>1. GESTURE LABEL — 録るジェスチャを選択</span></div>
+      <div class="chips" id="chips"></div>
+      <div class="mt-2">
+        <input id="custom_label" placeholder="custom_label (自由入力)">
+      </div>
+    </div>
+
+    <!-- record -->
+    <div class="panel">
+      <div class="panel-label"><span>2. RECORD — 開始→ジェスチャを5〜10回繰り返し→停止（SPACEでも操作可）</span></div>
+      <div class="rec-row">
+        <button id="rec_btn"><i class="bi bi-record-circle"></i> REC START</button>
+        <span class="rec-stat">記録対象: <span class="volt" id="target_stat">—</span></span>
+        <span class="rec-stat" id="rec_stat">IDLE</span>
+        <span class="rec-stat">LABEL: <span class="volt" id="current_label">—</span></span>
+        <span class="rec-stat" id="dev_stat">D0 — / D1 —</span>
+      </div>
+    </div>
+
+    <!-- live monitor -->
+    <div class="panel">
+      <div class="panel-label"><span>LIVE MONITOR</span><span id="hz_stat">0 Hz</span></div>
+      <div class="live-grid">
+        <div>
+          <div class="panel-label"><span>PRESS 6CH (D0 solid / D1 dim)</span></div>
+          <canvas id="cv_press" width="520" height="130"></canvas>
+        </div>
+        <div>
+          <div class="panel-label"><span>|ACC|-1 [G] &amp; GYRO XYZ [dps/1000]</span></div>
+          <canvas id="cv_imu" width="520" height="130"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- takes -->
+    <div class="panel">
+      <div class="panel-label"><span>3. TAKES</span><span id="take_count">0 TAKES / 0 ROWS</span></div>
+      <table>
+        <thead>
+          <tr><th>#</th><th>LABEL</th><th>DUR</th><th>ROWS</th><th>DEV</th><th></th></tr>
+        </thead>
+        <tbody id="take_rows"></tbody>
+      </table>
+      <div class="mt-3 d-flex gap-2 flex-wrap">
+        <button class="btn-volt" id="export_all"><i class="bi bi-download"></i> EXPORT ALL (1 CSV)</button>
+        <button class="btn-xs" id="clear_all">CLEAR ALL</button>
+      </div>
+    </div>
+
+    <!-- guide -->
+    <div class="panel guide">
+      <div class="panel-label"><span>RECORDING GUIDE</span></div>
+      推奨手順: 各ラベルにつき1テイク、<span class="volt">1テイク内で同じジェスチャを5〜10回</span>、間に1秒程度の静止を挟む。<br>
+      <span class="volt">記録対象</span>: 接続中のINSOLEを自動で全部記録します（選択不要）。2台接続で片手だけジェスチャした場合も、CSVの device / side 列と動きの大きさで解析側が判別するので問題ありません。<br>
+      <span class="volt">idle_hold</span>（手で持って静止）と <span class="volt">handling_noise</span>（持ち替え・歩き回りなどの誤爆源）も必ず録ると閾値設計が正確になります。<br>
+      <span class="volt">fsr_sweep</span>: どのFSRがch何番かは知らなくてOK。マークのあるFSRを<span class="volt">適当な順に1つずつ「1秒押す→離す→1秒空ける」</span>で全部押してください（反応chはデータから自動判別します）。<br>
+      <span class="volt">yaw_spin</span>: インソールをお盆のように水平に持ったまま、<span class="volt">レコードを回すように左右にクイックイッと回転</span>させるジェスチャ（つま先が左右に振れる動き。上下には振らない）。<br>
+      左右両方のINSOLEで録る場合は両方接続したまま同時録音でOK（行に device / side が入ります）。<br>
+      エクスポートしたCSVはこのリポジトリの <span class="volt">examples/music-shoe/recordings/</span> に置いてください — 解析してしきい値・判定アルゴリズムを作り込みます。<br>
+      記録は <span class="volt">streaming mode 4（100Hz）</span>: 圧力＋IMUに加えてクォータニオンも記録されるため、姿勢（Euler）をオフラインで解析できます。<br>
+      CSV列: take, label, device, side, ms(受信相対時刻), timestamp(センサ), serial, packet, p0..p5(ADC生値), ax,ay,az[G], gx,gy,gz[dps], qw,qx,qy,qz
+    </div>
+  </div>
+
+  <script src="./lab.js"></script>
+</body>
+
+</html>
