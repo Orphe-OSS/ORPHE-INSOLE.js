@@ -1,5 +1,13 @@
 # ORPHE-INSOLE.js
+
+[![Docs & Demos](https://img.shields.io/badge/docs_%26_demos-orphe--oss.github.io-1f6feb)](https://orphe-oss.github.io/ORPHE-INSOLE.js/)
+[![Release](https://img.shields.io/github/v/release/Orphe-OSS/ORPHE-INSOLE.js)](https://github.com/Orphe-OSS/ORPHE-INSOLE.js/releases)
+[![CI](https://github.com/Orphe-OSS/ORPHE-INSOLE.js/actions/workflows/ci.yml/badge.svg)](https://github.com/Orphe-OSS/ORPHE-INSOLE.js/actions/workflows/ci.yml)
+
 Happy hacking for ORPHE INSOLE module on javascript.
+
+📖 **ドキュメント & デモサイト → https://orphe-oss.github.io/ORPHE-INSOLE.js/**
+（全サンプルのカードギャラリー・API リファレンス・クイックスタートはこちら）
 
 > [!CAUTION]
 > 現在ベータ版での提供です。細かなチュートリアルやドキュメントは整備中です。動作確認やフィードバックをお待ちしています。
