@@ -57,9 +57,10 @@
 
   <h2>3. 手動チェック（自動化できない項目）</h2>
   <ul class="manual" id="manualChecks">
-    <li><label><input type="checkbox" data-key="reconnect"> 電源 OFF→ON で自動再接続し、<b>データ受信が再開</b>する（onReconnectSuccess 後に press レートが回復）</label></li>
+    <li><label><input type="checkbox" data-key="reconnect"> INSOLE を電波範囲外へ移動（別の部屋など）→「状態」が <b>reconnecting</b> になり、<b>INSOLE を軽く動かして起こしながら</b>戻すと自動再接続してデータ受信が再開する（切断後しばらくすると INSOLE がスリープするため、動かして広告を再開させるのがコツ。再接続は最大6分間リトライします）</label></li>
     <li><label><input type="checkbox" data-key="switch"> <button id="btnSelect" disabled>selectBluetoothDevice()</button> で別デバイスへ切替後、データ受信できる</label></li>
-    <li><label><input type="checkbox" data-key="soak"> 5分以上ストリーミングして lostData が異常増加しない・タブが固まらない</label></li>
+    <li><label><input type="checkbox" data-key="timeout"> <button id="btnTimeout">接続タイムアウトテスト (1ms)</button> — 切断状態で押し、chooser でデバイス選択後に <b>CONNECT_TIMEOUT</b> エラーがログに出る（PR#10 の connectTimeoutMs 検証。終わったら再度「接続して開始」）</label></li>
+    <li><label><input type="checkbox" data-key="soak"> 5分以上ストリーミングして lostData が異常増加しない・タブが固まらない（開始時と終了時の lostData 値をメモ。毎分数件以下なら正常）</label></li>
   </ul>
 
   <h2>ログ</h2>

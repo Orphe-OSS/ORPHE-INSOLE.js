@@ -16,8 +16,8 @@ insole.gotPress = function () { counters.press++; };
 insole.gotQuat = function () { counters.quat++; };
 insole.gotBLEFrequency = function (frequency) { lastFreq = frequency; };
 insole.lostData = function () { counters.lost++; setText('mLost', String(counters.lost)); };
-insole.onConnect = function () { setText('mConn', '接続中'); };
-insole.onDisconnect = function () { setText('mConn', '切断'); };
+insole.onConnect = function () { setText('mConn', insole.connectionState); };
+insole.onDisconnect = function () { setText('mConn', insole.connectionState); };
 insole.onError = function (error) { log('onError: ' + error, true); };
 insole.onReconnectSuccess = function (info) { log('自動再接続に成功 (attempt ' + info.attempt + ')'); };
 
@@ -37,6 +37,7 @@ function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, 
 // 1秒ごとにレート表示を更新
 var prevCounts = { press: 0, quat: 0 };
 setInterval(function () {
+  setText('mConn', insole.connectionState);
   setText('mPress', (counters.press - prevCounts.press) + ' Hz');
   setText('mQuat', (counters.quat - prevCounts.quat) + ' Hz');
   setText('mFreq', lastFreq + ' Hz');
@@ -131,6 +132,48 @@ var tests = [
       var ok = rates.press > RATE_MIN && rates.press < 160; // 2重登録なら ~200Hz になる
       return { ok: ok, observed: 'press ' + rates.press.toFixed(0) + 'Hz（100Hz想定・160Hz未満で合格）' };
     }
+  },
+  {
+    name: 'T7: connectionState がストリーミング中 connected / エラーに code が付く',
+    run: async function () {
+      var stateOk = insole.connectionState === 'connected';
+      // 未接続の別インスタンスで NO_DEVICE エラーの code を確認
+      var probe = new OrpheInsole(1);
+      probe.onError = function () { };
+      var codeOk = false;
+      try {
+        await probe.connectGATT('DEVICE_INFORMATION');
+      } catch (error) {
+        codeOk = error && error.code === 'NO_DEVICE';
+      }
+      return {
+        ok: stateOk && codeOk,
+        observed: 'connectionState=' + insole.connectionState + ' / NO_DEVICE code ' + (codeOk ? 'OK' : 'NG')
+      };
+    }
+  },
+  {
+    name: 'T8: 既定ログが debug=false で沈黙し debug=true で出る（v1.2.0 挙動変更）',
+    run: async function () {
+      var captured = [];
+      var originalLog = console.log;
+      console.log = function () { captured.push(arguments); originalLog.apply(console, arguments); };
+      try {
+        insole.debug = false;
+        insole.onStartNotify('SENSOR_VALUES'); // 既定実装を直接呼んで確認
+        var silentCount = captured.length;
+        insole.debug = true;
+        insole.onStartNotify('SENSOR_VALUES');
+        var verboseCount = captured.length;
+        return {
+          ok: silentCount === 0 && verboseCount === 1,
+          observed: 'debug=false: ' + silentCount + '件 / debug=true: ' + (verboseCount - silentCount) + '件'
+        };
+      } finally {
+        console.log = originalLog;
+        insole.debug = true; // このページでは以後もデバッグログを有効にしておく
+      }
+    }
   }
 ];
 
@@ -224,6 +267,23 @@ $('btnSelect').addEventListener('click', async function () {
 });
 
 $('btnRun').addEventListener('click', runAll);
+
+$('btnTimeout').addEventListener('click', async function () {
+  log('接続タイムアウトテスト: chooser でデバイスを選択してください（1ms でタイムアウトさせます）');
+  try {
+    insole.reset();
+    await insole.begin('SENSOR_VALUES', { streamingMode: 4, connectTimeoutMs: 1 });
+    log('タイムアウトが発生しませんでした（想定外: 接続が 1ms 未満で完了）', true);
+  } catch (error) {
+    if (error && error.code === 'CONNECT_TIMEOUT') {
+      log('PASS — CONNECT_TIMEOUT を確認: ' + error.message);
+    } else if (String(error).indexOf('cancelled') >= 0) {
+      log('chooser がキャンセルされました。もう一度試してください。', true);
+    } else {
+      log('FAIL — 期待外のエラー: ' + error + ' (code=' + (error && error.code) + ')', true);
+    }
+  }
+});
 
 $('btnCopy').addEventListener('click', function () {
   navigator.clipboard.writeText(buildReport()).then(function () {

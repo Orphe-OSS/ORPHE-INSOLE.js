@@ -5,10 +5,14 @@
 ## 0. まず debug ログを有効にする
 
 ```javascript
-insole.debug = true;  // 接続手順の詳細が console.info に出る
+insole.debug = true;  // 接続手順の詳細ログ（onConnect 等の既定ログ含む）が console に出る
 ```
 
-エラーは `insole.onError = (e) => console.error(e)` で受け取れます（既定でも console に出ます）。
+v1.2.0 から、既定の進行ログ（onConnect / onStartNotify 等）は `debug = true` のときだけ出力されます。
+「ログが出なくなった」と感じたらまずこのフラグを確認してください。
+エラーは debug に関係なく常時 console.error に出ます（`error.code` で種別判定できます:
+`NO_DEVICE` / `ALREADY_DISCONNECTED` / `CONNECT_TIMEOUT` / `INVALID_MODE`）。
+接続状態は `insole.connectionState`（disconnected / connecting / connected / reconnecting）で取得できます。
 
 ## 1. デバイス選択ダイアログ（chooser）に INSOLE が出ない
 
