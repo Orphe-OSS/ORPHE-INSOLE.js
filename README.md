@@ -9,10 +9,12 @@ Happy hacking for ORPHE INSOLE module on javascript.
 
 製品スペック・取得できるデータ・使い方をまとめて知りたい場合は [showcase](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/showcase) ページがおすすめです（実機が無くてもデモ再生で全ビジュアルが動きます）。
 
+INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-shoe](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe) へ（クリック/キーボードでも試奏できます。ジェスチャ収録ツール [GESTURE LAB](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe/lab.html) 付き）。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 
-```javascript
+```html
 <!doctype html>
   <html lang="en">
     <head>

@@ -404,4 +404,6 @@ npm run generate-docs  # JSDoc
 | 可視化 | examples/VISUALIZE | 6chチャート、描画スロットリング |
 | ダッシュボード | examples/sensor-dashboard | 2台接続、L/R自動マッピング |
 | 可聴化 | examples/hula-motion-sonifier | Web Audio、状態遷移発音 |
+| ジェスチャ楽器 | examples/music-shoe | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、イベントルーパー、加算残光ビジュアライザ |
+| ジェスチャ収録 | examples/music-shoe/lab.html | ラベル付きCSV記録（しきい値設計用） |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
