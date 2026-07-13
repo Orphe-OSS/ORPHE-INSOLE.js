@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+<<<<<<< HEAD
 - Add `connectionState` getter (`'disconnected' | 'connecting' | 'connected' | 'reconnecting'`) for connection status UI.
 - Add opt-in `begin({ connectTimeoutMs })` — no default; when set, a hanging GATT connect rejects with an Error whose `code` is `'CONNECT_TIMEOUT'`.
 - Internal errors now carry a `code` property (`'NO_DEVICE'`, `'ALREADY_DISCONNECTED'`, `'CONNECT_TIMEOUT'`, `'INVALID_MODE'`) while keeping the same message strings.
@@ -16,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Behavior change (v1.2.0)**: default `on*` progress callbacks (`onConnect`, `onDisconnect`, `onStartNotify`, ...) log to the console only when `insole.debug === true`. Errors are still always printed (`onError` now uses `console.error`). Set `insole.debug = true` or override the callbacks to restore the previous verbosity.
 
+=======
+- Add `OrpheInsoleUtils.SENSOR_LAYOUT_IMAGE` (canonical on-image sensor marker coordinates) and migrate balance-tuner / balance-sway / showcase(viz-pressure) to consume it instead of per-example copies. Add `examples/README.md` matrix (purpose x hardware x hardware-free verification).
+>>>>>>> origin/main
 - Add `buildInsoleToolkit(..., {simulator: true})` — swaps the slot to `OrpheInsoleSimulator` so the toolkit UI and callbacks work without hardware (requires InsoleSimulator.js). Simulator gained toolkit-compat methods: `setDataStreamingMode` (live switching), `getDeviceInformation`, `streaming_mode`, `resetAnalysisLogs`. TypeScript definitions for `OrpheInsoleSimulator` added.
 - Add docs landing (docs/README.md), docs/SENSOR_SPEC.md (packet formats 50/55/56, units, mount_position bits, channel remap policy), and docs/TROUBLESHOOTING.md. Unified non-medical-device disclaimers in balance-sway / showcase. Synced CLAUDE.md example tables.
 - Add `src/InsoleUtils.js` (opt-in) — pressure-data utilities promoted from example code: `validatePress` / `StuckChannelMonitor` / `PressureCalibrator` / `SENSOR_LAYOUT` + `mirrorForSide` / `computeCoP` / `ContactDetector` (hysteresis + debounce) / `sideFromMountPosition`. TypeScript definitions included.
@@ -26,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Drop cached GATT characteristics when the link is down so auto-reconnect after a physical disconnect (out of range) no longer fails forever on stale characteristics from the previous connection (regression introduced by the per-UUID characteristic cache).
 - Keep GATT characteristics per UUID (`_characteristics` map) so calling `getDeviceInformation()` / `setDataStreamingMode()` / `syncCoreTime()` while SENSOR_VALUES notifications are active no longer risks attaching or detaching the notify listener on the wrong characteristic. `dataCharacteristic` is kept as "last touched characteristic" for backward compatibility.
 - Normalize `setup()` options so partial or empty options objects do not throw and interpolation defaults are preserved.
 - Handle `serial_number` wraparound from `65535` to `0` without false `lostData()` callbacks, including after `clear()`.

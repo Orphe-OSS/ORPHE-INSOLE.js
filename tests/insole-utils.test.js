@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   SENSOR_COUNT,
   MAX_UINT16,
+  SENSOR_LAYOUT_IMAGE,
   SENSOR_LAYOUT,
   mirrorForSide,
   validatePress,
@@ -73,8 +74,17 @@ function main() {
     assert.deepEqual(original, [1, 2, 3, 4, 5, 6]);
   }
 
-  // ── SENSOR_LAYOUT / mirrorForSide ─────────────────────────────
+  // ── SENSOR_LAYOUT_IMAGE / SENSOR_LAYOUT / mirrorForSide ───────
   {
+    // 画像座標の正（balance-sway / balance-tuner / viz-pressure のゴールデン値）
+    assert.deepEqual(
+      SENSOR_LAYOUT_IMAGE.map((sensor) => [sensor.x, sensor.y]),
+      [[0.7596, 0.1680], [0.7513, 0.3320], [0.4024, 0.2210],
+       [0.5245, 0.3483], [0.2884, 0.3681], [0.5552, 0.8206]]
+    );
+    assert.deepEqual(SENSOR_LAYOUT_IMAGE.map((sensor) => sensor.label),
+      ['P0', 'P1', 'P2', 'P3', 'P4', 'P5']);
+
     assert.equal(SENSOR_LAYOUT.length, SENSOR_COUNT);
     // balance-sway の createSensorPoint と同一の値になっていること（ゴールデン）
     // P0: imageX=0.7596, imageY=0.1680, X_RANGE=0.58, Y_RANGE=0.9

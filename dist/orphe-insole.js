@@ -1068,11 +1068,16 @@ class OrpheInsole {
       return Promise.reject(error);
     }
     // UUID ごとにキャッシュした characteristic があればそのまま使う。
-    // （切断時は gatt.connected が false になるため自然に再取得される）
     if (this.bluetoothDevice.gatt.connected && this._characteristics[uuid]) {
       this.hashUUID_lastConnected = uuid; // 後方互換のため代入は残す
       this.dataCharacteristic = this._characteristics[uuid];
       return Promise.resolve();
+    }
+    // GATT リンクが切れている場合、旧接続の characteristic はすべて無効。
+    // ここで破棄しないと、物理切断→自動再接続後に別 UUID の操作が
+    // stale なキャッシュにヒットして失敗し続ける（実機で確認された再接続バグ）。
+    if (!this.bluetoothDevice.gatt.connected) {
+      this._characteristics = {};
     }
     this.hashUUID_lastConnected = uuid;
 

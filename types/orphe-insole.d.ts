@@ -518,6 +518,8 @@ export declare class InsoleStuckChannelMonitor {
 export interface InsoleUtilsModule {
     SENSOR_COUNT: 6;
     MAX_UINT16: 65535;
+    /** インソール画像上のマーカー座標（0..1 画像比率・チャネル→位置対応の正） */
+    SENSOR_LAYOUT_IMAGE: InsoleSensorPoint[];
     SENSOR_LAYOUT: InsoleSensorPoint[];
     mirrorForSide(layout: InsoleSensorPoint[], side: 'left' | 'right'): InsoleSensorPoint[];
     validatePress(values: number[] | null | undefined, options?: { saturationValue?: number }): InsolePressValidation;
