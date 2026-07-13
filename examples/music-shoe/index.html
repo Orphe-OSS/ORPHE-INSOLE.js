@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ja" data-bs-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INSOLE MUSIC SHOE — gesture instrument</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <style>
+    :root {
+      --volt: #cdff00;
+      --volt-dim: rgba(205, 255, 0, 0.35);
+      --volt-faint: rgba(205, 255, 0, 0.12);
+      --bg: #050507;
+      --panel: #0b0d0f;
+      --panel-edge: #17191c;
+      --ink: #e8e8e6;
+      --ink-dim: #7a7d80;
+      --mono: "SF Mono", "Monaco", "Menlo", "Consolas", "Courier New", monospace;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    body {
+      background-image:
+        repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.012) 2px 4px),
+        linear-gradient(rgba(205, 255, 0, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(205, 255, 0, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 48px 48px, 48px 48px;
+    }
+
+    .ms-wrap { max-width: 1180px; margin: 0 auto; padding: 14px 16px 28px; }
+
+    /* ---------- header ---------- */
+    .ms-header {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 24px;
+      border-bottom: 1px solid var(--panel-edge); padding-bottom: 12px; margin-bottom: 14px;
+    }
+    .ms-title h1 {
+      font-size: clamp(26px, 4.4vw, 44px); font-weight: 800; letter-spacing: 0.02em;
+      margin: 0; text-transform: uppercase; line-height: 0.95;
+    }
+    .ms-title h1 .volt { color: var(--volt); }
+    .ms-title .sub {
+      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.22em;
+      color: var(--ink-dim); text-transform: uppercase; margin-top: 6px;
+    }
+    .ms-header .toolkits {
+      margin-left: auto; display: flex; flex-direction: column; gap: 2px;
+      font-family: var(--mono); font-size: 12px;
+    }
+    .ms-header a.lab-link { color: var(--ink-dim); font-family: var(--mono); font-size: 11px; align-self: center; }
+    #audio_start {
+      font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+      color: #000; background: var(--volt); border: none; border-radius: 2px;
+      padding: 8px 18px; font-weight: 700;
+    }
+    #audio_start.armed { background: transparent; color: var(--volt); border: 1px solid var(--volt-dim); }
+
+    /* ---------- panels ---------- */
+    .panel {
+      background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 3px;
+      padding: 10px 12px; position: relative;
+    }
+    .panel .panel-label {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.24em;
+      color: var(--ink-dim); text-transform: uppercase; margin-bottom: 6px;
+      display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    }
+    .panel .panel-label .jp { letter-spacing: 0.3em; font-size: 9px; white-space: nowrap; }
+
+    .ms-grid {
+      display: grid; gap: 10px;
+      grid-template-columns: 250px 1fr 210px;
+      grid-template-areas: "deck scope fx" "lanes lanes lanes" "loop loop loop" "ticker ticker ticker";
+    }
+    @media (max-width: 900px) {
+      .ms-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas: "scope scope" "deck fx" "lanes lanes" "loop loop" "ticker ticker";
+      }
+    }
+
+    .area-deck { grid-area: deck; }
+    .area-scope { grid-area: scope; display: flex; flex-direction: column; }
+    .area-fx { grid-area: fx; }
+    .area-lanes { grid-area: lanes; }
+    .area-loop { grid-area: loop; }
+    .area-ticker { grid-area: ticker; }
+
+    canvas { display: block; width: 100%; }
+    #scope_canvas { flex: 1; min-height: 200px; }
+    #deck_canvas { aspect-ratio: 1 / 1; max-height: 230px; margin: 0 auto; }
+
+    /* ---------- orientation / fx ---------- */
+    #zone_ind {
+      font-family: var(--mono); font-weight: 800; font-size: 26px; letter-spacing: 0.14em;
+      color: var(--volt); text-align: center; padding: 4px 0 0;
+    }
+    #grav_val, .fx-meter .val { font-family: var(--mono); font-size: 9.5px; color: var(--ink-dim); }
+    #grav_val { text-align: center; margin-bottom: 8px; }
+    .fx-meter { margin-bottom: 10px; }
+    .fx-meter .bar {
+      height: 8px; background: #101214; border: 1px solid var(--panel-edge); position: relative; overflow: hidden;
+    }
+    .fx-meter .bar > div { position: absolute; inset: 0; transform-origin: center; transform: scaleX(0); background: var(--volt); opacity: 0.85; }
+    .fx-meter .val { margin-top: 3px; }
+    .form-range::-webkit-slider-thumb { background: var(--volt); }
+    .form-range::-moz-range-thumb { background: var(--volt); }
+    .btn-ms {
+      font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.12em; font-weight: 700;
+      background: #101214; color: var(--ink); border: 1px solid var(--panel-edge);
+      border-radius: 2px; padding: 7px 14px;
+    }
+    .btn-ms:hover { border-color: var(--volt-dim); color: var(--volt); }
+    .btn-ms.active-volt { background: var(--volt); color: #000; border-color: var(--volt); }
+    .btn-ms.rec-armed { background: #2a0b0b; color: #ff5252; border-color: #ff5252; }
+
+    /* ---------- L/R lanes ---------- */
+    .lane { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; padding: 8px 0; }
+    .lane + .lane { border-top: 1px dashed var(--panel-edge); }
+    .lane-head {
+      flex: 0 0 118px; display: flex; flex-direction: column; justify-content: center;
+      font-family: var(--mono);
+    }
+    .lane-head .bank { font-size: 22px; font-weight: 800; color: var(--volt); letter-spacing: 0.1em; }
+    .lane-head .desc { font-size: 9px; color: var(--ink-dim); letter-spacing: 0.12em; line-height: 1.5; }
+    .tile {
+      position: relative; overflow: hidden; cursor: pointer; user-select: none;
+      background: #0e1012; border: 1px solid var(--panel-edge); border-radius: 2px;
+      width: 74px; height: 64px; padding: 6px 8px;
+    }
+    .tile .name { font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: 0.06em; position: relative; }
+    .tile .jp { font-family: var(--mono); font-size: 8.5px; color: var(--ink-dim); letter-spacing: 0.1em; position: relative; }
+    .tile .key { position: absolute; left: 6px; bottom: 4px; font-family: var(--mono); font-size: 8.5px; color: var(--ink-dim); }
+    .tile.hit { border-color: var(--volt); box-shadow: 0 0 16px var(--volt-dim), inset 0 0 12px var(--volt-faint); }
+    .tile.hit .name { color: var(--volt); }
+    .tile.gesture { border-style: dashed; }
+
+    .note-cells { display: flex; gap: 6px; flex: 1; min-width: 280px; }
+    .note-cell {
+      position: relative; overflow: hidden; cursor: pointer; user-select: none; flex: 1;
+      background: #0e1012; border: 1px solid var(--panel-edge); border-radius: 2px; height: 64px;
+    }
+    .note-cell .meter {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 100%;
+      background: linear-gradient(180deg, var(--volt-faint), var(--volt-dim));
+      transform-origin: bottom; transform: scaleY(0); pointer-events: none;
+    }
+    .note-cell .th-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--volt-dim); bottom: 71%; pointer-events: none; }
+    .note-cell .name { position: absolute; top: 5px; left: 7px; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+    .note-cell .key { position: absolute; left: 7px; bottom: 4px; font-family: var(--mono); font-size: 8.5px; color: var(--ink-dim); }
+    .note-cell .ch { position: absolute; right: 6px; bottom: 4px; font-family: var(--mono); font-size: 8.5px; color: var(--ink-dim); }
+    .note-cell.sounding { border-color: var(--volt); box-shadow: inset 0 0 12px var(--volt-faint); }
+    .note-cell.sounding .name { color: var(--volt); }
+
+    /* ---------- loop row ---------- */
+    .loop-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+    .loop-progress {
+      flex: 1; min-width: 140px; height: 10px; background: #101214;
+      border: 1px solid var(--panel-edge); position: relative; overflow: hidden;
+    }
+    .loop-progress > .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--volt); left: 0; }
+    .loop-progress .mark { position: absolute; top: 2px; bottom: 2px; width: 1px; background: var(--volt-dim); }
+    .loop-stat { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); letter-spacing: 0.14em; }
+
+    /* ---------- ticker ---------- */
+    .area-ticker {
+      font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim);
+      white-space: nowrap; overflow: hidden; border-top: 1px solid var(--panel-edge); padding-top: 8px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .area-ticker .volt { color: var(--volt); }
+
+    .credit {
+      font-family: var(--mono); font-size: 9.5px; color: var(--ink-dim); letter-spacing: 0.06em;
+      margin-top: 16px; line-height: 1.7;
+    }
+    .credit a { color: var(--ink-dim); }
+
+    /* toolkit modal readability (assumes light theme) */
+    .modal-content { background: #f2f2f3; color: #111; }
+    .form-check-input:checked { background-color: var(--volt); border-color: var(--volt); }
+    .form-check-input { cursor: pointer; }
+  </style>
+</head>
+
+<body>
+  <div class="ms-wrap">
+
+    <!-- header -->
+    <div class="ms-header">
+      <div class="ms-title">
+        <h1>INSOLE <span class="volt">MUSIC</span> SHOE</h1>
+        <div class="sub">GESTURE INSTRUMENT — MOTION / SOUND / LIGHT</div>
+      </div>
+      <div class="toolkits">
+        <div id="toolkit_placeholder0"></div>
+        <div id="toolkit_placeholder1"></div>
+      </div>
+      <a class="lab-link" href="./lab.html"><i class="bi bi-clipboard-data"></i> GESTURE LAB</a>
+      <button id="audio_start"><i class="bi bi-plug"></i> PLUG IN</button>
+    </div>
+
+    <div class="ms-grid">
+
+      <!-- scratch deck -->
+      <div class="panel area-deck">
+        <div class="panel-label"><span>TURNTABLE</span><span class="jp">水平スピン: 正転/逆転/スクラッチ</span></div>
+        <canvas id="deck_canvas" width="300" height="300"></canvas>
+      </div>
+
+      <!-- oscilloscope -->
+      <div class="panel area-scope">
+        <div class="panel-label"><span>LIGHT SCOPE — ACCUMULATED WAVEFORM</span><span class="jp">残光</span></div>
+        <canvas id="scope_canvas" width="900" height="300"></canvas>
+      </div>
+
+      <!-- orientation + fx -->
+      <div class="panel area-fx">
+        <div class="panel-label"><span>ORIENT</span><span class="jp">向き</span></div>
+        <div id="zone_ind">—</div>
+        <div id="grav_val">g — — —</div>
+        <div class="fx-meter">
+          <div class="panel-label"><span>ROLL TWIST</span></div>
+          <div class="bar"><div id="twist_bar"></div></div>
+          <div class="val" id="twist_val">0°</div>
+        </div>
+        <div class="fx-meter">
+          <div class="panel-label"><span>ECHO 残響</span></div>
+          <input type="range" class="form-range" id="echo_slider" min="0" max="100" value="22">
+        </div>
+        <div class="fx-meter">
+          <div class="panel-label"><span>SENS 感度</span></div>
+          <input type="range" class="form-range" id="sens_slider" min="20" max="300" value="100">
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn-ms flex-fill" id="zero_set" title="FSRの現在値をゼロ点に"><i class="bi bi-crosshair"></i> ZERO</button>
+          <button class="btn-ms flex-fill" id="cal_toe" title="つま先を真下に向けて押すと長軸を自動キャリブレーション"><i class="bi bi-compass"></i> CAL</button>
+        </div>
+      </div>
+
+      <!-- L/R lanes -->
+      <div class="panel area-lanes">
+        <div class="panel-label">
+          <span>L / R BANKS — 振り叩き=打撃 / ロールひねり=MOD / FSR押し=ノート</span>
+          <span class="jp">クリック・キーでも試奏可</span>
+        </div>
+        <div id="lanes"></div>
+      </div>
+
+      <!-- loop station -->
+      <div class="panel area-loop">
+        <div class="panel-label"><span>LOOP STATION</span><span class="jp">ループ</span></div>
+        <div class="loop-row">
+          <button class="btn-ms" id="loop_rec"><i class="bi bi-record-circle"></i> REC</button>
+          <button class="btn-ms" id="loop_play"><i class="bi bi-play-fill"></i> PLAY</button>
+          <button class="btn-ms" id="loop_clear"><i class="bi bi-x-lg"></i> CLEAR</button>
+          <button class="btn-ms" id="quant_btn" title="ヒットを16分グリッドに吸着（ON後の最初の一打が基準）"><i class="bi bi-magnet"></i> QUANT</button>
+          <div class="loop-progress"><div id="loop_marks"></div><div class="head" id="loop_head"></div></div>
+          <span class="loop-stat" id="loop_stat">EMPTY</span>
+        </div>
+      </div>
+
+      <!-- ticker -->
+      <div class="area-ticker">
+        <span id="ticker0">D0 —</span>
+        <span id="ticker1">D1 —</span>
+        <span id="ticker_stat"><span class="volt">0</span> Hz / LOST 0</span>
+      </div>
+    </div>
+
+    <div class="credit">
+      All sounds synthesized in Web Audio (no samples). Gesture detection is tuned from recordings made with the
+      <a href="./lab.html">GESTURE LAB</a>.
+      KEYS — L: Q/W/E=HAT/SNR/KIK A/S=MOD 1-6=NOTES · R: U/I/O=HAT/SNR/KIK J/K=MOD 7890-==NOTES · SPACE=REC
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+
+</html>
