@@ -409,6 +409,17 @@ npm run generate-docs  # JSDoc
 
 ソースを編集したら必ず `npm test` と `npm run build` を実行してください。CDN利用者は `dist/orphe-insole.min.js` を読み込んでいます。
 
+### リリース手順（バージョンを上げるとき）
+
+README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y.Z`）で案内しており、
+`tests/insole-version-sync.test.js` が package.json の version との一致を検証します
+（`@latest` への退行・更新漏れは CI で落ちる）。
+
+1. `package.json` の `version` を上げる
+2. `npm test` → insole-version-sync が落ちた箇所（README.md / index.html の `@vX.Y.Z`）を新バージョンに更新
+3. CHANGELOG.md の `[Unreleased]` を `[X.Y.Z] - 日付` に確定し、新しい空の `[Unreleased]` を作る
+4. PR マージ後: `git tag vX.Y.Z` + GitHub Release を作成（jsDelivr の固定URLが有効になる）
+
 ## Reference Examples
 
 | App Type | Reference | Key Patterns |

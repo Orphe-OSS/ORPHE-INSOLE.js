@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-（なし）
+### Added
+
+- Landing page: card-style example gallery with screenshots for all 8 examples + API docs, deep-dive doc links, and explicit browser-support notes. SEO: canonical/hreflang/OG image/Twitter cards/JSON-LD plus robots.txt and sitemap.xml.
+- Pin CDN snippets in README / landing page to `@v1.2.0` and add `tests/insole-version-sync.test.js` so version bumps without updating the pinned references fail CI (release steps documented in CLAUDE.md).
 
 ## [1.2.0] - 2026-07-13
 

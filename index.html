@@ -11,6 +11,36 @@
   <meta property="og:description"
     content="Build browser prototypes with ORPHE INSOLE pressure and motion data.">
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://orphe-oss.github.io/ORPHE-INSOLE.js/">
+  <meta property="og:site_name" content="ORPHE-INSOLE.js">
+  <meta property="og:image" content="https://orphe-oss.github.io/ORPHE-INSOLE.js/assets/images/og-insole.jpg">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ORPHE-INSOLE.js | JavaScript SDK for Smart Insole Prototyping">
+  <meta name="twitter:description"
+    content="Web Bluetooth SDK for ORPHE INSOLE: 6ch pressure, IMU, and quaternion data in the browser.">
+  <meta name="twitter:image" content="https://orphe-oss.github.io/ORPHE-INSOLE.js/assets/images/og-insole.jpg">
+  <link rel="canonical" href="https://orphe-oss.github.io/ORPHE-INSOLE.js/">
+  <link rel="alternate" hreflang="ja" href="https://orphe-oss.github.io/ORPHE-INSOLE.js/">
+  <link rel="alternate" hreflang="en" href="https://orphe-oss.github.io/ORPHE-INSOLE.js/?lang=en">
+  <link rel="alternate" hreflang="x-default" href="https://orphe-oss.github.io/ORPHE-INSOLE.js/">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "ORPHE-INSOLE.js",
+    "url": "https://orphe-oss.github.io/ORPHE-INSOLE.js/",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web (Chrome, Edge)",
+    "description": "JavaScript SDK that connects ORPHE INSOLE smart insoles to browser apps via Web Bluetooth for 6-channel pressure, IMU, and quaternion prototyping.",
+    "softwareVersion": "1.2.0",
+    "license": "https://github.com/Orphe-OSS/ORPHE-INSOLE.js",
+    "codeRepository": "https://github.com/Orphe-OSS/ORPHE-INSOLE.js",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "JPY" },
+    "publisher": { "@type": "Organization", "name": "ORPHE Inc.", "url": "https://orphe.io/" }
+  }
+  </script>
   <link rel="icon" href="assets/images/orphe.svg" type="image/svg+xml">
   <style>
     @font-face {
@@ -624,13 +654,32 @@
     .example-link {
       display: flex;
       min-height: 250px;
-      padding: 24px;
+      padding: 0;
+      overflow: hidden;
       flex-direction: column;
-      justify-content: space-between;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: white;
       transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    .example-thumb {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      object-position: top;
+      background: #10151a;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .example-body {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 18px 22px 22px;
     }
 
     .example-link:hover {
@@ -1067,11 +1116,14 @@
               </tr>
             </tbody>
           </table>
+          <p class="lead" style="margin-top: 18px;" data-i18n-html="quickResources">
+            Deep-dive references: <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/SENSOR_SPEC.md">sensor &amp; packet spec</a>, <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/TROUBLESHOOTING.md">troubleshooting</a>, and <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/ai/PRESSURE_RECIPES.md">pressure-data recipes</a>.
+          </p>
         </div>
         <pre class="code-block"><code>&lt;button onclick="connectInsole()"&gt;Connect ORPHE INSOLE&lt;/button&gt;
 &lt;pre id="sensor-data"&gt;&lt;/pre&gt;
 
-&lt;script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@latest/dist/orphe-insole.min.js"&gt;&lt;/script&gt;
+&lt;script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.2.0/dist/orphe-insole.min.js"&gt;&lt;/script&gt;
 &lt;script&gt;
   <span class="keyword">const</span> insole = <span class="keyword">new</span> OrpheInsole(0);
 
@@ -1107,44 +1159,103 @@
         </div>
         <div class="example-grid">
           <a class="example-link" href="examples/showcase/">
-            <span>Guided tour</span>
-            <div>
-              <h3>Showcase</h3>
-              <p>Product specs, 6ch pressure heatmap, IMU charts, quaternion 3D view, CSV recording, and code snippets — all on one page. Works without a device (demo playback).</p>
+            <img class="example-thumb" src="assets/images/thumbs/showcase.jpg" alt="Showcase screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleShowcaseTag">Guided tour</span>
+              <div>
+                <h3>Showcase</h3>
+                <p data-i18n="exampleShowcaseBody">Product specs, 6ch pressure heatmap, IMU charts, quaternion 3D view, CSV recording, and code snippets. Works without a device (demo playback).</p>
+              </div>
+              <strong data-i18n="exampleShowcaseCta">Open showcase</strong>
             </div>
-            <strong>Open showcase</strong>
           </a>
-          <a class="example-link" href="examples/balance-tuner/">
-            <span data-i18n="exampleTunerTag">Sonification</span>
-            <div>
-              <h3>Balance Tuner</h3>
-              <p data-i18n="exampleTunerBody">Turn estimated load center and left/right balance into pitch, pan, consonance, and controlled dissonance.</p>
+          <a class="example-link" href="examples/VISUALIZE/">
+            <img class="example-thumb" src="assets/images/thumbs/VISUALIZE.jpg" alt="VISUALIZE screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleVisualizeTag">Starter</span>
+              <div>
+                <h3>VISUALIZE</h3>
+                <p data-i18n="exampleVisualizeBody">The recommended starting point: pressure, acceleration, and gyro charts for up to two insoles with throttled 30fps rendering.</p>
+              </div>
+              <strong data-i18n="exampleVisualizeCta">Open charts</strong>
             </div>
-            <strong data-i18n="exampleTunerCta">Open tuner</strong>
           </a>
           <a class="example-link" href="examples/sensor-dashboard/">
-            <span data-i18n="exampleDashboardTag">Live demo</span>
-            <div>
-              <h3>Sensor Dashboard</h3>
-              <p data-i18n="exampleDashboardBody">Connect one or two ORPHE INSOLE devices and inspect pressure, motion, quaternion, and left/right assignment.</p>
+            <img class="example-thumb" src="assets/images/thumbs/sensor-dashboard.jpg" alt="Sensor Dashboard screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleDashboardTag">Live demo</span>
+              <div>
+                <h3>Sensor Dashboard</h3>
+                <p data-i18n="exampleDashboardBody">Connect one or two ORPHE INSOLE devices and inspect pressure, motion, quaternion, and left/right assignment.</p>
+              </div>
+              <strong data-i18n="exampleDashboardCta">Open example</strong>
             </div>
-            <strong data-i18n="exampleDashboardCta">Open example</strong>
+          </a>
+          <a class="example-link" href="examples/balance-sway/">
+            <img class="example-thumb" src="assets/images/thumbs/balance-sway.jpg" alt="Balance Sway screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleSwayTag">Balance</span>
+              <div>
+                <h3>Balance Sway</h3>
+                <p data-i18n="exampleSwayBody">Center-of-pressure trajectory, sway metrics, and left/right weight bearing with a built-in demo stream. Not a medical device.</p>
+              </div>
+              <strong data-i18n="exampleSwayCta">Open sway lab</strong>
+            </div>
+          </a>
+          <a class="example-link" href="examples/balance-tuner/">
+            <img class="example-thumb" src="assets/images/thumbs/balance-tuner.jpg" alt="Balance Tuner screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleTunerTag">Sonification</span>
+              <div>
+                <h3>Balance Tuner</h3>
+                <p data-i18n="exampleTunerBody">Turn estimated load center and left/right balance into pitch, pan, consonance, and controlled dissonance.</p>
+              </div>
+              <strong data-i18n="exampleTunerCta">Open tuner</strong>
+            </div>
+          </a>
+          <a class="example-link" href="examples/hula-motion-sonifier/">
+            <img class="example-thumb" src="assets/images/thumbs/hula-motion-sonifier.jpg" alt="Hula Motion Sonifier screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleHulaTag">Motion + sound</span>
+              <div>
+                <h3>Hula Motion Sonifier</h3>
+                <p data-i18n="exampleHulaBody">Detect hula steps from combined pressure and IMU signals and turn state changes into sound.</p>
+              </div>
+              <strong data-i18n="exampleHulaCta">Open sonifier</strong>
+            </div>
+          </a>
+          <a class="example-link" href="examples/music-shoe/">
+            <img class="example-thumb" src="assets/images/thumbs/music-shoe.jpg" alt="Music Shoe screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleMusicShoeTag">Gesture instrument</span>
+              <div>
+                <h3>Music Shoe</h3>
+                <p data-i18n="exampleMusicShoeBody">Hold the insole in your hand and play it: orientation-gated hits, loop station, and a gesture-recording lab. Playable with mouse/keyboard too.</p>
+              </div>
+              <strong data-i18n="exampleMusicShoeCta">Open instrument</strong>
+            </div>
           </a>
           <a class="example-link" href="examples/terminal/">
-            <span data-i18n="exampleTerminalTag">Raw stream</span>
-            <div>
-              <h3>Terminal</h3>
-              <p data-i18n="exampleTerminalBody">Read and write BLE characteristics, watch raw SENSOR_VALUES bytes, and export captured values.</p>
+            <img class="example-thumb" src="assets/images/thumbs/terminal.jpg" alt="Terminal screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleTerminalTag">Raw stream</span>
+              <div>
+                <h3>Terminal</h3>
+                <p data-i18n="exampleTerminalBody">Read and write BLE characteristics, watch raw SENSOR_VALUES bytes, and export captured values.</p>
+              </div>
+              <strong data-i18n="exampleTerminalCta">Open terminal</strong>
             </div>
-            <strong data-i18n="exampleTerminalCta">Open terminal</strong>
           </a>
           <a class="example-link" href="docs/">
-            <span data-i18n="exampleDocsTag">Reference</span>
-            <div>
-              <h3 data-i18n="exampleDocsTitle">API Documentation</h3>
-              <p data-i18n="exampleDocsBody">Browse generated JSDoc for the ORPHE INSOLE class, callbacks, BLE methods, and parser helpers.</p>
+            <img class="example-thumb" src="assets/images/thumbs/docs.jpg" alt="API Documentation screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleDocsTag">Reference</span>
+              <div>
+                <h3 data-i18n="exampleDocsTitle">API Documentation</h3>
+                <p data-i18n="exampleDocsBody">Browse generated JSDoc for the ORPHE INSOLE class, callbacks, BLE methods, and parser helpers.</p>
+              </div>
+              <strong data-i18n="exampleDocsCta">Read docs</strong>
             </div>
-            <strong data-i18n="exampleDocsCta">Read docs</strong>
           </a>
         </div>
       </div>
@@ -1191,7 +1302,7 @@
             <p class="eyebrow" data-i18n="noticeEyebrow">Beta notice</p>
             <h2 data-i18n="noticeTitle">ORPHE-INSOLE.js is currently provided as a beta library.</h2>
             <p data-i18n="noticeBody">
-              Documentation and tutorials are still being improved. For hands-on validation, start with Chrome or Edge on a desktop environment and an ORPHE INSOLE device.
+              Documentation and tutorials are still being improved. Web Bluetooth requires Chrome or Edge (desktop / Android) — Safari and Firefox, including all iOS browsers, are not supported.
             </p>
           </div>
           <a class="button primary" href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/issues" data-i18n="noticeCta">Send feedback</a>
@@ -1328,9 +1439,25 @@
         mode4Body: "Gyro, acceleration, pressure, quaternion. Default for <code>begin()</code>.",
         mode3Body: "Gyro, acceleration, pressure. Use <code>begin({ streamingMode: 3 })</code>.",
         mode1Body: "Legacy real-time sensor values for compatibility tests.",
+        quickResources: 'Deep-dive references: <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/SENSOR_SPEC.md">sensor &amp; packet spec</a>, <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/TROUBLESHOOTING.md">troubleshooting</a>, and <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/ai/PRESSURE_RECIPES.md">pressure-data recipes</a>.',
         examplesEyebrow: "Start building",
         examplesTitle: "Choose the entry point that matches your test.",
         examplesLead: "Use the dashboard for live inspection, the terminal for raw packet checks, and the API reference when you are ready to wire the data into your own app.",
+        exampleShowcaseTag: "Guided tour",
+        exampleShowcaseBody: "Product specs, 6ch pressure heatmap, IMU charts, quaternion 3D view, CSV recording, and code snippets. Works without a device (demo playback).",
+        exampleShowcaseCta: "Open showcase",
+        exampleVisualizeTag: "Starter",
+        exampleVisualizeBody: "The recommended starting point: pressure, acceleration, and gyro charts for up to two insoles with throttled 30fps rendering.",
+        exampleVisualizeCta: "Open charts",
+        exampleSwayTag: "Balance",
+        exampleSwayBody: "Center-of-pressure trajectory, sway metrics, and left/right weight bearing with a built-in demo stream. Not a medical device.",
+        exampleSwayCta: "Open sway lab",
+        exampleHulaTag: "Motion + sound",
+        exampleHulaBody: "Detect hula steps from combined pressure and IMU signals and turn state changes into sound.",
+        exampleHulaCta: "Open sonifier",
+        exampleMusicShoeTag: "Gesture instrument",
+        exampleMusicShoeBody: "Hold the insole in your hand and play it: orientation-gated hits, loop station, and a gesture-recording lab. Playable with mouse/keyboard too.",
+        exampleMusicShoeCta: "Open instrument",
         exampleDashboardTag: "Live demo",
         exampleDashboardBody: "Connect one or two ORPHE INSOLE devices and inspect pressure, motion, quaternion, and left/right assignment.",
         exampleDashboardCta: "Open example",
@@ -1361,7 +1488,7 @@
         buildToolsBody: "Build dashboards for device state, packet health, left/right assignment, and data stream debugging.",
         noticeEyebrow: "Beta notice",
         noticeTitle: "ORPHE-INSOLE.js is currently provided as a beta library.",
-        noticeBody: "Documentation and tutorials are still being improved. For hands-on validation, start with Chrome or Edge on a desktop environment and an ORPHE INSOLE device.",
+        noticeBody: "Documentation and tutorials are still being improved. Web Bluetooth requires Chrome or Edge (desktop / Android) — Safari and Firefox, including all iOS browsers, are not supported.",
         noticeCta: "Send feedback",
         termsEyebrow: "Usage policy",
         termsTitle: "Free for education, research, prototypes, and non-commercial apps. Commercial use requires a separate agreement.",
@@ -1462,9 +1589,25 @@
         mode4Body: "ジャイロ、加速度、足裏圧、クォータニオン。<code>begin()</code> のデフォルトです。",
         mode3Body: "ジャイロ、加速度、足裏圧。<code>begin({ streamingMode: 3 })</code> で指定します。",
         mode1Body: "互換性確認用の従来リアルタイムセンサー値です。",
+        quickResources: '詳細リファレンス: <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/SENSOR_SPEC.md">センサ・パケット仕様</a> / <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/TROUBLESHOOTING.md">トラブルシューティング</a> / <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/docs/ai/PRESSURE_RECIPES.md">圧力データレシピ集</a>。',
         examplesEyebrow: "開発を始める",
         examplesTitle: "目的に合う入口を選ぶ。",
         examplesLead: "ライブ確認にはDashboard、raw packet確認にはTerminal、自分のアプリへ組み込む段階ではAPI referenceを使います。",
+        exampleShowcaseTag: "ガイドツアー",
+        exampleShowcaseBody: "製品仕様・6ch圧力ヒートマップ・IMUチャート・クォータニオン3D・CSV記録・コード例を1ページで。実機なしでもデモ再生で動きます。",
+        exampleShowcaseCta: "ショーケースを開く",
+        exampleVisualizeTag: "スターター",
+        exampleVisualizeBody: "最初の一歩におすすめ。最大2台の圧力・加速度・ジャイロを30fpsスロットリングでチャート表示します。",
+        exampleVisualizeCta: "チャートを開く",
+        exampleSwayTag: "バランス",
+        exampleSwayBody: "圧力中心の軌跡・揺れ指標・左右荷重比をデモストリーム付きで可視化。医療機器ではありません。",
+        exampleSwayCta: "重心動揺を開く",
+        exampleHulaTag: "動作×サウンド",
+        exampleHulaBody: "圧力とIMUの複合信号からフラのステップを検出し、状態遷移を音に変換します。",
+        exampleHulaCta: "ソニファイアを開く",
+        exampleMusicShoeTag: "ジェスチャ楽器",
+        exampleMusicShoeBody: "インソールを手に持って演奏。向きゲート打撃・ループステーション・ジェスチャ収録LAB付き。マウス/キーボードでも試奏できます。",
+        exampleMusicShoeCta: "楽器を開く",
         exampleDashboardTag: "ライブデモ",
         exampleDashboardBody: "1台または2台のORPHE INSOLEを接続し、足裏圧、モーション、クォータニオン、左右割当を確認できます。",
         exampleDashboardCta: "サンプルを開く",
@@ -1495,7 +1638,7 @@
         buildToolsBody: "デバイス状態、packet health、左右割当、データストリームのデバッグ用Dashboardを作れます。",
         noticeEyebrow: "Beta notice",
         noticeTitle: "ORPHE-INSOLE.jsは現在ベータ版として提供しています。",
-        noticeBody: "ドキュメントとチュートリアルは整備中です。実機検証は、デスクトップ環境のChromeまたはEdgeとORPHE INSOLEデバイスから始めてください。",
+        noticeBody: "ドキュメントとチュートリアルは整備中です。Web Bluetooth の制約により、対応ブラウザは Chrome / Edge（デスクトップ・Android）です。Safari・Firefox（iOS の全ブラウザ含む）では動作しません。",
         noticeCta: "フィードバックを送る",
         termsEyebrow: "利用方針",
         termsTitle: "教育・研究・試作・非商用アプリは無償利用。有料・商用利用は別途契約が必要です。",
