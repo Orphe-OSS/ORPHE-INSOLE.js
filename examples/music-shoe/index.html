@@ -65,6 +65,24 @@
       padding: 8px 18px; font-weight: 700;
     }
     #audio_start.armed { background: transparent; color: var(--volt); border: 1px solid var(--volt-dim); }
+    .lang-switch {
+      display: inline-flex; align-self: center; border: 1px solid var(--panel-edge);
+      border-radius: 2px; overflow: hidden;
+    }
+    .lang-switch button {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; font-weight: 700;
+      background: transparent; color: var(--ink-dim); border: none; padding: 7px 12px; cursor: pointer;
+    }
+    .lang-switch button.on { background: var(--volt); color: #000; }
+    #scope_canvas { cursor: pointer; }
+    #scope_canvas:fullscreen { background: #000; }
+
+    .about {
+      font-family: var(--mono); font-size: 11px; color: var(--ink-dim); line-height: 1.95;
+      letter-spacing: 0.02em;
+    }
+    .about strong { color: var(--ink); font-weight: 700; }
+    .about .volt { color: var(--volt); }
 
     /* ---------- panels ---------- */
     .panel {
@@ -172,6 +190,12 @@
     .loop-progress > .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--volt); left: 0; }
     .loop-progress .mark { position: absolute; top: 2px; bottom: 2px; width: 1px; background: var(--volt-dim); }
     .loop-stat { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); letter-spacing: 0.14em; }
+    #bpm_input {
+      width: 62px; font-family: var(--mono); font-size: 11.5px; font-weight: 700;
+      background: #101214; color: var(--ink); border: 1px solid var(--panel-edge);
+      border-radius: 2px; padding: 6px 6px;
+    }
+    #bpm_input:focus { border-color: var(--volt-dim); outline: none; }
 
     /* ---------- ticker ---------- */
     .area-ticker {
@@ -201,13 +225,18 @@
     <div class="ms-header">
       <div class="ms-title">
         <h1>INSOLE <span class="volt">MUSIC</span> SHOE</h1>
-        <div class="sub">GESTURE INSTRUMENT — MOTION / SOUND / LIGHT</div>
+        <div class="sub" data-i18n="sub">ジェスチャ楽器 — 動き / 音 / 光</div>
+        <div class="sub" style="margin-top:3px; opacity:0.75">ver.0.1 — created by Yuya Kikukawa</div>
       </div>
       <div class="toolkits">
         <div id="toolkit_placeholder0"></div>
         <div id="toolkit_placeholder1"></div>
       </div>
       <a class="lab-link" href="./lab.html"><i class="bi bi-clipboard-data"></i> GESTURE LAB</a>
+      <span class="lang-switch">
+        <button id="lang_ja" class="on">日本語</button>
+        <button id="lang_en">EN</button>
+      </span>
       <button id="audio_start"><i class="bi bi-plug"></i> PLUG IN</button>
     </div>
 
@@ -215,19 +244,19 @@
 
       <!-- scratch deck -->
       <div class="panel area-deck">
-        <div class="panel-label"><span>TURNTABLE</span><span class="jp">水平スピン: 正転/逆転/スクラッチ</span></div>
+        <div class="panel-label"><span>TURNTABLE</span><span class="jp" data-i18n="deck_jp">水平スピン: 正転/逆転/スクラッチ</span></div>
         <canvas id="deck_canvas" width="300" height="300"></canvas>
       </div>
 
       <!-- oscilloscope -->
       <div class="panel area-scope">
-        <div class="panel-label"><span>LIGHT SCOPE — ACCUMULATED WAVEFORM</span><span class="jp">残光</span></div>
+        <div class="panel-label"><span>LIGHT SCOPE — WAVEFORM FEEDBACK</span><span class="jp" data-i18n="scope_jp">残光</span></div>
         <canvas id="scope_canvas" width="900" height="300"></canvas>
       </div>
 
       <!-- orientation + fx -->
       <div class="panel area-fx">
-        <div class="panel-label"><span>ORIENT</span><span class="jp">向き</span></div>
+        <div class="panel-label"><span>ORIENT</span><span class="jp" data-i18n="orient_jp">向き</span></div>
         <div id="zone_ind">—</div>
         <div id="grav_val">g — — —</div>
         <div class="fx-meter">
@@ -236,11 +265,11 @@
           <div class="val" id="twist_val">0°</div>
         </div>
         <div class="fx-meter">
-          <div class="panel-label"><span>ECHO 残響</span></div>
+          <div class="panel-label"><span data-i18n="echo_label">ECHO 残響</span></div>
           <input type="range" class="form-range" id="echo_slider" min="0" max="100" value="22">
         </div>
         <div class="fx-meter">
-          <div class="panel-label"><span>SENS 感度</span></div>
+          <div class="panel-label"><span data-i18n="sens_label">SENS 感度</span></div>
           <input type="range" class="form-range" id="sens_slider" min="20" max="300" value="100">
         </div>
         <div class="d-flex gap-2">
@@ -252,20 +281,23 @@
       <!-- L/R lanes -->
       <div class="panel area-lanes">
         <div class="panel-label">
-          <span>L / R BANKS — 振り叩き=打撃 / ロールひねり=MOD / FSR押し=ノート</span>
-          <span class="jp">クリック・キーでも試奏可</span>
+          <span data-i18n="lanes_label">L / R BANKS — 振り叩き=打撃 / ロールひねり=MOD / FSR押し=ノート</span>
+          <span class="jp" data-i18n="lanes_hint">クリック・キーでも試奏可</span>
         </div>
         <div id="lanes"></div>
       </div>
 
       <!-- loop station -->
       <div class="panel area-loop">
-        <div class="panel-label"><span>LOOP STATION</span><span class="jp">ループ</span></div>
+        <div class="panel-label"><span>LOOP STATION</span><span class="jp" data-i18n="loop_jp">ループ</span></div>
         <div class="loop-row">
           <button class="btn-ms" id="loop_rec"><i class="bi bi-record-circle"></i> REC</button>
           <button class="btn-ms" id="loop_play"><i class="bi bi-play-fill"></i> PLAY</button>
           <button class="btn-ms" id="loop_clear"><i class="bi bi-x-lg"></i> CLEAR</button>
           <button class="btn-ms" id="quant_btn" title="ヒットを16分グリッドに吸着（ON後の最初の一打が基準）"><i class="bi bi-magnet"></i> QUANT</button>
+          <span class="loop-stat">BPM</span>
+          <input type="number" id="bpm_input" min="40" max="300" step="1" value="120" title="QUANT BPM（曲のテンポに合わせる）">
+
           <div class="loop-progress"><div id="loop_marks"></div><div class="head" id="loop_head"></div></div>
           <span class="loop-stat" id="loop_stat">EMPTY</span>
         </div>
@@ -279,10 +311,14 @@
       </div>
     </div>
 
+    <div class="panel" style="margin-top:10px">
+      <div class="panel-label"><span>ABOUT</span></div>
+      <div class="about" data-i18n="about_html"></div>
+    </div>
+
     <div class="credit">
-      All sounds synthesized in Web Audio (no samples). Gesture detection is tuned from recordings made with the
-      <a href="./lab.html">GESTURE LAB</a>.
-      KEYS — L: Q/W/E=HAT/SNR/KIK A/S=MOD 1-6=NOTES · R: U/I/O=HAT/SNR/KIK J/K=MOD 7890-==NOTES · SPACE=REC
+      KEYS — L: Q/W/E=HAT/SNR/KIK A/S=MOD 1-6=NOTES · R: U/I/O=HAT/SNR/KIK J/K=MOD 7890-==NOTES · SPACE=REC<br>
+      INSOLE MUSIC SHOE ver.0.1 — created by Yuya Kikukawa
     </div>
   </div>
 

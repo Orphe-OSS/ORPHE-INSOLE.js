@@ -79,11 +79,13 @@ const TUNING = {
   // mix (linear gain multipliers, live-editable in the TUNE panel)
   mixDrums: 1.0,
   mixMod: 1.6,
-  mixLead: 0.55,
-  mixPad: 1.0,
+  mixLead: 0.45,
+  mixPad: 0.85,
   mixDeck: 1.0,
-  // quantize grid for hits [s] when QUANT is on (0.125 = 16th @ 120 BPM)
-  quantDiv: 0.125,
+  // QUANT: hits snap to 16th notes of this tempo (set it to the song's BPM)
+  quantBpm: 120,
+  // turntable beat sequences (spin CW/CCW) volume
+  mixSeq: 0.75,
   // constant-latency scheduler: every gesture is time-stamped by the sensor
   // itself, and the sound is scheduled latencyBudgetMs after the moment the
   // gesture PHYSICALLY happened (relative to the fastest observed transport
@@ -113,11 +115,102 @@ try {
   }
 } catch { /* ignore corrupt storage */ }
 
-/** Note scales (A minor pentatonic): L = pad (low), R = lead (+1 octave). */
-const SCALE = {
-  L: [110.0, 130.81, 146.83, 164.81, 196.0, 220.0],
-  R: [220.0, 261.63, 293.66, 329.63, 392.0, 440.0],
+/* ================================================================ *
+ *  i18n — JA/EN toggle (persisted)
+ * ================================================================ */
+
+let LANG = localStorage.getItem('musicShoeLang') || 'ja';
+
+const I18N = {
+  ja: {
+    sub: 'ジェスチャ楽器 — 動き / 音 / 光',
+    deck_jp: '水平スピン: ビートA/B + スクラッチ',
+    scope_jp: '残光',
+    orient_jp: '向き',
+    echo_label: 'ECHO 残響',
+    sens_label: 'SENS 感度',
+    lanes_label: 'L / R BANKS — 振り叩き=打撃 / ロールひねり=MOD / FSR押し=ノート',
+    lanes_hint: 'クリック・キーでも試奏可',
+    loop_jp: 'ループ',
+    tile_hat: 'つま先下', tile_snr: '水平', tile_kik: '踵下',
+    tile_modUp: 'ロール+', tile_modDown: 'ロール−',
+    deck_hint: 'SPIN=BEAT A / 逆=BEAT B / 往復=SCRATCH',
+    plug_hint: 'PRESS "PLUG IN" TO START AUDIO',
+    tune_summary: 'TUNE — パラメータ調整（即反映・自動保存。良い値になったら COPY JSON で共有）',
+    about_html: `
+<strong>INSOLE MUSIC SHOE</strong> は、ORPHE INSOLE（6チャネル圧力センサとIMUを内蔵したインソール型センサ）を<strong>手に持って演奏する</strong>ジェスチャ楽器です。ヘッダのトグルでINSOLEを接続し（左右自動判定・L/Rで別音色）、<span class="volt">PLUG IN</span> でオーディオを開始してください。<br><br>
+<strong>演奏方法</strong><br>
+・つま先を下に向けて振り下ろす / 叩きつける → <span class="volt">ハイハット</span><br>
+・水平のまま振り下ろす → <span class="volt">スネア</span> ・踵を下に向けて振り下ろす → <span class="volt">キック</span>（打撃の強さ=音の強さ）<br>
+・長軸まわりに素早くひねる（ロール±） → <span class="volt">モジュレーションFX</span>（ライザー / ダイブ）<br>
+・6つの圧力センサを指で押す → <span class="volt">ノート</span>（L=ポリフォニックパッド / R=モノリード、押している間持続）<br>
+・水平のままレコードのように回す → <span class="volt">ターンテーブル</span>（正転=再生・逆転=逆再生・細かく往復=スクラッチ）<br><br>
+<strong>仕組み</strong><br>
+音はすべてWeb Audioによるリアルタイム合成（サンプルファイル不使用）。BLE伝送の揺らぎ（ジッタ）はセンサ側タイムスタンプを基準にした<strong>固定レイテンシスケジューラ</strong>で吸収し、ジェスチャから発音までの遅延を常に一定に保ちます。<span class="volt">QUANT</span> をONにすると最初の一打を基準に16分グリッドへ吸着し、<span class="volt">LOOP STATION</span> で重ね録りができます。判定しきい値は <a href="./lab.html">GESTURE LAB</a> で収録した実データから較正済みで、<span class="volt">TUNE</span> パネルから全パラメータをライブ調整できます。ビジュアライザはクリックで全画面表示になります。<br><br>
+<strong>動作環境</strong>: Chrome / Edge（Web Bluetooth必須）。実機がなくてもパッドのクリックとキーボードで全音色を試奏できます。`,
+  },
+  en: {
+    sub: 'GESTURE INSTRUMENT — MOTION / SOUND / LIGHT',
+    deck_jp: 'flat spin: beat A/B + scratch',
+    scope_jp: 'afterglow',
+    orient_jp: 'attitude',
+    echo_label: 'ECHO',
+    sens_label: 'SENS',
+    lanes_label: 'L / R BANKS — shake/strike = drums / roll twist = MOD / FSR press = notes',
+    lanes_hint: 'playable with mouse & keys',
+    loop_jp: 'loop',
+    tile_hat: 'toe down', tile_snr: 'flat', tile_kik: 'heel down',
+    tile_modUp: 'roll +', tile_modDown: 'roll −',
+    deck_hint: 'SPIN=BEAT A / CCW=BEAT B / WIGGLE=SCRATCH',
+    plug_hint: 'PRESS "PLUG IN" TO START AUDIO',
+    tune_summary: 'TUNE — live parameters (applied instantly, auto-saved; COPY JSON to share good values)',
+    about_html: `
+<strong>INSOLE MUSIC SHOE</strong> is a gesture instrument you play by <strong>holding an ORPHE INSOLE in your hands</strong> — an insole-type sensor with 6-channel pressure sensing and an IMU. Connect with the toggles in the header (left/right detected automatically, each side has its own sound bank) and press <span class="volt">PLUG IN</span> to start audio.<br><br>
+<strong>How to play</strong><br>
+・Shake / strike downward with the toe pointing down → <span class="volt">hi-hat</span><br>
+・Shake it held flat → <span class="volt">snare</span> ・Heel pointing down → <span class="volt">kick</span> (hit harder = louder)<br>
+・Twist quickly around the long axis (roll ±) → <span class="volt">modulation FX</span> (riser / dive)<br>
+・Press the six pressure sensors with your fingers → <span class="volt">notes</span> (L = poly pad / R = mono lead, sustained while held)<br>
+・Spin it flat like a record → <span class="volt">turntable</span> (spin = play, reverse = reverse playback, wiggle = scratch)<br><br>
+<strong>Under the hood</strong><br>
+Every sound is synthesized in real time with Web Audio (no samples). BLE transport jitter is absorbed by a <strong>constant-latency scheduler</strong> that schedules each sound from the sensor-side timestamp, keeping gesture-to-sound delay steady. Turn on <span class="volt">QUANT</span> to snap hits to a 16th grid anchored by your first hit, and layer phrases with the <span class="volt">LOOP STATION</span>. Detection thresholds are calibrated from real gesture recordings made with the <a href="./lab.html">GESTURE LAB</a>, and everything is live-tunable in the <span class="volt">TUNE</span> panel. Click the visualizer for fullscreen.<br><br>
+<strong>Requirements</strong>: Chrome / Edge (Web Bluetooth). No hardware? Every sound is playable with mouse clicks and the keyboard.`,
+  },
 };
+
+function t(key) { return (I18N[LANG] && I18N[LANG][key]) ?? I18N.ja[key] ?? key; }
+
+function applyLang() {
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.innerHTML = t(el.dataset.i18n); });
+  const bj = document.getElementById('lang_ja');
+  const be = document.getElementById('lang_en');
+  if (bj) bj.classList.toggle('on', LANG === 'ja');
+  if (be) be.classList.toggle('on', LANG === 'en');
+  document.documentElement.lang = LANG;
+}
+
+function setLang(lang) {
+  LANG = lang;
+  localStorage.setItem('musicShoeLang', LANG);
+  applyLang();
+}
+
+/**
+ * Note scales — Dm9(11) chord tones (D F A C E G), the jazz/hip-hop voicing:
+ * pressing several FSRs at once lands on a minor-9th chord instead of a
+ * pentatonic run. L = pad (low register), R = lead (+1 octave).
+ */
+const SCALE = {
+  L: [73.42, 87.31, 110.0, 130.81, 164.81, 196.0],   // D2 F2 A2 C3 E3 G3
+  R: [146.83, 174.61, 220.0, 261.63, 329.63, 392.0], // D3 F3 A3 C4 E4 G4
+};
+
+/**
+ * Channel -> scale degree. Heel (ch5, physical convention) plays the lowest
+ * note and the toe (ch0) the highest — pitch rises toward the toe.
+ * Flip this array if your unit's channel order differs.
+ */
+const NOTE_DEGREE = [5, 4, 3, 2, 1, 0];
 
 /** Strike / mod tiles per lane (order = display order). */
 const TILE_KINDS = [
@@ -184,7 +277,7 @@ const Audio = {
     comp.threshold.value = -14; comp.knee.value = 24; comp.ratio.value = 4;
     comp.attack.value = 0.003; comp.release.value = 0.16;
     this.analyser = ctx.createAnalyser();
-    this.analyser.fftSize = 2048;
+    this.analyser.fftSize = 4096; // fine-grained waveform for the visualizer
     comp.connect(this.analyser).connect(ctx.destination);
     this.master = comp;
 
@@ -482,7 +575,7 @@ const Audio = {
     const synth = bank === 'L'
       ? (tag === 'loop' ? this.padSynthLoop : this.padSynth)
       : (tag === 'loop' ? this.leadSynthLoop : this.leadSynth);
-    synth.noteOn(SCALE[bank][idx], idx, vel, t);
+    synth.noteOn(SCALE[bank][NOTE_DEGREE[idx]], idx, vel, t);
   },
 
   noteOff(bank, idx, when, tag = 'live') {
@@ -546,6 +639,7 @@ const Audio = {
     const signed = dps * TUNING.yawSign;
     const dir = signed >= 0 ? 1 : -1;
     const rate = Math.min(3, Math.max(0.12, Math.abs(signed) / TUNING.spinRateDiv));
+    DeckSeq.update(gateOpen, dir); // BPM-locked breakbeat A/B under the scrub
 
     // advance the virtual playhead while audible
     if (d.open && d.lastT !== null) {
@@ -566,10 +660,10 @@ const Audio = {
       src.start(t, dir > 0 ? d.pos : d.len - d.pos);
       d.node = src; d.dir = dir;
       d.gain.gain.cancelScheduledValues(t);
-      d.gain.gain.setTargetAtTime(0.8 * TUNING.mixDeck, t, 0.008);
+      d.gain.gain.setTargetAtTime(0.45 * TUNING.mixDeck, t, 0.008); // vinyl texture under the beat
     } else if (gateOpen) {
       d.node.playbackRate.setTargetAtTime(rate, t, 0.02);
-      d.gain.gain.setTargetAtTime(0.8 * TUNING.mixDeck, t, 0.02);
+      d.gain.gain.setTargetAtTime(0.45 * TUNING.mixDeck, t, 0.02);
     } else if (d.open) {
       d.gain.gain.setTargetAtTime(0, t, 0.06);
     }
@@ -596,13 +690,13 @@ const Audio = {
   quantTime(t) {
     if (!this.quantOn) return t;
     if (this.quantT0 === null) { this.quantT0 = t; return t; }
-    const div = TUNING.quantDiv;
+    const div = 60 / Math.max(40, TUNING.quantBpm) / 4; // 16th note [s]
     const n = Math.ceil((t - this.quantT0 - 1e-4) / div);
     return this.quantT0 + n * div;
   },
 };
 
-/** Poly synth pad (bank L): pure sines (root + fifth + sub), slow attack. */
+/** Poly synth pad (bank L): detuned saws + sub, slow attack, LPF per voice. */
 class PadSynth {
   constructor(ctx, dest, echoSend) {
     this.ctx = ctx; this.dest = dest; this.echoSend = echoSend;
@@ -611,18 +705,16 @@ class PadSynth {
   noteOn(freq, idx, vel, t) {
     if (this.voices.has(idx)) return;
     const ctx = this.ctx;
-    const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = freq;
-    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 1.5; o2.detune.value = 3;
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = freq; o1.detune.value = -7;
+    const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = freq; o2.detune.value = 7;
     const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = freq / 2;
-    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.5;
-    f.frequency.setValueAtTime(900 + vel * 2400, t);
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.8;
+    f.frequency.setValueAtTime(350 + vel * 1200, t); // darker, dusty
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(0.24 * TUNING.mixPad * (0.5 + vel * 0.5), t + 0.05);
-    o1.connect(f);
-    const o2g = ctx.createGain(); o2g.gain.value = 0.3;
-    o2.connect(o2g).connect(f);
-    const subG = ctx.createGain(); subG.gain.value = 0.4;
+    o1.connect(f); o2.connect(f);
+    const subG = ctx.createGain(); subG.gain.value = 0.35;
     sub.connect(subG).connect(f);
     f.connect(g).connect(this.dest);
     const send = ctx.createGain(); send.gain.value = 0.25;
@@ -640,7 +732,7 @@ class PadSynth {
   }
 }
 
-/** Mono synth lead (bank R): pure sine + octave, portamento, last-note priority. */
+/** Mono synth lead (bank R): saw+square, portamento, vibrato, last-note priority. */
 class LeadSynth {
   constructor(ctx, dest, echoSend) {
     this.ctx = ctx; this.dest = dest; this.echoSend = echoSend;
@@ -650,14 +742,14 @@ class LeadSynth {
   ensureVoice(t) {
     if (this.node) return;
     const ctx = this.ctx;
-    const o1 = ctx.createOscillator(); o1.type = 'sine';
-    const o2 = ctx.createOscillator(); o2.type = 'sine'; // octave above
-    const o2g = ctx.createGain(); o2g.gain.value = 0.25;
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth';
+    const o2 = ctx.createOscillator(); o2.type = 'square';
+    const o2g = ctx.createGain(); o2g.gain.value = 0.4;
     const lfo = ctx.createOscillator(); lfo.frequency.value = 5.6;
-    const lfoG = ctx.createGain(); lfoG.gain.value = 3; // subtle vibrato via detune
+    const lfoG = ctx.createGain(); lfoG.gain.value = 4; // cents-ish via detune
     lfo.connect(lfoG);
     lfoG.connect(o1.detune); lfoG.connect(o2.detune);
-    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.7; f.frequency.value = 6000;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 3; f.frequency.value = 900; // smoky
     const g = ctx.createGain(); g.gain.value = 0;
     o1.connect(f); o2.connect(o2g).connect(f);
     f.connect(g).connect(this.dest);
@@ -673,8 +765,8 @@ class LeadSynth {
     const first = this.node.g.gain.value < 0.01 && this.stack.length === 1;
     const porta = first ? 0.001 : 0.018; // ~portamento tau
     this.node.o1.frequency.setTargetAtTime(freq, t, porta);
-    this.node.o2.frequency.setTargetAtTime(freq * 2, t, porta);
-    this.node.f.frequency.setTargetAtTime(2500 + vel * 5000, t, 0.02);
+    this.node.o2.frequency.setTargetAtTime(freq, t, porta);
+    this.node.f.frequency.setTargetAtTime(500 + vel * 1600, t, 0.02); // dusty lead
     this.node.g.gain.cancelScheduledValues(t);
     this.node.g.gain.setTargetAtTime(0.34 * TUNING.mixLead * (0.5 + vel * 0.5), t, first ? 0.004 : 0.02);
   }
@@ -684,7 +776,7 @@ class LeadSynth {
     if (this.stack.length) {
       const top = this.stack[this.stack.length - 1];
       this.node.o1.frequency.setTargetAtTime(top.freq, t, 0.018);
-      this.node.o2.frequency.setTargetAtTime(top.freq * 2, t, 0.018);
+      this.node.o2.frequency.setTargetAtTime(top.freq, t, 0.018);
     } else {
       this.node.g.gain.setTargetAtTime(0.0001, t, 0.09);
     }
@@ -883,6 +975,102 @@ const Loop = {
     if (this.mode === 'REC') return ((this.now() - this.startCtxTime) % 4) / 4;
     if (!this.length) return 0;
     return ((this.now() - this.startCtxTime) % this.length) / this.length;
+  },
+};
+
+/* ================================================================ *
+ *  Deck beat sequencer — spinning the insole flat runs a breakbeat
+ *
+ *  CW spin  -> pattern A (boom bap),  CCW spin -> pattern B (amen-ish).
+ *  Steps are 16th notes of TUNING.quantBpm and share the QUANT grid, so
+ *  quantized live hits land exactly in the pocket of the running beat.
+ *  The scrubbed record loop keeps playing underneath as vinyl texture.
+ *  Fast wiggling (scratching) doesn't flip the pattern — the direction has
+ *  to be sustained for ~300 ms, so the beat stays stable under scratches.
+ * ================================================================ */
+
+const DECK_PATTERNS = {
+  // 16 steps, {s: step, b: bank, k: kind, v: velocity}
+  A: [ // boom bap (hard kick / 909 snare / closed hats)
+    { s: 0, b: 'R', k: 'kik', v: 1.0 }, { s: 7, b: 'R', k: 'kik', v: 0.75 }, { s: 10, b: 'R', k: 'kik', v: 0.9 },
+    { s: 4, b: 'L', k: 'snr', v: 0.9 }, { s: 12, b: 'L', k: 'snr', v: 0.95 },
+    { s: 0, b: 'L', k: 'hat', v: 0.5 }, { s: 2, b: 'L', k: 'hat', v: 0.3 },
+    { s: 4, b: 'L', k: 'hat', v: 0.45 }, { s: 6, b: 'L', k: 'hat', v: 0.3 },
+    { s: 8, b: 'L', k: 'hat', v: 0.5 }, { s: 10, b: 'L', k: 'hat', v: 0.3 },
+    { s: 12, b: 'L', k: 'hat', v: 0.45 }, { s: 14, b: 'R', k: 'hat', v: 0.45 },
+  ],
+  B: [ // amen-ish (808 kick / clap / metallic hats, more syncopation)
+    { s: 0, b: 'L', k: 'kik', v: 1.0 }, { s: 2, b: 'L', k: 'kik', v: 0.55 },
+    { s: 8, b: 'L', k: 'kik', v: 0.9 }, { s: 9, b: 'L', k: 'kik', v: 0.55 },
+    { s: 4, b: 'R', k: 'snr', v: 0.9 }, { s: 12, b: 'R', k: 'snr', v: 0.9 }, { s: 15, b: 'R', k: 'snr', v: 0.35 },
+    { s: 0, b: 'R', k: 'hat', v: 0.45 }, { s: 2, b: 'R', k: 'hat', v: 0.3 },
+    { s: 4, b: 'R', k: 'hat', v: 0.4 }, { s: 6, b: 'R', k: 'hat', v: 0.3 },
+    { s: 7, b: 'L', k: 'hat', v: 0.35 }, { s: 8, b: 'R', k: 'hat', v: 0.45 },
+    { s: 10, b: 'R', k: 'hat', v: 0.3 }, { s: 12, b: 'R', k: 'hat', v: 0.4 }, { s: 14, b: 'L', k: 'hat', v: 0.35 },
+  ],
+};
+
+const DeckSeq = {
+  running: false,
+  timer: null,
+  step: 0,
+  nextAt: 0,
+  dir: 1,            // +1 = pattern A, −1 = pattern B (sustained direction)
+  pendingDir: 1,
+  dirSinceMs: 0,
+  lastOpenMs: 0,
+
+  stepDur() { return 60 / Math.max(40, TUNING.quantBpm) / 4; },
+
+  /** Called at sensor rate from Audio.setScratch. */
+  update(gateOpen, dirSign) {
+    const nowMs = performance.now();
+    if (gateOpen) {
+      this.lastOpenMs = nowMs;
+      if (!this.running) { this.dir = dirSign; this.start(); }
+      // direction must be sustained to flip the pattern (scratch-proof)
+      if (dirSign !== this.dir) {
+        if (this.pendingDir !== dirSign) { this.pendingDir = dirSign; this.dirSinceMs = nowMs; }
+        else if (nowMs - this.dirSinceMs > 300) this.dir = dirSign;
+      } else {
+        this.pendingDir = dirSign;
+      }
+    }
+  },
+
+  start() {
+    if (this.running || !Audio.ready) return;
+    this.running = true;
+    const now = Audio.ctx.currentTime;
+    const div = this.stepDur();
+    // share the QUANT grid: anchor to it, or become the anchor
+    if (Audio.quantT0 === null) Audio.quantT0 = now;
+    const n = Math.ceil((now - Audio.quantT0) / div);
+    this.nextAt = Audio.quantT0 + n * div;
+    this.step = ((n % 16) + 16) % 16;
+    this.timer = setInterval(() => this.tick(), 25);
+  },
+
+  tick() {
+    if (!Audio.ready) return;
+    const now = Audio.ctx.currentTime;
+    // stop when the spin has been closed for a moment (scratch flicker safe)
+    if (performance.now() - this.lastOpenMs > 450) { this.stop(); return; }
+    const div = this.stepDur();
+    let guard = 0;
+    while (this.nextAt < now + 0.12 && guard++ < 32) {
+      const pattern = DECK_PATTERNS[this.dir > 0 ? 'A' : 'B'];
+      for (const ev of pattern) {
+        if (ev.s === this.step) Audio.hit(ev.b, ev.k, ev.v * TUNING.mixSeq, this.nextAt);
+      }
+      this.step = (this.step + 1) % 16;
+      this.nextAt += div;
+    }
+  },
+
+  stop() {
+    this.running = false;
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
   },
 };
 
@@ -1116,7 +1304,7 @@ function buildLanes() {
       const el = document.createElement('div');
       el.className = 'tile' + (tk.kind.startsWith('mod') ? ' gesture' : '');
       const key = Object.entries(KEYMAP[bank].hits).find(([, v]) => v === tk.kind)[0];
-      el.innerHTML = `<div class="name">${tk.name}</div><div class="jp">${tk.jp}</div><span class="key">[${key.toUpperCase()}]</span>`;
+      el.innerHTML = `<div class="name">${tk.name}</div><div class="jp" data-i18n="tile_${tk.kind}">${t(`tile_${tk.kind}`)}</div><span class="key">[${key.toUpperCase()}]</span>`;
       el.addEventListener('pointerdown', async () => {
         await Audio.init(); armAudioButton();
         triggerHit(bank, tk.kind, 0.9, 'ui');
@@ -1207,7 +1395,7 @@ function buildTunePanel() {
   det.style.marginTop = '10px';
   det.innerHTML = `
     <summary class="panel-label" style="cursor:pointer;margin-bottom:0">
-      TUNE — パラメータ調整（即反映・自動保存。良い値になったら COPY JSON で共有）</summary>
+      <span data-i18n="tune_summary">${t('tune_summary')}</span></summary>
     <div id="tune_grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
       gap:6px 16px;font-family:var(--mono);font-size:10.5px;margin-top:10px;"></div>
     <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
@@ -1281,176 +1469,229 @@ let discAngle = 0;
 let lastFrame = performance.now();
 let tickerLast = 0;
 
-/* ---------- LIGHT SCOPE — accumulated waveform light ----------
- * Minimal monochrome visualizer: the live waveform is drawn every frame as
- * a faint white thread of light with ADDITIVE blending onto a black canvas
- * that fades slowly — like a long-exposure photograph. Overlapping sound
- * stacks brightness (sound pressure = luminance, residue accumulates).
- * Hits strobe hard (full-field flash + flickering high-gain trace);
- * scratch and roll twists warp the thread into undulating wisps.
- * Everything is black & white — variation comes from the wave shape and
- * the way it is drawn, never from color.
+/* ---------- LIGHT SCOPE — waveform + video feedback ----------
+ * Black base, monochrome white. The live waveform is drawn as fine crisp
+ * lines, and every frame the whole picture is fed back onto itself —
+ * rotated, zoomed and slightly sheared around a wandering center — while
+ * dimming. Each sound therefore leaves spiraling, expanding echoes of its
+ * own waveform shape, and different sounds paint with different geometry so
+ * the field grows into a dense interweave of waves, dots and polygons:
+ *   KIK  -> broad near-horizontal waveform slab + outward zoom kick
+ *          (occasionally flips the global spin direction)
+ *   SNR  -> polygon shards (thin white outlines) + rotation impulse
+ *   HAT  -> void-like dot swarms (feedback smears them into star trails)
+ *   MOD± -> waveform RING + the whole field breathes out / in with spiral
+ *   notes-> rotating waveform rings per held note (radius by note index)
+ *   scratch -> the field spins with the record (direction & speed follow)
+ *   hits -> strobing flash. Rotation has inertia (impulses glide out).
  */
 const Paint = {
-  inited: false,
-  flashEnv: 0,      // onset strobe envelope
-  jump: 0,          // baseline kick on hits
-  drift: Math.random() * 100,
-  warpPhase: 0,
-  warps: [],        // roll-twist wisps: {age, dur, dir, x0, seed}
-  heldNotes: new Map(), // `${bank}:${idx}` -> idx (extra faint bands)
-  specks: [],       // white dust: {x, y, n, spread, a}
+  fb: null, fbctx: null, inited: false,
+  flashEnv: 0,
+  zoomPulse: 0,    // + outward / − inward, decays
+  rotVel: 0.005,   // angular velocity with inertia (impulses glide out)
+  spiral: 0,       // extra spin from MODs, decays slowly
+  rotDir: 1,       // global spin direction (KIK can flip it)
   frame: 0,
+  held: new Map(), // `${bank}:${idx}` -> {idx, phase}
+  stamps: [],      // hit stamps to draw this frame: {kind, vel}
 
   hit(bank, kind, vel) {
-    this.flashEnv = Math.min(1.6, Math.max(this.flashEnv, 0.55 + vel * 0.7));
-    this.jump = (Math.random() - 0.5) * 0.6; // fraction of height
-    this.specks.push({ x: Math.random(), y: 0.5 + this.jump * 0.5, n: 20 + (vel * 40) | 0, spread: 0.35, a: 0.25 + vel * 0.3 });
-    if (kind === 'modUp' || kind === 'modDown') {
-      this.warps.push({
-        age: 0, dur: 1.0, dir: kind === 'modUp' ? -1 : 1,
-        x0: 0.15 + Math.random() * 0.7, seed: Math.random() * 10,
-      });
+    this.flashEnv = Math.min(1.7, Math.max(this.flashEnv, 0.5 + vel * 0.7));
+    if (kind === 'modUp') { this.zoomPulse = 1; this.spiral += 0.8; }
+    else if (kind === 'modDown') { this.zoomPulse = -1; this.spiral -= 0.8; }
+    else if (kind === 'kik') {
+      this.zoomPulse = Math.max(this.zoomPulse, 0.5 * vel);
+      if (Math.random() < 0.3) this.rotDir *= -1; // spin direction flip
+    } else {
+      // angular impulse — inertia lets it glide out over ~a second
+      this.rotVel += (Math.random() < 0.5 ? -1 : 1) * (0.01 + vel * 0.03);
     }
+    this.stamps.push({ kind, vel });
   },
 
-  noteOn(bank, idx) { this.heldNotes.set(`${bank}:${idx}`, idx); },
-  noteOff(bank, idx) { this.heldNotes.delete(`${bank}:${idx}`); },
+  noteOn(bank, idx) { this.held.set(`${bank}:${idx}`, { idx, phase: Math.random() * 6.28 }); },
+  noteOff(bank, idx) { this.held.delete(`${bank}:${idx}`); },
 
-  /** One waveform pass: y(x) = base + wave*amp + warp ripple. */
-  tracePass(ctx2d, data, w, h, baseY, amp, warpAmp, alpha, lw) {
-    if (alpha <= 0.003) return;
+  /** Fine waveform along an arbitrary segment (position + angle). */
+  waveLine(ctx2d, data, x0, y0, angle, len, amp, alpha, lw) {
+    ctx2d.save();
+    ctx2d.translate(x0, y0);
+    ctx2d.rotate(angle);
     ctx2d.strokeStyle = `rgba(255,255,255,${Math.min(1, alpha)})`;
     ctx2d.lineWidth = lw;
     ctx2d.beginPath();
-    const step = Math.ceil(data.length / (w / 2));
-    for (let x = 0, i = 0; x <= w; x += 2, i += step) {
-      const v = (data[Math.min(i, data.length - 1)] - 128) / 128;
-      let y = baseY + v * amp;
-      if (warpAmp > 0) y += Math.sin(x * 0.02 + this.warpPhase) * warpAmp;
-      if (x === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+    const N = Math.max(80, len | 0); // ~1px resolution
+    for (let i = 0; i <= N; i++) {
+      const v = (data[((i / N) * (data.length - 1)) | 0] - 128) / 128;
+      const x = -len / 2 + (i / N) * len;
+      if (i === 0) ctx2d.moveTo(x, v * amp); else ctx2d.lineTo(x, v * amp);
+    }
+    ctx2d.stroke();
+    ctx2d.restore();
+  },
+
+  /** Void-like dot swarm (feedback smears these into star trails). */
+  dotSwarm(ctx2d, cx, cy, n, spread, alpha) {
+    ctx2d.fillStyle = `rgba(255,255,255,${Math.min(1, alpha)})`;
+    for (let i = 0; i < n; i++) {
+      // gaussian-ish cluster
+      const a = Math.random() * Math.PI * 2;
+      const d = (Math.random() + Math.random() + Math.random()) / 3 * spread;
+      const r = Math.random() < 0.85 ? 1 : 2;
+      ctx2d.fillRect(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.7, r, r);
+    }
+  },
+
+  /** Irregular polygon shard (thin outline). */
+  polyShard(ctx2d, cx, cy, r, alpha, lw) {
+    const verts = 3 + ((Math.random() * 4) | 0);
+    const rot0 = Math.random() * Math.PI * 2;
+    ctx2d.strokeStyle = `rgba(255,255,255,${Math.min(1, alpha)})`;
+    ctx2d.lineWidth = lw;
+    ctx2d.beginPath();
+    for (let i = 0; i <= verts; i++) {
+      const a = rot0 + (i % verts) / verts * Math.PI * 2;
+      const rr = r * (0.55 + Math.random() * 0.7);
+      const x = cx + Math.cos(a) * rr;
+      const y = cy + Math.sin(a) * rr;
+      if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+    }
+    ctx2d.closePath();
+    ctx2d.stroke();
+  },
+
+  /** Waveform wrapped around a circle (oscilloscope ring). */
+  waveRing(ctx2d, data, cx, cy, r0, ampR, phase, alpha, lw) {
+    ctx2d.strokeStyle = `rgba(255,255,255,${Math.min(1, alpha)})`;
+    ctx2d.lineWidth = lw;
+    ctx2d.beginPath();
+    const N = 180;
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2 + phase;
+      const v = (data[((i / N) * (data.length - 1)) | 0] - 128) / 128;
+      const r = r0 + v * ampR;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
     }
     ctx2d.stroke();
   },
 
-  draw(ctx2d, w, h, dt) {
+  draw(ctx2d, w, h) {
     this.frame++;
-    if (!this.inited) {
+    if (!this.inited || !this.fb || this.fb.width !== w || this.fb.height !== h) {
       ctx2d.globalCompositeOperation = 'source-over';
       ctx2d.fillStyle = '#000';
       ctx2d.fillRect(0, 0, w, h);
+      this.fb = document.createElement('canvas');
+      this.fb.width = w; this.fb.height = h;
+      this.fbctx = this.fb.getContext('2d');
       this.inited = true;
     }
-    // slow decay — the residue of past sound keeps glowing
+
+    // audio features
+    let level = 0, data = null;
+    if (Audio.ready) {
+      data = new Uint8Array(Audio.analyser.fftSize);
+      Audio.analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 8) { const v = (data[i] - 128) / 128; sum += v * v; }
+      level = Math.min(1, Math.sqrt(sum / (data.length / 8)) * 3);
+    }
+
+    // ---- feedback: snapshot -> repaint transformed + dimmed ----
+    this.fbctx.clearRect(0, 0, w, h);
+    this.fbctx.drawImage(ctx2d.canvas, 0, 0);
+
+    this.zoomPulse *= 0.93;
+    this.spiral *= 0.97;
+    const scr = state.scratchRate; // signed: field spins with the record
+    // rotation with inertia: velocity eases toward a slow cruise, impulses
+    // (hits / scratch / spiral) decay gradually instead of snapping back
+    const cruise = (0.004 + level * 0.006) * this.rotDir
+      + scr * 0.03 + this.spiral * 0.014;
+    this.rotVel += (cruise - this.rotVel) * 0.025;
+    const rot = this.rotVel;
+    const zoom = 1.012 + level * 0.012 + this.zoomPulse * 0.05;
+    // slight anisotropy + wandering center = pseudo-3D depth
+    const wob = Math.sin(this.frame * 0.021);
+    const zx = zoom * (1 + wob * 0.007);
+    const zy = zoom * (1 - wob * 0.007);
+    const cx = w / 2 + Math.sin(this.frame * 0.0073) * w * 0.06;
+    const cy = h / 2 + Math.cos(this.frame * 0.0091) * h * 0.09;
+
     ctx2d.globalCompositeOperation = 'source-over';
-    ctx2d.fillStyle = 'rgba(0,0,0,0.028)';
+    ctx2d.fillStyle = '#000';
     ctx2d.fillRect(0, 0, w, h);
+    ctx2d.save();
+    ctx2d.translate(cx, cy);
+    ctx2d.rotate(rot);
+    ctx2d.scale(zx, zy);
+    ctx2d.translate(-cx, -cy);
+    ctx2d.globalAlpha = 0.955; // persistence (echoes linger for seconds)
+    ctx2d.drawImage(this.fb, 0, 0);
+    ctx2d.restore();
+    ctx2d.globalAlpha = 1;
 
     if (!Audio.ready) {
       ctx2d.fillStyle = 'rgba(255,255,255,0.35)';
       ctx2d.font = '12px monospace';
-      ctx2d.fillText('PRESS "PLUG IN" TO START AUDIO', 16, h / 2);
+      ctx2d.fillText(t('plug_hint'), 16, h / 2);
       return;
     }
 
-    const data = new Uint8Array(Audio.analyser.fftSize);
-    Audio.analyser.getByteTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i += 8) { const v = (data[i] - 128) / 128; sum += v * v; }
-    const level = Math.min(1, Math.sqrt(sum / (data.length / 8)) * 3);
+    // ---- fresh light on top (additive) ----
+    const strobe = this.flashEnv > 0.25 && this.frame % 2 === 0 ? 0.25 : 1;
+    const flash = this.flashEnv * strobe;
+    const amp = h * 0.28 * (0.3 + level * 1.3 + flash * 0.7);
 
-    // light accumulates additively: overlap = brighter
     ctx2d.globalCompositeOperation = 'lighter';
     ctx2d.lineCap = 'round';
 
-    // strobe: hard flicker while the flash envelope is hot
-    const strobe = this.flashEnv > 0.25 && this.frame % 2 === 0 ? 0.3 : 1;
-    const flash = this.flashEnv * strobe;
-
-    // wandering baseline (accumulation spreads into a band of filaments).
-    // Faster wander + per-frame jitter keep successive traces from landing
-    // on top of each other — that separation is what reads as "threads".
-    this.drift += dt * (0.9 + level * 2.2);
-    this.jump *= 0.9;
-    const baseY = h * (0.5
-      + Math.sin(this.drift) * 0.10
-      + Math.sin(this.drift * 3.1 + 1.7) * 0.045
-      + this.jump * 0.35)
-      + (Math.random() - 0.5) * (2 + level * 7);
-    const amp = h * 0.30 * (0.3 + level * 1.5 + flash * 0.9);
-
-    // scratch / continuous spin -> the thread itself undulates
-    const scr = state.scratchRate;
-    const warpAmp = scr !== 0 ? h * 0.10 * Math.min(2.2, 0.6 + Math.abs(scr)) : 0;
-    this.warpPhase += scr * dt * 22 + dt * 1.2;
-
-    const audible = level > 0.015 || flash > 0.05;
-    if (audible) {
-      // one narrow halo, then a fan of crisp thin filaments
-      this.tracePass(ctx2d, data, w, h, baseY, amp, warpAmp,
-        0.02 + level * 0.05 + flash * 0.08, 3.2);
-      const fan = 3;
-      for (let k = 0; k < fan; k++) {
-        const off = (k - (fan - 1) / 2) * (2.5 + level * 9);
-        const ampK = amp * (0.9 + k * 0.09);
-        const aK = (0.10 + level * 0.24 + flash * 0.45) * (k === 1 ? 1 : 0.55);
-        this.tracePass(ctx2d, data, w, h, baseY + off, ampK, warpAmp, aK, 0.7);
-      }
-
-      // held notes: extra faint filaments stacked above/below (layered light)
-      for (const idx of this.heldNotes.values()) {
-        const ny = h * (0.22 + (idx % 6) * 0.11) + (Math.random() - 0.5) * 3;
-        this.tracePass(ctx2d, data, w, h, ny, amp * 0.45, warpAmp * 0.6,
-          0.05 + level * 0.14, 0.7);
-      }
+    if (level > 0.012 || flash > 0.05) {
+      // main fine trace across the center: halo + crisp core
+      this.waveLine(ctx2d, data, w / 2, h / 2, 0, w, amp, 0.05 + level * 0.08 + flash * 0.12, 4);
+      this.waveLine(ctx2d, data, w / 2, h / 2, 0, w, amp, 0.3 + level * 0.35 + flash * 0.5, 0.9);
     }
 
-    // roll-twist wisps: undulating vertical curls (rise for MOD+, fall for MOD−)
-    for (let i = this.warps.length - 1; i >= 0; i--) {
-      const wp = this.warps[i];
-      wp.age += dt;
-      const t = wp.age / wp.dur;
-      if (t >= 1) { this.warps.splice(i, 1); continue; }
-      const a = (1 - t) * 0.4;
-      for (const pass of [{ lw: 5, k: 0.25 }, { lw: 1.1, k: 1 }]) {
-        ctx2d.strokeStyle = `rgba(255,255,255,${a * pass.k})`;
-        ctx2d.lineWidth = pass.lw;
-        // an undulating wisp sweeping from one edge toward the other
-        ctx2d.beginPath();
-        for (let s = 0; s <= 1.001; s += 0.04) {
-          const py = wp.dir < 0 ? h - s * h * t : s * h * t;
-          const px = w * wp.x0 + Math.sin(s * 9 + wp.seed + wp.age * 5) * (14 + s * 90) * (0.4 + t);
-          if (s === 0) ctx2d.moveTo(px, py); else ctx2d.lineTo(px, py);
+    // per-hit stamps: each sound throws its waveform somewhere else
+    for (const s of this.stamps.splice(0)) {
+      const v = s.vel;
+      if (s.kind === 'kik') {
+        this.waveLine(ctx2d, data, w * (0.35 + Math.random() * 0.3), h * (0.3 + Math.random() * 0.4),
+          (Math.random() - 0.5) * 0.3, w * 0.85, h * (0.2 + v * 0.25), 0.4 + v * 0.35, 2.6);
+      } else if (s.kind === 'snr') {
+        // polygon shards
+        const n = 1 + ((Math.random() * 2) | 0);
+        for (let k = 0; k < n; k++) {
+          this.polyShard(ctx2d, w * Math.random(), h * Math.random(),
+            h * (0.05 + v * 0.1), 0.4 + v * 0.3, 1.1);
         }
-        ctx2d.stroke();
+      } else if (s.kind === 'hat') {
+        // void: a cluster of tiny dots
+        this.dotSwarm(ctx2d, w * Math.random(), h * Math.random(),
+          10 + (v * 26) | 0, h * (0.1 + v * 0.15), 0.45 + v * 0.3);
+      } else { // modUp / modDown: big waveform ring
+        this.waveRing(ctx2d, data, w / 2, h / 2, h * 0.3, h * 0.12,
+          Math.random() * 6.28, 0.45 + v * 0.25, 1.4);
       }
     }
 
-    // full-field strobe flash on onsets (kept low so it never fogs the threads)
+    // held notes: rotating rings, radius by note index
+    for (const n of this.held.values()) {
+      n.phase += 0.02 + n.idx * 0.004;
+      this.waveRing(ctx2d, data, w / 2, h / 2, h * (0.1 + n.idx * 0.055), h * 0.05,
+        n.phase, 0.1 + level * 0.25, 0.8);
+    }
+
+    // full-field strobe on onsets
     if (flash > 0.05) {
-      ctx2d.fillStyle = `rgba(255,255,255,${Math.min(0.18, flash * flash * 0.07)})`;
+      ctx2d.fillStyle = `rgba(255,255,255,${Math.min(0.22, flash * flash * 0.09)})`;
       ctx2d.fillRect(0, 0, w, h);
     }
-    this.flashEnv *= 0.76;
-
-    // white dust
-    for (const sp of this.specks.splice(0)) {
-      ctx2d.fillStyle = `rgba(255,255,255,${sp.a})`;
-      for (let i = 0; i < sp.n; i++) {
-        const dx = (Math.random() - 0.5) * sp.spread * w;
-        const dy = (Math.random() - 0.5) * sp.spread * h * 1.6;
-        ctx2d.fillRect(sp.x * w + dx, sp.y * h + dy, Math.random() < 0.15 ? 2 : 1, 1);
-      }
-    }
-    // ambient dust while sound plays
-    if (level > 0.12 && Math.random() < level * 0.5) {
-      ctx2d.fillStyle = 'rgba(255,255,255,0.18)';
-      for (let i = 0; i < 6; i++) {
-        ctx2d.fillRect(Math.random() * w, baseY + (Math.random() - 0.5) * amp * 2.4, 1, 1);
-      }
-    }
-
     ctx2d.globalCompositeOperation = 'source-over';
+    this.flashEnv *= 0.78;
   },
 };
 
@@ -1491,8 +1732,8 @@ function drawDisc(ctx2d, w, h, dt) {
   ctx2d.font = '9px monospace';
   ctx2d.fillStyle = 'rgba(232,232,230,0.5)';
   ctx2d.fillText(open
-    ? `${state.scratchRate >= 0 ? 'PLAY' : 'REV'} ${Math.abs(state.scratchRate).toFixed(2)}x`
-    : 'SPIN=PLAY / 逆=REV / 往復=SCRATCH', cx, cy + r + 14);
+    ? `BEAT ${DeckSeq.dir > 0 ? 'A' : 'B'} @${Math.round(TUNING.quantBpm)} / ${state.scratchRate >= 0 ? 'FWD' : 'REV'} ${Math.abs(state.scratchRate).toFixed(2)}x`
+    : t('deck_hint'), cx, cy + r + 14);
   ctx2d.textAlign = 'start';
 }
 
@@ -1507,7 +1748,7 @@ function render(now) {
     });
   }
 
-  Paint.draw(scopeCanvas.getContext('2d'), scopeCanvas.width, scopeCanvas.height);
+  Paint.draw(scopeCanvas.getContext('2d'), scopeCanvas.width, scopeCanvas.height, dt);
   drawDisc(deckCanvas.getContext('2d'), deckCanvas.width, deckCanvas.height, dt);
 
   // orientation: show the device that is actively held (prefer connected 0)
@@ -1559,8 +1800,28 @@ buildInsoleToolkit($('toolkit_placeholder1'), 'INSOLE 1', 1, { streamingMode: 3,
 window.addEventListener('load', function () {
   buildLanes();
   buildTunePanel();
+  applyLang();
   updateLoopUI();
   updateLaneDevices();
+  $('lang_ja').addEventListener('click', () => setLang('ja'));
+  $('lang_en').addEventListener('click', () => setLang('en'));
+
+  // visualizer fullscreen toggle (click to enter, click again to exit)
+  scopeCanvas.title = 'click: fullscreen';
+  scopeCanvas.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else scopeCanvas.requestFullscreen().catch(() => { /* unsupported */ });
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement === scopeCanvas) {
+      scopeCanvas.width = window.innerWidth;
+      scopeCanvas.height = window.innerHeight;
+    } else {
+      scopeCanvas.width = 900;
+      scopeCanvas.height = 300;
+    }
+    Paint.inited = false; // re-init buffers at the new size
+  });
 
   for (let i = 0; i < 2; i++) {
     insoles[i].setup();
@@ -1620,6 +1881,15 @@ window.addEventListener('load', function () {
     Audio.quantOn = !Audio.quantOn;
     Audio.quantT0 = null; // next hit re-anchors the grid
     this.classList.toggle('active-volt', Audio.quantOn);
+  });
+  $('bpm_input').value = TUNING.quantBpm;
+  $('bpm_input').addEventListener('input', function () {
+    const v = parseFloat(this.value);
+    if (Number.isFinite(v) && v >= 40 && v <= 300) {
+      TUNING.quantBpm = v;
+      Audio.quantT0 = null; // re-anchor the grid at the new tempo
+      saveTuning();
+    }
   });
   $('echo_slider').addEventListener('input', function () { Audio.setEcho(this.value / 100); });
   $('sens_slider').addEventListener('input', function () { state.sens = this.value / 100; });
