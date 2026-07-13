@@ -283,6 +283,90 @@ async function main() {
     assert.deepEqual(target._characteristics, {}, 'selectBluetoothDevice() must reset the characteristics cache');
   }
 
+  // ── 物理切断→再接続後に stale characteristic を使わないこと ──────
+  // （実機で確認された再接続リグレッションの回帰テスト。
+  //   電波範囲外→gattserverdisconnected→自動再接続の begin() リトライで、
+  //   旧接続の characteristic がキャッシュから返され続けると再接続が永遠に失敗する）
+  {
+    // 世代付きモックGATT: 切断後に古い世代の characteristic 操作は throw する
+    let generation = 1;
+    const fetchCounts = {};
+    function makeGenerationalChar(charUUID) {
+      const bornGeneration = generation;
+      return {
+        uuid: charUUID,
+        bornGeneration,
+        listeners: [],
+        _assertAlive() {
+          if (bornGeneration !== generation) {
+            throw new Error('GATT operation failed: characteristic from a previous connection');
+          }
+        },
+        startNotifications() { this._assertAlive(); return Promise.resolve(this); },
+        stopNotifications() { this._assertAlive(); return Promise.resolve(this); },
+        readValue() {
+          this._assertAlive();
+          const data = new DataView(new ArrayBuffer(20));
+          data.setUint8(0, 1);
+          data.setUint8(8, 3);
+          data.setUint8(9, 3);
+          return Promise.resolve(data);
+        },
+        writeValue() { this._assertAlive(); return Promise.resolve(); },
+        addEventListener(_type, handler) { this.listeners.push(handler); },
+        removeEventListener(_type, handler) {
+          const i = this.listeners.indexOf(handler);
+          if (i >= 0) this.listeners.splice(i, 1);
+        },
+      };
+    }
+    const gatt = {
+      connected: true,
+      connect() {
+        gatt.connected = true;
+        return Promise.resolve({
+          getPrimaryService() {
+            return Promise.resolve({
+              getCharacteristic(charUUID) {
+                fetchCounts[charUUID] = (fetchCounts[charUUID] || 0) + 1;
+                return Promise.resolve(makeGenerationalChar(charUUID));
+              },
+            });
+          },
+        });
+      },
+      disconnect() { gatt.connected = false; },
+    };
+
+    const target = new OrpheInsole(0);
+    target.setup(['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES']);
+    target.onError = () => { };
+    target.scan = async () => { };
+    target.bluetoothDevice = { gatt, name: 'MOCK' };
+
+    // 1st connection: 通知 + DEVICE_INFORMATION/DATE_TIME を触ってキャッシュを埋める
+    await target.startNotify('SENSOR_VALUES');
+    await target.read('DEVICE_INFORMATION');
+    await target.read('DATE_TIME');
+
+    // 物理切断（電波範囲外相当）: gatt が落ち、旧 characteristic は無効になる
+    gatt.connected = false;
+    generation = 2;
+
+    // 再接続後の begin() 相当のシーケンスが stale を掴まず全て成功すること
+    // （現行実装では最初の read で gatt.connect() 後、以降の uuid が
+    //   旧世代キャッシュにヒットして throw する = レッド）
+    const info = await target.read('DEVICE_INFORMATION');
+    assert.ok(info, 'read after physical reconnect succeeds');
+    await target.write('DEVICE_INFORMATION', [0x0D, 4]);
+    await target.read('DATE_TIME');
+    await target.startNotify('SENSOR_VALUES');
+    assert.equal(fetchCounts[target.ORPHE_DATE_TIME], 2,
+      'DATE_TIME characteristic is re-fetched after physical disconnect');
+    assert.equal(fetchCounts[target.ORPHE_SENSOR_VALUES], 2,
+      'SENSOR_VALUES characteristic is re-fetched after physical disconnect');
+  }
+
   // ── 既存パーサが壊れていないこと（スモーク） ───────────────────
   {
     const data = new DataView(new ArrayBuffer(104));
