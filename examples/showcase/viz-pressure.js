@@ -6,14 +6,8 @@
  * チャネルの物理配置はモデルにより異なる場合があるため、配置を変えるときは
  * SENSOR_LAYOUT の並びだけを修正すればよい。
  */
-const PRESSURE_SENSOR_LAYOUT = [
-    { x: 0.7596, y: 0.1680 },  // p0
-    { x: 0.7513, y: 0.3320 },  // p1
-    { x: 0.4024, y: 0.2210 },  // p2
-    { x: 0.5245, y: 0.3483 },  // p3
-    { x: 0.2884, y: 0.3681 },  // p4
-    { x: 0.5552, y: 0.8206 },  // p5
-];
+// 画像座標の正は SDK 共通定義（OrpheInsoleUtils.SENSOR_LAYOUT_IMAGE）を参照する。
+const PRESSURE_SENSOR_LAYOUT = OrpheInsoleUtils.SENSOR_LAYOUT_IMAGE;
 
 function createPressurePanel(deviceId, defaultFoot) {
     let foot = defaultFoot;

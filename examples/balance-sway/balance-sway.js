@@ -230,14 +230,16 @@
   // original visual-only layout. Keep array order as raw channel order so CSV
   // columns remain left_p0..p5/right_p0..p5. imageX/imageY are aligned to the
   // white cross markers baked into the insole image asset.
-  const SensorLayout = [
-    createSensorPoint(0.7596, 0.1680, "P0"),
-    createSensorPoint(0.7513, 0.3320, "P1"),
-    createSensorPoint(0.4024, 0.2210, "P2"),
-    createSensorPoint(0.5245, 0.3483, "P3"),
-    createSensorPoint(0.2884, 0.3681, "P4"),
-    createSensorPoint(0.5552, 0.8206, "P5")
-  ];
+  // 画像座標の正は SDK 共通定義（OrpheInsoleUtils.SENSOR_LAYOUT_IMAGE）。
+  // Node では require、ブラウザでは script タグのグローバルから解決する。
+  const InsoleUtils = root.OrpheInsoleUtils ||
+    (typeof require === "function" ? require("../../src/InsoleUtils.js") : null);
+  if (!InsoleUtils) {
+    throw new Error('balance-sway: InsoleUtils.js を先に読み込んでください（<script src="../../src/InsoleUtils.js"></script>）');
+  }
+  const SensorLayout = InsoleUtils.SENSOR_LAYOUT_IMAGE.map(
+    (sensor) => createSensorPoint(sensor.x, sensor.y, sensor.label)
+  );
 
   function createSensorPoint(imageX, imageY, label) {
     return {

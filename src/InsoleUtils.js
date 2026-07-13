@@ -16,20 +16,36 @@ const SENSOR_COUNT = 6;
 const MAX_UINT16 = 65535;
 
 /**
- * 6ch 圧力センサの足ローカル座標系レイアウト（右足基準）。
- * 実機のインソール画像上のマーカー位置から採寸した balance-sway の値を正とする。
- * x: 内外方向（+が外側） / y: 前後方向（+がつま先側）。単位は足長を約1とする無次元。
+ * 6ch 圧力センサのインソール画像上マーカー座標（0..1 の画像比率・実機採寸値の正）。
+ * balance-sway / balance-tuner / showcase(viz-pressure) が共有するチャネル→位置の対応表。
  * チャネルの物理配置はモデルによって異なる場合があるため、
- * 配置が異なるモデルでは同形式の配列を computeCoP() に渡して差し替えること。
+ * 配置が異なるモデルでは同形式の配列でリマップ層を挟むこと。
  */
-const SENSOR_LAYOUT = [
-  { x: (0.7596 - 0.5) * 0.58, y: (0.5 - 0.1680) * 0.9, label: 'P0' },
-  { x: (0.7513 - 0.5) * 0.58, y: (0.5 - 0.3320) * 0.9, label: 'P1' },
-  { x: (0.4024 - 0.5) * 0.58, y: (0.5 - 0.2210) * 0.9, label: 'P2' },
-  { x: (0.5245 - 0.5) * 0.58, y: (0.5 - 0.3483) * 0.9, label: 'P3' },
-  { x: (0.2884 - 0.5) * 0.58, y: (0.5 - 0.3681) * 0.9, label: 'P4' },
-  { x: (0.5552 - 0.5) * 0.58, y: (0.5 - 0.8206) * 0.9, label: 'P5' }
+const SENSOR_LAYOUT_IMAGE = [
+  { x: 0.7596, y: 0.1680, label: 'P0' },
+  { x: 0.7513, y: 0.3320, label: 'P1' },
+  { x: 0.4024, y: 0.2210, label: 'P2' },
+  { x: 0.5245, y: 0.3483, label: 'P3' },
+  { x: 0.2884, y: 0.3681, label: 'P4' },
+  { x: 0.5552, y: 0.8206, label: 'P5' }
 ];
+
+// 画像比率 → 足ローカル座標の変換係数（balance-sway / balance-tuner と同一値）
+const FOOT_LOCAL_X_RANGE = 0.58;
+const FOOT_LOCAL_Y_RANGE = 0.9;
+
+/**
+ * 6ch 圧力センサの足ローカル座標系レイアウト（SENSOR_LAYOUT_IMAGE から導出）。
+ * x: 内外方向 / y: 前後方向（+がつま先側）。単位は足長を約1とする無次元。
+ * 左右反転が必要な場合は mirrorForSide() を使う。
+ */
+const SENSOR_LAYOUT = SENSOR_LAYOUT_IMAGE.map(function (sensor) {
+  return {
+    x: (sensor.x - 0.5) * FOOT_LOCAL_X_RANGE,
+    y: (0.5 - sensor.y) * FOOT_LOCAL_Y_RANGE,
+    label: sensor.label
+  };
+});
 
 /**
  * レイアウトを左右反転した新しい配列を返す。
@@ -352,6 +368,7 @@ function sideFromMountPosition(mountPosition) {
 const InsoleUtils = {
   SENSOR_COUNT: SENSOR_COUNT,
   MAX_UINT16: MAX_UINT16,
+  SENSOR_LAYOUT_IMAGE: SENSOR_LAYOUT_IMAGE,
   SENSOR_LAYOUT: SENSOR_LAYOUT,
   mirrorForSide: mirrorForSide,
   validatePress: validatePress,
