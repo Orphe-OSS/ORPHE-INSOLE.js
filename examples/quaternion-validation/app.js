@@ -415,7 +415,9 @@
         'packet_gap', 'host_packet_interval_ms', 'gyro_integral_nominal_deg', 'gyro_integral_host_time_deg', 'gyro_referenced_yaw_deg',
         'gyro_integral_device_time_deg', 'gyro_referenced_yaw_device_time_deg',
         'bias_stationary', 'bias_ready', 'gyro_bias_x', 'gyro_bias_y', 'gyro_bias_z',
-        'yaw_bias_rate_deg_s', 'yaw_bias_correction_deg', 'yaw_bias_corrected_deg'
+        'yaw_bias_rate_deg_s', 'yaw_bias_correction_deg', 'yaw_bias_corrected_deg',
+        'observed_yaw_bias_ready', 'observed_yaw_bias_rate_deg_s', 'observed_yaw_bias_correction_deg',
+        'observed_yaw_bias_corrected_deg'
       ].join(',') + '\n';
       await this.writable.write(header);
       this.flushTimer = setInterval(() => this.flush(), 1000);
@@ -445,7 +447,11 @@
         value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.bias && analysis.adaptiveYawBias.bias.z),
         value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.biasYawRateDegPerSecond),
         value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.correctionDeg),
-        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.correctedYaw && analysis.adaptiveYawBias.correctedYaw.endDeg)
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.correctedYaw && analysis.adaptiveYawBias.correctedYaw.endDeg),
+        analysis && analysis.adaptiveYawBias ? String(Boolean(analysis.adaptiveYawBias.observedYawReady)) : '',
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.observedYawBiasRateDegPerSecond),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.observedYawCorrectionDeg),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.observedCorrectedYaw && analysis.adaptiveYawBias.observedCorrectedYaw.endDeg)
       ].join(',') + '\n';
       this.buffer.push(row);
       if (this.buffer.length >= 500) this.flush();
@@ -569,6 +575,11 @@
           : null;
         const correctedObservedDeg = Math.abs(signedCorrectedObservedDeg || 0);
         const correctedErrorDeg = correctedObservedDeg - target;
+        const signedObservedBiasCorrectedDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.observedCorrectedYaw
+          ? snapshot.adaptiveYawBias.observedCorrectedYaw.deltaDeg
+          : null;
+        const observedBiasCorrectedDeg = Math.abs(signedObservedBiasCorrectedDeg || 0);
+        const observedBiasCorrectedErrorDeg = observedBiasCorrectedDeg - target;
         const tolerance = Math.max(5, target * 0.1);
         const sensorsPresent = snapshot.presence.euler > 0 && snapshot.presence.gyro > 0;
         return {
@@ -585,6 +596,10 @@
           correctedObservedDeg,
           correctedErrorDeg,
           correctedErrorPercent: target ? Math.abs(correctedErrorDeg) * 100 / target : null,
+          signedObservedBiasCorrectedDeg,
+          observedBiasCorrectedDeg,
+          observedBiasCorrectedErrorDeg,
+          observedBiasCorrectedErrorPercent: target ? Math.abs(observedBiasCorrectedErrorDeg) * 100 / target : null,
           status: !sensorsPresent ? 'fail' : (Math.abs(errorDeg) <= tolerance && Math.abs(gyroErrorDeg) <= tolerance ? 'pass' : 'warn'),
         };
       });
@@ -597,6 +612,9 @@
         const correctedDeltaDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.correctedYaw
           ? snapshot.adaptiveYawBias.correctedYaw.deltaDeg
           : null;
+        const observedBiasCorrectedDeltaDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.observedCorrectedYaw
+          ? snapshot.adaptiveYawBias.observedCorrectedYaw.deltaDeg
+          : null;
         return {
           snapshot,
           expectedDeg: expected,
@@ -604,6 +622,8 @@
           gyroErrorDeg: Math.abs(snapshot.gyroZDeviceTimeIntegralDeg || 0) - expected,
           correctedDeltaDeg,
           correctedErrorDeg: correctedDeltaDeg === null ? null : Math.abs(correctedDeltaDeg) - expected,
+          observedBiasCorrectedDeltaDeg,
+          observedBiasCorrectedErrorDeg: observedBiasCorrectedDeltaDeg === null ? null : Math.abs(observedBiasCorrectedDeltaDeg) - expected,
           status: 'info',
         };
       });
@@ -626,10 +646,10 @@
       const snapshot = item.snapshot;
       const prefix = `D${snapshot.deviceId}(${snapshot.side})`;
       if (result.type === 'rotation') {
-        return `${prefix}: yaw ${format(item.signedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.errorDeg), 1)}° / 補正yaw ${format(item.signedCorrectedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.correctedErrorDeg), 1)}° / gyro_z(body/device time) ${format(item.signedGyroObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.gyroErrorDeg), 1)}°`;
+        return `${prefix}: yaw ${format(item.signedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.errorDeg), 1)}° / gyro投影補正 ${format(item.signedCorrectedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.correctedErrorDeg), 1)}° / yaw実測補正 ${format(item.signedObservedBiasCorrectedDeg, 1)}° / |誤差| ${format(Math.abs(item.observedBiasCorrectedErrorDeg), 1)}° / gyro_z(body/device time) ${format(item.signedGyroObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.gyroErrorDeg), 1)}°`;
       }
       if (result.type === 'walk') {
-        return `${prefix}: quat ${format(snapshot.yaw.deltaDeg, 1)}° / 補正quat ${format(item.correctedDeltaDeg, 1)}° / gyro_z(body/device time) ${format(snapshot.gyroZDeviceTimeIntegralDeg, 1)}° / 実角 ${format(item.expectedDeg, 0)}°`;
+        return `${prefix}: quat ${format(snapshot.yaw.deltaDeg, 1)}° / gyro投影補正 ${format(item.correctedDeltaDeg, 1)}° / yaw実測補正 ${format(item.observedBiasCorrectedDeltaDeg, 1)}° / gyro_z(body/device time) ${format(snapshot.gyroZDeviceTimeIntegralDeg, 1)}° / 実角 ${format(item.expectedDeg, 0)}°`;
       }
       if (result.type === 'mode3') {
         return `${prefix}: sample ${format(snapshot.sampleRateHz, 1)}Hz (${item.sampleRateStatus.toUpperCase()}) / press ${snapshot.presence.press} / quat ${snapshot.presence.quat} / loss ${format(snapshot.packetLossPercent, 2)}%`;
@@ -646,7 +666,7 @@
         : '';
       const adaptive = snapshot.adaptiveYawBias;
       const adaptiveDescription = adaptive
-        ? ` / 適応補正 ${adaptive.ready ? 'READY' : 'WAIT'}・bias z ${format(adaptive.bias && adaptive.bias.z, 4)}°/s・補正drift ${format(adaptive.correctedYaw && adaptive.correctedYaw.driftDegPerMin, 2)}°/min`
+        ? ` / 適応補正 ${adaptive.ready ? 'READY' : 'WAIT'}・bias z ${format(adaptive.bias && adaptive.bias.z, 4)}°/s・gyro投影drift ${format(adaptive.correctedYaw && adaptive.correctedYaw.driftDegPerMin, 2)}°/min・yaw実測drift ${format(adaptive.observedCorrectedYaw && adaptive.observedCorrectedYaw.driftDegPerMin, 2)}°/min`
         : '';
       return `${prefix}: norm ${format(snapshot.norm.mean, 6)} ± ${format(snapshot.norm.std, 6)} / sample ${format(snapshot.observedSampleRateHz || snapshot.sampleRateHz, 1)}Hz / completion ${format(snapshot.completionPercent, 1)}% / connected ${format(snapshot.connectionCoveragePercent, 1)}% / drift ${format(snapshot.yaw.driftDegPerMin, 2)}°/min / gyro換算 ${format(snapshot.gyroZBiasDegPerMin, 2)}°/min / residual ${format(snapshot.yaw.residualStdDeg, 3)}°${adaptiveDescription}${driftDiagnosis}${driftWindowVariation}${calibrationValidation} / lost ${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)`;
     }).join(' ｜ ');
@@ -931,6 +951,7 @@
         <td id="biasStationary${deviceId}">-</td>
         <td id="biasRawYaw${deviceId}">-</td>
         <td id="biasCorrectedYaw${deviceId}">-</td>
+        <td id="biasObservedCorrectedYaw${deviceId}">-</td>
         <td id="biasCorrection${deviceId}">-</td>`;
       tbody.appendChild(row);
     });
@@ -957,6 +978,7 @@
         $(`biasStationary${deviceId}`).textContent = '-';
         $(`biasRawYaw${deviceId}`).textContent = '-';
         $(`biasCorrectedYaw${deviceId}`).textContent = '-';
+        $(`biasObservedCorrectedYaw${deviceId}`).textContent = '-';
         $(`biasCorrection${deviceId}`).textContent = '-';
         return;
       }
@@ -967,7 +989,8 @@
       $(`biasStationary${deviceId}`).textContent = `${adaptive.stationary ? 'YES' : 'NO'} / ${format(adaptive.stationaryPercent, 1)}% / 継続 ${format(adaptive.stationaryElapsedMs / 1000, 1)}s`;
       $(`biasRawYaw${deviceId}`).textContent = `Δ ${format(snapshot.yaw.deltaDeg, 1)}° / ${format(snapshot.yaw.driftDegPerMin, 2)}°/min`;
       $(`biasCorrectedYaw${deviceId}`).textContent = `Δ ${format(adaptive.correctedYaw.deltaDeg, 1)}° / ${format(adaptive.correctedYaw.driftDegPerMin, 2)}°/min`;
-      $(`biasCorrection${deviceId}`).textContent = `${format(adaptive.correctionDeg, 2)}° / rate ${format(adaptive.biasYawRateDegPerSecond, 3)}°/s`;
+      $(`biasObservedCorrectedYaw${deviceId}`).textContent = `Δ ${format(adaptive.observedCorrectedYaw.deltaDeg, 1)}° / ${format(adaptive.observedCorrectedYaw.driftDegPerMin, 2)}°/min`;
+      $(`biasCorrection${deviceId}`).textContent = `gyro ${format(adaptive.correctionDeg, 2)}° @ ${format(adaptive.biasYawRateDegPerSecond, 3)}°/s / yaw ${format(adaptive.observedYawCorrectionDeg, 2)}° @ ${format(adaptive.observedYawBiasRateDegPerSecond, 3)}°/s`;
     });
   }
 
@@ -1114,7 +1137,7 @@
         );
         if (snapshot.adaptiveYawBias) {
           const adaptive = snapshot.adaptiveYawBias;
-          lines.push(`- DEVICE ${snapshot.deviceId} adaptive bias experiment: state=${adaptive.state}, ready=${adaptive.ready}, stationary=${format(adaptive.stationaryPercent, 2)}%, bias=${JSON.stringify(adaptive.bias)}, yaw-bias-rate=${format(adaptive.biasYawRateDegPerSecond, 5)}deg/s, correction=${format(adaptive.correctionDeg, 3)}deg, corrected-yaw-delta=${format(adaptive.correctedYaw && adaptive.correctedYaw.deltaDeg, 3)}deg, corrected-yaw-drift=${format(adaptive.correctedYaw && adaptive.correctedYaw.driftDegPerMin, 3)}deg/min, options=${JSON.stringify(adaptive.options)}`);
+          lines.push(`- DEVICE ${snapshot.deviceId} adaptive bias experiment: state=${adaptive.state}, ready=${adaptive.ready}, stationary=${format(adaptive.stationaryPercent, 2)}%, bias=${JSON.stringify(adaptive.bias)}, gyro-projected-yaw-bias-rate=${format(adaptive.biasYawRateDegPerSecond, 5)}deg/s, gyro-projected-correction=${format(adaptive.correctionDeg, 3)}deg, gyro-projected-corrected-yaw-delta/drift=${format(adaptive.correctedYaw && adaptive.correctedYaw.deltaDeg, 3)}deg/${format(adaptive.correctedYaw && adaptive.correctedYaw.driftDegPerMin, 3)}deg/min, observed-yaw-bias-rate=${format(adaptive.observedYawBiasRateDegPerSecond, 5)}deg/s, observed-yaw-correction=${format(adaptive.observedYawCorrectionDeg, 3)}deg, observed-corrected-yaw-delta/drift=${format(adaptive.observedCorrectedYaw && adaptive.observedCorrectedYaw.deltaDeg, 3)}deg/${format(adaptive.observedCorrectedYaw && adaptive.observedCorrectedYaw.driftDegPerMin, 3)}deg/min, options=${JSON.stringify(adaptive.options)}`);
         }
         if (snapshot.driftWindows5Min && snapshot.driftWindows5Min.length) {
           const windows = snapshot.driftWindows5Min

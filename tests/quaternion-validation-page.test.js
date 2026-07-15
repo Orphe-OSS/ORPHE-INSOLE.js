@@ -41,8 +41,10 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.match(app, /gyro_referenced_yaw_deg/);
   assert.match(app, /gyro_referenced_yaw_device_time_deg/);
   assert.match(app, /yaw_bias_corrected_deg/);
+  assert.match(app, /observed_yaw_bias_corrected_deg/);
   assert.match(app, /adaptiveYawBias/);
-  assert.match(app, /補正quat/);
+  assert.match(app, /gyro投影補正/);
+  assert.match(app, /yaw実測補正/);
   assert.match(app, /const signedGyroObservedDeg = snapshot\.gyroZDeviceTimeIntegralDeg/);
   assert.match(app, /gyro_z\(body\/device time\)/);
   assert.match(app, /connection coverage=/);

@@ -122,14 +122,15 @@
               <th>推定bias x/y/z</th>
               <th>静止判定</th>
               <th>生yaw</th>
-              <th>補正yaw</th>
+              <th>gyro投影補正yaw</th>
+              <th>yaw実測補正yaw</th>
               <th>累積補正量</th>
             </tr>
           </thead>
           <tbody id="biasMetrics"></tbody>
         </table>
       </div>
-      <p class="footnote">テスト開始後は2秒ほど静止し、補正状態がREADY相当になってから動いてください。この補正はページ内の比較実験だけに適用され、SDKのquat/euler値は変更しません。固定補正より改善するか、静置・回転・周回歩行で数値比較してください。</p>
+      <p class="footnote">テスト開始後は2秒ほど静止し、補正状態がREADY相当になってから動いてください。gyro biasをEuler yawへ投影する方式と、静止中のyawドリフトを直接学習する方式を同時比較します。どちらもページ内の比較実験だけに適用され、SDKのquat/euler値は変更しません。</p>
     </section>
 
     <section class="panel active-panel" id="activePanel">
@@ -189,7 +190,7 @@
         <article class="test-card">
           <div class="test-number">C</div>
           <h3>既知角度回転</h3>
-          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を、生yaw・適応補正yaw・生gyro_zで比較します。</p>
+          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を、生yaw・gyro投影補正yaw・yaw実測補正yaw・生gyro_zで比較します。</p>
           <div class="form-row">
             <label>対象
               <select id="rotationDevice">
@@ -222,7 +223,7 @@
         <article class="test-card">
           <div class="test-number">D</div>
           <h3>周回歩行</h3>
-          <p>安全な屋内の廊下や広い部屋で、開始位置と向きを決めて閉じた経路を1周します。quat yaw累積、適応補正yaw、生gyro_z積分、実周回数×360°を並べます。</p>
+          <p>安全な屋内の廊下や広い部屋で、開始位置と向きを決めて閉じた経路を1周します。quat yaw累積、2方式の適応補正yaw、生gyro_z積分、実周回数×360°を並べます。</p>
           <details class="protocol">
             <summary>歩き方を見る</summary>
             <ol>

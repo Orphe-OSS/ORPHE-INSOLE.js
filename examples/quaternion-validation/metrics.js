@@ -269,11 +269,17 @@
       this.stationarySinceMs = null;
       this.stationarySegmentSum = { x: 0, y: 0, z: 0 };
       this.stationarySegmentSamples = 0;
+      this.stationarySegmentYawStartDeg = null;
       this.bias = { x: 0, y: 0, z: 0 };
       this.biasReady = false;
       this.biasUpdates = 0;
       this.readyAtMs = null;
       this.correctionIntegralDeg = 0;
+      this.observedYawBiasRateDegPerSecond = null;
+      this.observedYawReady = false;
+      this.observedYawUpdates = 0;
+      this.observedYawReadyAtMs = null;
+      this.observedYawCorrectionIntegralDeg = 0;
       this.rawYaw = new AngleTracker();
       this.correctedCount = 0;
       this.correctedStartDeg = null;
@@ -281,6 +287,12 @@
       this.correctedMinDeg = Infinity;
       this.correctedMaxDeg = -Infinity;
       this.correctedRegression = new LinearRegression();
+      this.observedCorrectedCount = 0;
+      this.observedCorrectedStartDeg = null;
+      this.observedCorrectedCurrentDeg = null;
+      this.observedCorrectedMinDeg = Infinity;
+      this.observedCorrectedMaxDeg = -Infinity;
+      this.observedCorrectedRegression = new LinearRegression();
       this.lastBiasYawRateDegPerSecond = null;
     }
 
@@ -317,9 +329,10 @@
       this.stationarySinceMs = null;
       this.stationarySegmentSum = { x: 0, y: 0, z: 0 };
       this.stationarySegmentSamples = 0;
+      this.stationarySegmentYawStartDeg = null;
     }
 
-    _updateBias(motion, atMs, frame) {
+    _updateBias(motion, atMs, frame, rawYawDeg) {
       this.eligibleSamples += 1;
       this.stationary = motion.stationary;
       if (!motion.stationary || !this.options.enabled) {
@@ -328,13 +341,30 @@
       }
 
       this.stationarySamples += 1;
-      if (this.stationarySinceMs === null) this.stationarySinceMs = atMs;
+      if (this.stationarySinceMs === null) {
+        this.stationarySinceMs = atMs;
+        this.stationarySegmentYawStartDeg = rawYawDeg;
+      }
       this.stationarySegmentSum.x += motion.gyro.x;
       this.stationarySegmentSum.y += motion.gyro.y;
       this.stationarySegmentSum.z += motion.gyro.z;
       this.stationarySegmentSamples += 1;
       const dwellMs = Math.max(0, atMs - this.stationarySinceMs);
       if (dwellMs < this.options.stationaryDwellMs) return;
+
+      const observedYawBiasRate = dwellMs > 0
+        && finite(rawYawDeg) !== null
+        && finite(this.stationarySegmentYawStartDeg) !== null
+        ? (rawYawDeg - this.stationarySegmentYawStartDeg) * 1000 / dwellMs
+        : null;
+
+      if (!this.observedYawReady && observedYawBiasRate !== null) {
+        this.observedYawBiasRateDegPerSecond = observedYawBiasRate;
+        this.observedYawReady = true;
+        this.observedYawUpdates = 1;
+        this.observedYawReadyAtMs = atMs;
+        this.observedYawCorrectionIntegralDeg += observedYawBiasRate * dwellMs / 1000;
+      }
 
       if (!this.biasReady) {
         this.bias = {
@@ -356,6 +386,10 @@
       this.bias.y += alpha * (motion.gyro.y - this.bias.y);
       this.bias.z += alpha * (motion.gyro.z - this.bias.z);
       this.biasUpdates += 1;
+      if (this.observedYawReady && observedYawBiasRate !== null) {
+        this.observedYawBiasRateDegPerSecond += alpha * (observedYawBiasRate - this.observedYawBiasRateDegPerSecond);
+        this.observedYawUpdates += 1;
+      }
     }
 
     addFrame(frame, hostTimestampMs) {
@@ -376,17 +410,25 @@
         const yawBiasRate = yawRateFromGyroBias(this.bias, this.previousEuler || frame.euler);
         if (yawBiasRate !== null) this.correctionIntegralDeg += yawBiasRate * elapsedStepMs / 1000;
       }
+      if (this.options.enabled && this.observedYawReady && elapsedStepMs > 0) {
+        this.observedYawCorrectionIntegralDeg += this.observedYawBiasRateDegPerSecond * elapsedStepMs / 1000;
+      }
+
+      const elapsedMs = Math.max(0, atMs - this.firstAtMs);
+      let rawYawDeg = null;
+      if (frame.euler && finite(frame.euler.yaw) !== null) {
+        this.rawYaw.push(radToDeg(frame.euler.yaw), elapsedMs);
+        rawYawDeg = this.rawYaw.current;
+      }
 
       const motion = this._motion(frame);
-      if (motion) this._updateBias(motion, atMs, frame);
+      if (motion) this._updateBias(motion, atMs, frame, rawYawDeg);
       else {
         this.stationary = false;
         this._clearStationarySegment();
       }
 
-      const elapsedMs = Math.max(0, atMs - this.firstAtMs);
-      if (frame.euler && finite(frame.euler.yaw) !== null) {
-        this.rawYaw.push(radToDeg(frame.euler.yaw), elapsedMs);
+      if (rawYawDeg !== null) {
         const corrected = this.rawYaw.current - this.correctionIntegralDeg;
         if (this.correctedStartDeg === null) this.correctedStartDeg = corrected;
         this.correctedCurrentDeg = corrected;
@@ -394,6 +436,14 @@
         this.correctedMinDeg = Math.min(this.correctedMinDeg, corrected);
         this.correctedMaxDeg = Math.max(this.correctedMaxDeg, corrected);
         this.correctedRegression.push(elapsedMs, corrected);
+
+        const observedCorrected = this.rawYaw.current - this.observedYawCorrectionIntegralDeg;
+        if (this.observedCorrectedStartDeg === null) this.observedCorrectedStartDeg = observedCorrected;
+        this.observedCorrectedCurrentDeg = observedCorrected;
+        this.observedCorrectedCount += 1;
+        this.observedCorrectedMinDeg = Math.min(this.observedCorrectedMinDeg, observedCorrected);
+        this.observedCorrectedMaxDeg = Math.max(this.observedCorrectedMaxDeg, observedCorrected);
+        this.observedCorrectedRegression.push(elapsedMs, observedCorrected);
       }
 
       this.lastBiasYawRateDegPerSecond = this.biasReady ? yawRateFromGyroBias(this.bias, frame.euler) : null;
@@ -404,6 +454,7 @@
 
     snapshot() {
       const correctedSlope = this.correctedRegression.slope();
+      const observedCorrectedSlope = this.observedCorrectedRegression.slope();
       const stationaryElapsedMs = this.stationary && this.stationarySinceMs !== null && this.lastAtMs !== null
         ? Math.max(0, this.lastAtMs - this.stationarySinceMs)
         : 0;
@@ -416,6 +467,11 @@
         biasUpdates: this.biasUpdates,
         biasYawRateDegPerSecond: this.lastBiasYawRateDegPerSecond,
         correctionDeg: this.correctionIntegralDeg,
+        observedYawReady: this.observedYawReady,
+        observedYawReadyAtMs: this.observedYawReadyAtMs,
+        observedYawUpdates: this.observedYawUpdates,
+        observedYawBiasRateDegPerSecond: this.observedYawBiasRateDegPerSecond,
+        observedYawCorrectionDeg: this.observedYawCorrectionIntegralDeg,
         stationary: this.stationary,
         stationaryElapsedMs,
         stationarySamples: this.stationarySamples,
@@ -434,6 +490,18 @@
           driftDegPerMin: correctedSlope === null ? null : correctedSlope * 60000,
           residualStdDeg: this.correctedRegression.residualStd(),
           rSquared: this.correctedRegression.rSquared(),
+        },
+        observedCorrectedYaw: {
+          count: this.observedCorrectedCount,
+          startDeg: this.observedCorrectedStartDeg,
+          endDeg: this.observedCorrectedCurrentDeg,
+          deltaDeg: this.observedCorrectedCount ? this.observedCorrectedCurrentDeg - this.observedCorrectedStartDeg : null,
+          minDeg: this.observedCorrectedCount ? this.observedCorrectedMinDeg : null,
+          maxDeg: this.observedCorrectedCount ? this.observedCorrectedMaxDeg : null,
+          rangeDeg: this.observedCorrectedCount ? this.observedCorrectedMaxDeg - this.observedCorrectedMinDeg : null,
+          driftDegPerMin: observedCorrectedSlope === null ? null : observedCorrectedSlope * 60000,
+          residualStdDeg: this.observedCorrectedRegression.residualStd(),
+          rSquared: this.observedCorrectedRegression.rSquared(),
         },
       };
     }

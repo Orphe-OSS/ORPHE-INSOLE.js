@@ -119,6 +119,29 @@ function near(actual, expected, tolerance, message) {
   near(snapshot.bias.z, 1.2, 1e-9, 'adaptive gyro z bias');
   near(snapshot.correctedYaw.deltaDeg, 0, 1e-8, 'constant bias corrected yaw delta');
   near(snapshot.correctedYaw.driftDegPerMin, 0, 0.02, 'constant bias corrected yaw drift');
+  near(snapshot.observedCorrectedYaw.deltaDeg, 0, 1e-8, 'observed yaw bias corrected yaw delta');
+}
+
+{
+  const tracker = new AdaptiveYawBiasTracker({
+    stationaryDwellMs: 500,
+    biasTimeConstantMs: 1000,
+  });
+  for (let elapsedMs = 0; elapsedMs <= 60000; elapsedMs += 100) {
+    const yawDeg = 1.0 * elapsedMs / 1000;
+    tracker.addFrame({
+      mode: 4,
+      timestamp: elapsedMs,
+      gyro: { x: 0, y: 0, z: 1.2 },
+      acc: { x: 0, y: 0, z: 1 },
+      euler: { pitch: 0, roll: 0, yaw: yawDeg * Math.PI / 180 },
+    }, elapsedMs);
+  }
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.observedYawReady, true);
+  near(snapshot.observedYawBiasRateDegPerSecond, 1, 1e-9, 'observed yaw drift rate');
+  near(snapshot.correctedYaw.driftDegPerMin, -12, 0.02, 'gyro projection exposes scale mismatch');
+  near(snapshot.observedCorrectedYaw.driftDegPerMin, 0, 0.02, 'observed yaw correction handles scale mismatch');
 }
 
 {
@@ -141,6 +164,8 @@ function near(actual, expected, tolerance, message) {
   assert.equal(snapshot.state, 'holding');
   near(snapshot.bias.z, -2, 1e-9, 'movement holds learned bias');
   near(snapshot.correctedYaw.deltaDeg, -180, 1e-8, 'learned bias removed during rotation');
+  near(snapshot.observedYawBiasRateDegPerSecond, -2, 1e-9, 'movement holds observed yaw bias');
+  near(snapshot.observedCorrectedYaw.deltaDeg, -180, 1e-8, 'observed yaw bias removed during rotation');
 }
 
 {

@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Stop treating the SDK's instantaneous `gotBLEFrequency` value as an average receive-rate metric in the validation report.
 - Preserve interrupted long-running tests as partial measurements with completion, connection-coverage, and observed-rate fields; derive normalized ZYX Euler values without an ambient Quaternion global; apply device-configured sensor ranges on both validation receive paths; compare host/device-clock gyro residuals, yaw-to-gyro scale ratios, and first-window fixed-calibration stability across five-minute windows; and keep packet loss separate from the static drift diagnosis.
 - Show device-clock gyro integration and its target-angle error alongside quaternion yaw in rotation and closed-loop walking results.
+- Compare two validation-only adaptive yaw corrections: projecting stationary gyro bias into Euler yaw and directly learning stationary quaternion-yaw drift, with both outputs included in live metrics, CSV, rotation, walking, and reports.
 
 ### Fixed
 
