@@ -1,14 +1,15 @@
 var orphe_js_version_date = `
-Last modified: 2026/06/10 00:00:00
+Last modified: 2026/07/15 00:00:00
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
 Class形式で記述を変更したバージョン
+v1.2.1 クォータニオンのQ14スケール修正、Euler変換前の正規化
 v1.1.0 接続安定化（デバイス記憶・高速再接続・自動再接続）、クラス名を OrpheInsole に変更（Orphe はエイリアスとして維持）
 v0.9.0 ベータ版
 @module OrpheInsole
 @author Tetsuaki BABA
-@version 1.1.0
+@version 1.2.1
 
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
@@ -120,6 +121,19 @@ function _orpheInsoleTimestampToday(hours, minutes, seconds, milliseconds) {
   return now.getTime();
 }
 
+function _orpheInsoleNormalizeQuaternion(quat) {
+  const norm = Math.hypot(quat.w, quat.x, quat.y, quat.z);
+  if (!Number.isFinite(norm) || norm <= Number.EPSILON) {
+    return { w: 0, x: 0, y: 0, z: 0 };
+  }
+  return {
+    w: quat.w / norm,
+    x: quat.x / norm,
+    y: quat.y / norm,
+    z: quat.z / norm
+  };
+}
+
 /**
  * code プロパティ付き Error を生成する（エラー種別のプログラム判定用）。
  * message は従来の文字列エラーと同一文字列を維持する（後方互換）。
@@ -158,6 +172,9 @@ function parseInsoleSensorValues(data, options = {}) {
     data.getUint16(6)
   );
   const samples = [];
+  // Observed INSOLE packets encode quaternion components as signed Q14
+  // (1.0 = 16384). acc/gyro below remain signed Q15 (1.0 = 32768).
+  const quatScale = 16384;
 
   function vector3(x, y, z, timestamp, packet_number) {
     return {
@@ -172,10 +189,10 @@ function parseInsoleSensorValues(data, options = {}) {
 
   function quat(w, x, y, z, timestamp, packet_number) {
     return {
-      w: data.getInt16(w) / 32768,
-      x: data.getInt16(x) / 32768,
-      y: data.getInt16(y) / 32768,
-      z: data.getInt16(z) / 32768,
+      w: data.getInt16(w) / quatScale,
+      x: data.getInt16(x) / quatScale,
+      y: data.getInt16(y) / quatScale,
+      z: data.getInt16(z) / quatScale,
       timestamp,
       serial_number,
       packet_number
@@ -1471,7 +1488,10 @@ class OrpheInsole {
         }
 
         if (sample.quat && typeof Quaternion !== 'undefined') {
-          let q = new Quaternion(this.quat.w, this.quat.x, this.quat.y, this.quat.z);
+          // Normalize defensively before Euler conversion so scale drift or
+          // quantization error cannot compress the reported angles.
+          const normalizedQuat = _orpheInsoleNormalizeQuaternion(this.quat);
+          let q = new Quaternion(normalizedQuat.w, normalizedQuat.x, normalizedQuat.y, normalizedQuat.z);
           this.euler = q.toEuler();
         }
 

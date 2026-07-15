@@ -6,10 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-15
+
 ### Added
 
 - Landing page: card-style example gallery with screenshots for all 8 examples + API docs, deep-dive doc links, and explicit browser-support notes. SEO: canonical/hreflang/OG image/Twitter cards/JSON-LD plus robots.txt and sitemap.xml.
-- Pin CDN snippets in README / landing page to `@v1.2.0` and add `tests/insole-version-sync.test.js` so version bumps without updating the pinned references fail CI (release steps documented in CLAUDE.md).
+- Pin CDN snippets in README / landing page to a release tag and add `tests/insole-version-sync.test.js` so version bumps without updating the pinned references fail CI (release steps documented in CLAUDE.md).
+
+### Fixed
+
+- Decode quaternion components in SENSOR_VALUES headers 50 and 56 as signed Q14 (`1.0 = 16384`) instead of Q15. Older decoding produced quaternion norms near 0.5 and compressed Euler yaw to roughly ±20°.
+- Normalize every quaternion immediately before Euler conversion so quantization or a future transport-scale change cannot compress the reported Euler angles.
+
+### Documentation
+
+- Document recovery of CSV files recorded with v1.2.0 or earlier: normalize each quaternion row (equivalent to multiplying all four components by 2 when the norm is 0.5), then recalculate Euler columns.
 
 ## [1.2.0] - 2026-07-13
 
