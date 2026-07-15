@@ -522,14 +522,22 @@
       const evaluations = snapshots.map(snapshot => {
         const observed = Math.abs(snapshot.yaw.deltaDeg || 0);
         const errorDeg = observed - target;
+        const signedGyroObservedDeg = snapshot.gyroZDeviceTimeIntegralDeg;
+        const gyroObservedDeg = Math.abs(signedGyroObservedDeg || 0);
+        const gyroErrorDeg = gyroObservedDeg - target;
         const tolerance = Math.max(5, target * 0.1);
+        const sensorsPresent = snapshot.presence.euler > 0 && snapshot.presence.gyro > 0;
         return {
           snapshot,
           observedDeg: observed,
           signedObservedDeg: snapshot.yaw.deltaDeg,
           errorDeg,
           errorPercent: target ? Math.abs(errorDeg) * 100 / target : null,
-          status: snapshot.presence.euler === 0 ? 'fail' : (Math.abs(errorDeg) <= tolerance ? 'pass' : 'warn'),
+          gyroObservedDeg,
+          signedGyroObservedDeg,
+          gyroErrorDeg,
+          gyroErrorPercent: target ? Math.abs(gyroErrorDeg) * 100 / target : null,
+          status: !sensorsPresent ? 'fail' : (Math.abs(errorDeg) <= tolerance && Math.abs(gyroErrorDeg) <= tolerance ? 'pass' : 'warn'),
         };
       });
       return { status: worstStatus(evaluations.map(item => item.status)), evaluations };
@@ -541,7 +549,7 @@
         snapshot,
         expectedDeg: expected,
         quatErrorDeg: Math.abs(snapshot.yaw.deltaDeg || 0) - expected,
-        gyroErrorDeg: Math.abs(snapshot.gyroZIntegralDeg || 0) - expected,
+        gyroErrorDeg: Math.abs(snapshot.gyroZDeviceTimeIntegralDeg || 0) - expected,
         status: 'info',
       }));
       return { status: 'info', evaluations };
@@ -563,10 +571,10 @@
       const snapshot = item.snapshot;
       const prefix = `D${snapshot.deviceId}(${snapshot.side})`;
       if (result.type === 'rotation') {
-        return `${prefix}: yaw ${format(item.signedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.errorDeg), 1)}°`;
+        return `${prefix}: yaw ${format(item.signedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.errorDeg), 1)}° / gyro(device time) ${format(item.signedGyroObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.gyroErrorDeg), 1)}°`;
       }
       if (result.type === 'walk') {
-        return `${prefix}: quat ${format(snapshot.yaw.deltaDeg, 1)}° / gyro ${format(snapshot.gyroZIntegralDeg, 1)}° / 実角 ${format(item.expectedDeg, 0)}°`;
+        return `${prefix}: quat ${format(snapshot.yaw.deltaDeg, 1)}° / gyro(device time) ${format(snapshot.gyroZDeviceTimeIntegralDeg, 1)}° / 実角 ${format(item.expectedDeg, 0)}°`;
       }
       if (result.type === 'mode3') {
         return `${prefix}: sample ${format(snapshot.sampleRateHz, 1)}Hz (${item.sampleRateStatus.toUpperCase()}) / press ${snapshot.presence.press} / quat ${snapshot.presence.quat} / loss ${format(snapshot.packetLossPercent, 2)}%`;

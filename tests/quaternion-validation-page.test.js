@@ -33,6 +33,8 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.doesNotMatch(app, /BLE rate=/);
   assert.match(app, /gyro_referenced_yaw_deg/);
   assert.match(app, /gyro_referenced_yaw_device_time_deg/);
+  assert.match(app, /const signedGyroObservedDeg = snapshot\.gyroZDeviceTimeIntegralDeg/);
+  assert.match(app, /gyro\(device time\)/);
   assert.match(app, /connection coverage=/);
   assert.match(app, /5-minute drift windows/);
   assert.match(app, /first-window fixed calibration validation/);
