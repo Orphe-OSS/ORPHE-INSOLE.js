@@ -101,6 +101,18 @@ main { max-width: 1320px; margin: 0 auto; padding: 0 28px 40px; }
 .hint { margin-bottom: 18px; }
 .footnote { margin: 14px 0 0; font-size: 0.82rem; }
 
+.receive-path {
+  display: grid;
+  grid-template-columns: auto minmax(230px, 360px) 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.receive-path select { min-height: 38px; }
+.receive-path span { line-height: 1.4; }
+
 .connect-grid, .test-grid {
   display: grid;
   gap: 14px;
@@ -132,6 +144,20 @@ main { max-width: 1320px; margin: 0 auto; padding: 0 28px 40px; }
 .test-card label { display: grid; gap: 6px; margin: 12px 0; color: var(--muted); font-size: 0.82rem; }
 .test-card .check { display: flex; grid-template-columns: auto 1fr; align-items: center; }
 .test-card .button { margin-top: 6px; }
+
+.protocol {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.14);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.protocol summary { color: var(--text); cursor: pointer; font-weight: 800; }
+.protocol ol { margin: 10px 0 0; padding-left: 1.4rem; }
+.protocol li + li { margin-top: 5px; }
+.test-card .protocol p { min-height: 0; margin: 10px 0 0; font-size: 0.8rem; }
 
 input, select {
   width: 100%;
@@ -210,6 +236,7 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 28px 45px; color: var(--m
   .connect-grid, .test-grid { grid-template-columns: 1fr; }
   .section-heading { align-items: flex-start; flex-direction: column; }
   .device-connect { align-items: flex-start; }
+  .receive-path { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {

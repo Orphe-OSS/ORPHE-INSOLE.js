@@ -302,6 +302,59 @@
     }
   }
 
+  class GapCoincidenceTracker {
+    constructor(deviceIds, toleranceMs = 25) {
+      this.deviceIds = deviceIds.map(Number);
+      this.toleranceMs = Math.max(0, Number(toleranceMs) || 0);
+      this.queues = new Map(this.deviceIds.map(deviceId => [deviceId, []]));
+      this.total = new Map(this.deviceIds.map(deviceId => [deviceId, 0]));
+      this.matched = new Map(this.deviceIds.map(deviceId => [deviceId, 0]));
+      this.matchedPairs = 0;
+    }
+
+    add(deviceId, atMs) {
+      const id = Number(deviceId);
+      const at = finite(atMs);
+      if (at === null || !this.queues.has(id)) return false;
+      for (const [key, queue] of this.queues.entries()) {
+        this.queues.set(key, queue.filter(event => at - event.at <= this.toleranceMs));
+      }
+
+      this.total.set(id, this.total.get(id) + 1);
+      const event = { at, matched: false };
+      for (const otherId of this.deviceIds) {
+        if (otherId === id) continue;
+        const candidate = this.queues.get(otherId).find(item => !item.matched && Math.abs(item.at - at) <= this.toleranceMs);
+        if (!candidate) continue;
+        candidate.matched = true;
+        event.matched = true;
+        this.matched.set(id, this.matched.get(id) + 1);
+        this.matched.set(otherId, this.matched.get(otherId) + 1);
+        this.matchedPairs += 1;
+        break;
+      }
+      this.queues.get(id).push(event);
+      return event.matched;
+    }
+
+    snapshot() {
+      return {
+        toleranceMs: this.toleranceMs,
+        matchedPairs: this.matchedPairs,
+        devices: this.deviceIds.map(deviceId => {
+          const totalEvents = this.total.get(deviceId);
+          const matchedEvents = this.matched.get(deviceId);
+          return {
+            deviceId,
+            totalEvents,
+            matchedEvents,
+            matchedPercent: totalEvents ? matchedEvents * 100 / totalEvents : 0
+          };
+        })
+      };
+    }
+  }
+
   function evaluateCommunication(snapshot) {
     if (!snapshot || snapshot.receivedPackets < 2) {
       return { status: 'fail', message: '受信パケット不足' };
@@ -324,42 +377,90 @@
     };
   }
 
-  function compareCommunicationRuns(first, second) {
-    if (!first || !second) {
-      return { kind: 'awaiting', status: 'info', message: '通信診断を1回実行後、接続枠を左右逆にしてもう1回実行してください。' };
-    }
-    const firstDevices = first.devices || [];
-    const secondDevices = second.devices || [];
-    if (firstDevices.length < 2 || secondDevices.length < 2) {
-      return { kind: 'insufficient', status: 'warn', message: '左右2台の結果が必要です。' };
+  function evaluateStreamingMode(snapshot) {
+    if (!snapshot) return { status: 'fail', message: '測定結果なし' };
+    const hasSensors = snapshot.presence.press > 0 && snapshot.presence.acc > 0 && snapshot.presence.gyro > 0;
+    const quatStopped = snapshot.presence.quat === 0 && snapshot.presence.euler === 0;
+    const expected = snapshot.expectedSampleRateHz || expectedSampleRate(snapshot.mode);
+    let sampleRateStatus = 'pass';
+    if (snapshot.sampleRateHz < expected * 0.8) sampleRateStatus = 'fail';
+    else if (snapshot.sampleRateHz < expected * 0.9) sampleRateStatus = 'warn';
+
+    const communication = evaluateCommunication(snapshot);
+    const statusOrder = { pass: 0, warn: 1, fail: 2 };
+    const statuses = [
+      hasSensors ? 'pass' : 'fail',
+      quatStopped ? 'pass' : 'fail',
+      sampleRateStatus,
+      communication.status
+    ];
+    const status = statuses.reduce((worst, current) => (
+      statusOrder[current] > statusOrder[worst] ? current : worst
+    ), 'pass');
+    return {
+      status,
+      hasSensors,
+      quatStopped,
+      sampleRateStatus,
+      communication,
+      message: `sample ${snapshot.sampleRateHz.toFixed(1)}Hz / loss ${snapshot.packetLossPercent.toFixed(2)}%`
+    };
+  }
+
+  function compareCommunicationRuns(firstOrRuns, second) {
+    const input = Array.isArray(firstOrRuns) ? firstOrRuns : [firstOrRuns, second];
+    const runs = input.filter(run => run && Array.isArray(run.devices) && run.devices.length >= 2);
+    if (runs.length < 2) {
+      return { kind: 'awaiting', status: 'info', message: '単体ベースラインの後、案内どおり接続条件を変えた2台同時測定を3回行ってください。' };
     }
 
-    const firstBySlot = new Map(firstDevices.map(item => [item.deviceId, item]));
-    const secondBySlot = new Map(secondDevices.map(item => [item.deviceId, item]));
-    const slots = Array.from(firstBySlot.keys()).filter(slot => secondBySlot.has(slot));
-    const reversed = slots.length === 2 && slots.every(slot => firstBySlot.get(slot).side !== secondBySlot.get(slot).side);
-    if (!reversed) {
-      return { kind: 'awaiting-swap', status: 'info', message: '比較待ち: いったん切断し、L/RをDEVICE 0/1の逆の枠へ接続して再実行してください。' };
+    const signatures = new Set(runs.map(run => run.devices
+      .map(item => `${item.deviceId}:${item.side}:${item.connectionRank ?? '-'}`)
+      .sort()
+      .join('|')));
+    if (signatures.size < 2) {
+      return { kind: 'awaiting-change', status: 'info', message: '比較待ち: 接続枠・実物・接続順が前回と同じです。次の手順へ進んでください。' };
     }
 
     const highest = devices => devices.reduce((worst, item) => (
       !worst || item.packetLossPercent > worst.packetLossPercent ? item : worst
     ), null);
-    const firstWorst = highest(firstDevices);
-    const secondWorst = highest(secondDevices);
-    const firstHigh = firstWorst.packetLossPercent > 5;
-    const secondHigh = secondWorst.packetLossPercent > 5;
+    const worst = runs.map(run => highest(run.devices));
 
-    if (firstDevices.every(item => item.packetLossPercent <= 1) && secondDevices.every(item => item.packetLossPercent <= 1)) {
-      return { kind: 'not-reproduced', status: 'pass', message: '両テストとも欠損率1%以下で、高欠損は再現しませんでした。' };
+    if (runs.every(run => run.devices.every(item => item.packetLossPercent <= 1))) {
+      return { kind: 'not-reproduced', status: 'pass', message: '全テストで欠損率1%以下となり、高欠損は再現しませんでした。' };
     }
-    if (firstHigh && secondHigh && firstWorst.side === secondWorst.side) {
-      return { kind: 'follows-physical-side', status: 'warn', message: `高欠損が実物の${firstWorst.side}側に追従しました。デバイス固有・電波条件を優先して調査してください。` };
+    if (worst.some(item => item.packetLossPercent <= 5)) {
+      return { kind: 'intermittent', status: 'warn', message: '高欠損の有無が測定ごとに変わりました。距離・干渉・端末負荷を固定して再試行してください。' };
     }
-    if (firstHigh && secondHigh && firstWorst.deviceId === secondWorst.deviceId) {
-      return { kind: 'follows-slot', status: 'warn', message: `高欠損がDEVICE ${firstWorst.deviceId}枠に追従しました。接続順・ブラウザ受信処理を優先して調査してください。` };
+
+    const common = [];
+    if (worst.every(item => item.side === worst[0].side)) common.push('physical');
+    if (worst.every(item => item.deviceId === worst[0].deviceId)) common.push('slot');
+    const connectionRankKnown = worst.every(item => Number.isInteger(item.connectionRank));
+    if (connectionRankKnown && worst.every(item => item.connectionRank === worst[0].connectionRank)) common.push('order');
+
+    if (common.length > 1) {
+      const labels = common.map(kind => ({ physical: '実物側', slot: 'DEVICE枠', order: '接続順' })[kind]);
+      return {
+        kind: 'confounded',
+        status: 'warn',
+        message: `高欠損は${labels.join('と')}の両方に一致しており、まだ分離できません。3回手順を最後まで実行してください。`
+      };
     }
-    return { kind: 'intermittent', status: 'warn', message: '欠損傾向が2回で一貫しません。距離・干渉・端末負荷を固定して再試行してください。' };
+    if (common[0] === 'physical') {
+      return { kind: 'follows-physical-side', status: 'warn', message: `高欠損が実物の${worst[0].side}側だけに追従しました。デバイス固有・電波条件を優先して調査してください。` };
+    }
+    if (common[0] === 'slot') {
+      if (!connectionRankKnown) {
+        return { kind: 'slot-or-order-unknown', status: 'warn', message: `高欠損はDEVICE ${worst[0].deviceId}枠と一致しましたが、接続順が未記録のため分離できません。新しい3回手順で再測定してください。` };
+      }
+      return { kind: 'follows-slot', status: 'warn', message: `高欠損がDEVICE ${worst[0].deviceId}枠だけに追従しました。ページの枠別受信処理を優先して調査してください。` };
+    }
+    if (common[0] === 'order') {
+      return { kind: 'follows-connection-order', status: 'warn', message: `高欠損が${worst[0].connectionRank}番目の接続だけに追従しました。ブラウザ・OSの複数BLE接続処理を優先して調査してください。` };
+    }
+    return { kind: 'intermittent', status: 'warn', message: '高欠損が実物側・DEVICE枠・接続順のいずれにも一貫して追従しません。干渉・端末負荷を固定して再試行してください。' };
   }
 
   function evaluateQuaternion(snapshot) {
@@ -380,11 +481,13 @@
   return {
     AngleTracker,
     DeviceAccumulator,
+    GapCoincidenceTracker,
     LinearRegression,
     RunningStats,
     compareCommunicationRuns,
     evaluateCommunication,
     evaluateQuaternion,
+    evaluateStreamingMode,
     expectedPacketRate,
     expectedSampleRate,
     quatNorm,

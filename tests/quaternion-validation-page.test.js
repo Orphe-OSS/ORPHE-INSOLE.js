@@ -22,6 +22,10 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.match(html, /src="\.\.\/\.\.\/src\/InsoleSimulator\.js"/);
   assert.match(html, /src="\.\/metrics\.js"/);
   assert.match(html, /src="\.\/app\.js"/);
+  assert.match(html, /id="receivePath"/);
+  assert.match(html, /value="raw" selected/);
+  assert.match(app, /OrpheInsole\.parseSensorValues\(data\)/);
+  assert.doesNotMatch(app, /BLE rate=/);
 }
 
 function wait(ms) {

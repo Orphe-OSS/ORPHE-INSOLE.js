@@ -2,10 +2,12 @@ const assert = require('node:assert/strict');
 const {
   AngleTracker,
   DeviceAccumulator,
+  GapCoincidenceTracker,
   RunningStats,
   compareCommunicationRuns,
   evaluateCommunication,
   evaluateQuaternion,
+  evaluateStreamingMode,
   quatNorm,
   serialGap,
   wrappedDeltaDegrees,
@@ -13,6 +15,19 @@ const {
 
 function near(actual, expected, tolerance, message) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${expected}, got ${actual}`);
+}
+
+{
+  const tracker = new GapCoincidenceTracker([0, 1], 25);
+  tracker.add(0, 100);
+  tracker.add(1, 120);
+  tracker.add(0, 200);
+  tracker.add(1, 240);
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.matchedPairs, 1);
+  assert.equal(snapshot.devices[0].matchedEvents, 1);
+  assert.equal(snapshot.devices[1].matchedEvents, 1);
+  near(snapshot.devices[0].matchedPercent, 50, 1e-12, 'gap coincidence device 0');
 }
 
 {
@@ -97,27 +112,65 @@ function near(actual, expected, tolerance, message) {
 }
 
 {
-  const first = {
+  const runA = {
     devices: [
-      { deviceId: 0, side: 'L', packetLossPercent: 0.1 },
-      { deviceId: 1, side: 'R', packetLossPercent: 12 },
+      { deviceId: 0, side: 'L', connectionRank: 1, packetLossPercent: 12 },
+      { deviceId: 1, side: 'R', connectionRank: 2, packetLossPercent: 2 },
     ],
   };
-  const physicalFollow = {
+  const runBSlotOrOrder = {
     devices: [
-      { deviceId: 0, side: 'R', packetLossPercent: 11 },
-      { deviceId: 1, side: 'L', packetLossPercent: 0.2 },
+      { deviceId: 0, side: 'R', connectionRank: 1, packetLossPercent: 13 },
+      { deviceId: 1, side: 'L', connectionRank: 2, packetLossPercent: 3 },
     ],
   };
-  const slotFollow = {
+  const runCSlot = {
     devices: [
-      { deviceId: 0, side: 'R', packetLossPercent: 0.2 },
-      { deviceId: 1, side: 'L', packetLossPercent: 11 },
+      { deviceId: 0, side: 'R', connectionRank: 2, packetLossPercent: 14 },
+      { deviceId: 1, side: 'L', connectionRank: 1, packetLossPercent: 4 },
     ],
   };
-  assert.equal(compareCommunicationRuns(first, physicalFollow).kind, 'follows-physical-side');
-  assert.equal(compareCommunicationRuns(first, slotFollow).kind, 'follows-slot');
-  assert.equal(compareCommunicationRuns(first, first).kind, 'awaiting-swap');
+  const runBPhysical = {
+    devices: [
+      { deviceId: 0, side: 'R', connectionRank: 1, packetLossPercent: 3 },
+      { deviceId: 1, side: 'L', connectionRank: 2, packetLossPercent: 13 },
+    ],
+  };
+  const runCPhysical = {
+    devices: [
+      { deviceId: 0, side: 'R', connectionRank: 2, packetLossPercent: 3 },
+      { deviceId: 1, side: 'L', connectionRank: 1, packetLossPercent: 14 },
+    ],
+  };
+  const runCOrder = {
+    devices: [
+      { deviceId: 0, side: 'R', connectionRank: 2, packetLossPercent: 3 },
+      { deviceId: 1, side: 'L', connectionRank: 1, packetLossPercent: 14 },
+    ],
+  };
+  assert.equal(compareCommunicationRuns([runA, runBSlotOrOrder]).kind, 'confounded');
+  assert.equal(compareCommunicationRuns([runA, runBSlotOrOrder, runCSlot]).kind, 'follows-slot');
+  assert.equal(compareCommunicationRuns([runA, runBPhysical, runCPhysical]).kind, 'follows-physical-side');
+  assert.equal(compareCommunicationRuns([runA, runBSlotOrOrder, runCOrder]).kind, 'follows-connection-order');
+  assert.equal(compareCommunicationRuns([runA, runA]).kind, 'awaiting-change');
+}
+
+{
+  const healthy = {
+    mode: 3,
+    sampleRateHz: 190,
+    expectedSampleRateHz: 200,
+    packetRateHz: 49,
+    expectedPacketRateHz: 50,
+    packetLossPercent: 0.5,
+    receivedPackets: 100,
+    maxGap: 1,
+    presence: { press: 380, acc: 380, gyro: 380, quat: 0, euler: 0 },
+  };
+  assert.equal(evaluateStreamingMode(healthy).status, 'pass');
+  assert.equal(evaluateStreamingMode({ ...healthy, sampleRateHz: 175 }).status, 'warn');
+  assert.equal(evaluateStreamingMode({ ...healthy, sampleRateHz: 153.8, packetRateHz: 38.9, packetLossPercent: 23.58 }).status, 'fail');
+  assert.equal(evaluateStreamingMode({ ...healthy, sampleRateHz: 191.2, packetLossPercent: 5.03 }).status, 'fail');
 }
 
 {
