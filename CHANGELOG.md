@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Landing page: card-style example gallery with screenshots for all 8 examples + API docs, deep-dive doc links, and explicit browser-support notes. SEO: canonical/hreflang/OG image/Twitter cards/JSON-LD plus robots.txt and sitemap.xml.
 - Pin CDN snippets in README / landing page to a release tag and add `tests/insole-version-sync.test.js` so version bumps without updating the pinned references fail CI (release steps documented in CLAUDE.md).
+- Add `examples/quaternion-validation/` for guided two-device hardware validation with constant-memory norm/yaw/loss statistics, streamed raw CSV logging, rotation/walk/mode-3 workflows, and JSON/Markdown reports.
 
 ### Fixed
 
