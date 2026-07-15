@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Expand the hardware validation page with packet-rate and serial-gap diagnostics, connection-slot/order comparison, yaw residuals, gyro bias statistics, and fixed-period versus host-time gyro integration.
 - Add a low-overhead raw-packet receive path, single-device communication baselines, explicit connection-order tracking, synchronized-gap statistics, a three-run comparison protocol, stricter mode-3 rate/loss checks, and a guided closed-loop walking procedure.
 - Stop treating the SDK's instantaneous `gotBLEFrequency` value as an average receive-rate metric in the validation report.
+- Preserve interrupted long-running tests as partial measurements with completion, connection-coverage, and observed-rate fields; derive normalized ZYX Euler values without an ambient Quaternion global; apply device-configured sensor ranges on both validation receive paths; compare host/device-clock gyro residuals, yaw-to-gyro scale ratios, and first-window fixed-calibration stability across five-minute windows; and keep packet loss separate from the static drift diagnosis.
 
 ### Fixed
 

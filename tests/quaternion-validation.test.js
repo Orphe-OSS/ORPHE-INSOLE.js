@@ -5,16 +5,49 @@ const {
   GapCoincidenceTracker,
   RunningStats,
   compareCommunicationRuns,
+  connectionCoverage,
   evaluateCommunication,
   evaluateQuaternion,
+  evaluateStatic,
   evaluateStreamingMode,
+  evaluateYawDrift,
   quatNorm,
+  quaternionToEuler,
   serialGap,
   wrappedDeltaDegrees,
 } = require('../examples/quaternion-validation/metrics.js');
 
 function near(actual, expected, tolerance, message) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${expected}, got ${actual}`);
+}
+
+{
+  const euler = quaternionToEuler({
+    w: 0.7501220703125,
+    x: 0.039794921875,
+    y: 0.0106201171875,
+    z: -0.659912109375,
+  });
+  near(euler.pitch, 0.06851801278422916, 2e-5, 'known quaternion pitch');
+  near(euler.roll, 0.045815136890290264, 2e-5, 'known quaternion roll');
+  near(euler.yaw, -1.441445715336655, 2e-4, 'known quaternion yaw');
+  assert.equal(quaternionToEuler({ w: 0, x: 0, y: 0, z: 0 }), null);
+}
+
+{
+  const uninterrupted = connectionCoverage([], 0, 1000);
+  near(uninterrupted.connectionCoveragePercent, 100, 1e-12, 'uninterrupted coverage');
+  const partial = connectionCoverage([
+    { type: 'disconnect', deviceId: 0, elapsedMs: 200 },
+    { type: 'reconnect', deviceId: 0, elapsedMs: 500 },
+    { type: 'disconnect', deviceId: 0, elapsedMs: 900 },
+    { type: 'disconnect', deviceId: 1, elapsedMs: 100 },
+  ], 0, 1000);
+  near(partial.connectedDurationMs, 600, 1e-12, 'partial connected duration');
+  near(partial.connectionCoveragePercent, 60, 1e-12, 'partial connection coverage');
+  assert.equal(partial.disconnects, 2);
+  assert.equal(partial.reconnects, 1);
+  assert.equal(partial.connectedAtEnd, false);
 }
 
 {
@@ -96,7 +129,12 @@ function near(actual, expected, tolerance, message) {
   near(snapshot.gyroZHostTimeIntegralDeg, 0.2, 1e-12, 'host-time gyro integration');
   near(snapshot.gyroZ.mean, 10, 1e-12, 'gyro z mean');
   near(snapshot.gyroZBiasDegPerMin, 600, 1e-12, 'gyro bias equivalent');
+  assert.equal(snapshot.gyroReferencedYaw.count, 3);
+  near(snapshot.observedDurationMs, 20, 1e-12, 'observed duration');
+  near(snapshot.completionPercent, 200 / 3, 1e-9, 'measurement completion');
+  near(snapshot.coveragePercent, 200 / 3, 1e-9, 'measurement coverage');
   assert.equal(evaluateQuaternion(snapshot).status, 'warn');
+  assert.equal(evaluateQuaternion(snapshot, { ignoreCommunication: true }).status, 'pass');
   assert.equal(evaluateCommunication(snapshot).status, 'fail');
 }
 
@@ -109,6 +147,60 @@ function near(actual, expected, tolerance, message) {
   assert.equal(snapshot.gapEvents, 1);
   assert.equal(snapshot.maxGap, 2);
   assert.equal(snapshot.gapHistogram.twoToThree, 1);
+}
+
+{
+  const accumulator = new DeviceAccumulator(0, 0, 4);
+  const frame = { mode: 4, euler: { yaw: 0 }, gyro: { z: 1 } };
+  accumulator.addFrame({ ...frame, timestamp: 1000 }, 0);
+  accumulator.addFrame({ ...frame, timestamp: 999 }, 10);
+  const snapshot = accumulator.snapshot(20);
+  assert.equal(snapshot.deviceClockResets, 1);
+  assert.equal(snapshot.yawDeviceClock.count, 1);
+  near(snapshot.gyroZDeviceTimeIntegralDeg, 0, 1e-12, 'backward device clock excluded from integration');
+}
+
+{
+  const accumulator = new DeviceAccumulator(0, 0, 4);
+  for (let second = 0; second <= 600; second += 1) {
+    const yawDeg = -0.2 * second;
+    accumulator.addFrame({
+      serial: second,
+      mode: 4,
+      timestamp: second * 1000,
+      euler: { yaw: yawDeg * Math.PI / 180 },
+      gyro: { z: -0.2 },
+    }, second * 1000);
+  }
+  const snapshot = accumulator.snapshot(601000);
+  assert.equal(snapshot.driftWindows5Min.length, 3);
+  near(snapshot.hostToDeviceDurationRatio, 1, 1e-12, 'host/device clock duration ratio');
+  near(snapshot.yawDeviceClock.driftDegPerMin, -12, 1e-9, 'device-clock yaw drift');
+  near(snapshot.gyroReferencedYawDeviceClock.driftDegPerMin, 0, 1e-9, 'device-clock gyro-referenced drift');
+  near(snapshot.driftWindows5Min[0].yawDriftDegPerMin, -12, 1e-9, 'first window yaw drift');
+  near(snapshot.driftWindows5Min[1].gyroZBiasDegPerMin, -12, 1e-9, 'second window gyro bias');
+  near(snapshot.driftWindows5Min[1].gyroReferencedYawDriftDegPerMin, 0, 1e-9, 'window gyro-referenced drift');
+  const evaluation = evaluateYawDrift(snapshot);
+  assert.equal(evaluation.windowCount, 2);
+  assert.equal(evaluation.windowStable, true);
+  near(evaluation.fixedCalibration.postYawCalibrationResidual.maxAbsDegPerMin, 0, 1e-9, 'stable fixed yaw calibration');
+  near(evaluation.fixedCalibration.postGyroCalibrationResidual.maxAbsDegPerMin, 0, 1e-9, 'stable fixed gyro calibration');
+}
+
+{
+  const accumulator = new DeviceAccumulator(0, 0, 4);
+  for (let window = 0; window <= 288; window += 1) {
+    const elapsedMs = window * 5 * 60 * 1000;
+    accumulator.addFrame({
+      mode: 4,
+      timestamp: elapsedMs,
+      euler: { yaw: 0 },
+      gyro: { z: 0 },
+    }, elapsedMs);
+  }
+  const snapshot = accumulator.snapshot(288 * 5 * 60 * 1000);
+  assert.equal(snapshot.driftWindows5Min.length, 288);
+  assert.equal(snapshot.driftWindowsTruncated, true);
 }
 
 {
@@ -153,6 +245,58 @@ function near(actual, expected, tolerance, message) {
   assert.equal(compareCommunicationRuns([runA, runBPhysical, runCPhysical]).kind, 'follows-physical-side');
   assert.equal(compareCommunicationRuns([runA, runBSlotOrOrder, runCOrder]).kind, 'follows-connection-order');
   assert.equal(compareCommunicationRuns([runA, runA]).kind, 'awaiting-change');
+}
+
+{
+  const stableBias = {
+    durationMs: 180000,
+    observedDurationMs: 179000,
+    yaw: { driftDegPerMin: -54, residualStdDeg: 1, rSquared: 0.9998 },
+    gyroZBiasDegPerMin: -50,
+  };
+  const stable = evaluateYawDrift(stableBias);
+  assert.equal(stable.kind, 'gyro-bias-dominant');
+  near(stable.yawToGyroScaleRatio, 1.08, 1e-12, 'yaw to gyro scale ratio');
+  near(stable.differenceDegPerMin, -4, 1e-12, 'yaw minus gyro drift');
+  const integrated = evaluateYawDrift({ ...stableBias, gyroReferencedYaw: { driftDegPerMin: -3 } });
+  near(integrated.differenceDegPerMin, -3, 1e-12, 'integrated gyro referenced drift');
+  assert.equal(integrated.differenceSource, 'host-time-integrated-gyro');
+  assert.equal(evaluateYawDrift({ ...stableBias, yaw: { ...stableBias.yaw, residualStdDeg: 20, rSquared: 0.98 } }).kind, 'gyro-bias-time-varying');
+  const windowVarying = evaluateYawDrift({
+    ...stableBias,
+    driftWindows5Min: [
+      { durationMs: 299000, yawDriftDegPerMin: -50, gyroZBiasDegPerMin: -46, gyroReferencedYawDriftDegPerMin: -4 },
+      { durationMs: 299000, yawDriftDegPerMin: -70, gyroZBiasDegPerMin: -55, gyroReferencedYawDriftDegPerMin: -15 },
+    ],
+  });
+  assert.equal(windowVarying.kind, 'gyro-bias-time-varying');
+  assert.equal(windowVarying.windowStable, false);
+  near(windowVarying.fixedCalibration.postYawCalibrationResidual.maxAbsDegPerMin, 20, 1e-12, 'varying fixed yaw calibration');
+  near(windowVarying.fixedCalibration.postGyroCalibrationResidual.maxAbsDegPerMin, 24, 1e-12, 'varying fixed gyro calibration');
+  assert.equal(evaluateYawDrift({ ...stableBias, gyroZBiasDegPerMin: -20 }).kind, 'mixed-or-unexplained');
+  assert.equal(evaluateYawDrift({ ...stableBias, gyroZBiasDegPerMin: 20 }).kind, 'direction-mismatch');
+  assert.equal(evaluateYawDrift({ ...stableBias, observedDurationMs: 30000 }).kind, 'insufficient');
+}
+
+{
+  const staticSnapshot = {
+    mode: 4,
+    durationMs: 180000,
+    observedDurationMs: 179000,
+    sampleRateHz: 30,
+    observedSampleRateHz: 30,
+    expectedSampleRateHz: 100,
+    packetLossPercent: 40,
+    presence: { euler: 3000 },
+    norm: { count: 3000, mean: 1, min: 0.9999, max: 1.0001 },
+    yaw: { driftDegPerMin: -12, residualStdDeg: 0.1, rSquared: 0.9999 },
+    gyroZBiasDegPerMin: -11,
+  };
+  const evaluation = evaluateStatic(staticSnapshot);
+  assert.equal(evaluation.status, 'pass');
+  assert.equal(evaluation.rateStatus, 'fail');
+  assert.equal(evaluation.communicationExcluded, true);
+  assert.equal(evaluation.quat.status, 'pass');
 }
 
 {

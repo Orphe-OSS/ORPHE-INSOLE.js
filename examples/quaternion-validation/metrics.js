@@ -5,6 +5,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  const DRIFT_WINDOW_MS = 5 * 60 * 1000;
+  const MAX_DRIFT_WINDOWS = 288;
+
   function finite(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
@@ -19,6 +22,21 @@
     const values = [quat.w, quat.x, quat.y, quat.z].map(finite);
     if (values.some(value => value === null)) return null;
     return Math.hypot(values[0], values[1], values[2], values[3]);
+  }
+
+  function quaternionToEuler(quat) {
+    const norm = quatNorm(quat);
+    if (norm === null || norm <= Number.EPSILON) return null;
+    const w = Number(quat.w) / norm;
+    const x = Number(quat.x) / norm;
+    const y = Number(quat.y) / norm;
+    const z = Number(quat.z) / norm;
+    const sinPitch = Math.max(-1, Math.min(1, 2 * (w * y - z * x)));
+    return {
+      pitch: Math.asin(sinPitch),
+      roll: Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)),
+      yaw: Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)),
+    };
   }
 
   function wrappedDeltaDegrees(current, previous) {
@@ -46,6 +64,41 @@
 
   function expectedPacketRate() {
     return 50;
+  }
+
+  function connectionCoverage(interruptions, deviceId, durationMs) {
+    const duration = Math.max(0, finite(durationMs) || 0);
+    const id = Number(deviceId);
+    const events = (Array.isArray(interruptions) ? interruptions : [])
+      .filter(event => Number(event?.deviceId) === id && (event?.type === 'disconnect' || event?.type === 'reconnect'))
+      .map(event => ({ type: event.type, elapsedMs: Math.max(0, Math.min(duration, finite(event.elapsedMs) || 0)) }))
+      .sort((a, b) => a.elapsedMs - b.elapsedMs);
+    let connected = true;
+    let connectedDurationMs = 0;
+    let previousElapsedMs = 0;
+    let disconnects = 0;
+    let reconnects = 0;
+    for (const event of events) {
+      if (connected) connectedDurationMs += Math.max(0, event.elapsedMs - previousElapsedMs);
+      if (event.type === 'disconnect') {
+        connected = false;
+        disconnects += 1;
+      } else {
+        connected = true;
+        reconnects += 1;
+      }
+      previousElapsedMs = event.elapsedMs;
+    }
+    if (connected) connectedDurationMs += Math.max(0, duration - previousElapsedMs);
+    return {
+      durationMs: duration,
+      connectedDurationMs,
+      disconnectedDurationMs: Math.max(0, duration - connectedDurationMs),
+      connectionCoveragePercent: duration > 0 ? connectedDurationMs * 100 / duration : 0,
+      disconnects,
+      reconnects,
+      connectedAtEnd: connected,
+    };
   }
 
   class RunningStats {
@@ -168,12 +221,58 @@
     }
   }
 
+  class DriftWindowAccumulator {
+    constructor(index) {
+      this.index = index;
+      this.firstElapsedMs = null;
+      this.lastElapsedMs = null;
+      this.yawRegression = new LinearRegression();
+      this.gyroZ = new RunningStats();
+      this.gyroReferencedYawRegression = new LinearRegression();
+    }
+
+    push(elapsedMs, yawUnwrappedDeg, gyroZDegPerSecond, gyroReferencedYawDeg) {
+      const elapsed = finite(elapsedMs);
+      if (elapsed === null) return;
+      if (this.firstElapsedMs === null) this.firstElapsedMs = elapsed;
+      this.lastElapsedMs = elapsed;
+      const relativeMs = elapsed - this.firstElapsedMs;
+      this.yawRegression.push(relativeMs, yawUnwrappedDeg);
+      this.gyroZ.push(gyroZDegPerSecond);
+      this.gyroReferencedYawRegression.push(relativeMs, gyroReferencedYawDeg);
+    }
+
+    snapshot() {
+      const yawSlope = this.yawRegression.slope();
+      const gyroZ = this.gyroZ.snapshot();
+      const referencedSlope = this.gyroReferencedYawRegression.slope();
+      return {
+        index: this.index,
+        startMinute: this.index * DRIFT_WINDOW_MS / 60000,
+        durationMs: this.firstElapsedMs === null || this.lastElapsedMs === null ? 0 : this.lastElapsedMs - this.firstElapsedMs,
+        samples: this.yawRegression.count,
+        yawDriftDegPerMin: yawSlope === null ? null : yawSlope * 60000,
+        yawResidualStdDeg: this.yawRegression.residualStd(),
+        yawRSquared: this.yawRegression.rSquared(),
+        gyroZMeanDegPerSecond: gyroZ.mean,
+        gyroZBiasDegPerMin: gyroZ.mean === null ? null : gyroZ.mean * 60,
+        gyroReferencedYawDriftDegPerMin: referencedSlope === null ? null : referencedSlope * 60000,
+        gyroReferencedYawResidualStdDeg: this.gyroReferencedYawRegression.residualStd()
+      };
+    }
+  }
+
   class DeviceAccumulator {
     constructor(deviceId, startAtMs, mode) {
       this.deviceId = Number(deviceId);
       this.startAtMs = Number(startAtMs) || 0;
       this.mode = Number(mode) || 4;
       this.samples = 0;
+      this.firstFrameAtMs = null;
+      this.lastFrameAtMs = null;
+      this.firstDeviceAtMs = null;
+      this.lastDeviceAtMs = null;
+      this.deviceClockResets = 0;
       this.receivedPackets = 0;
       this.lostPackets = 0;
       this.serialResets = 0;
@@ -189,14 +288,40 @@
       this.gyroZ = new RunningStats();
       this.gyroZIntegralDeg = 0;
       this.gyroZHostTimeIntegralDeg = 0;
+      this.gyroZDeviceTimeIntegralDeg = 0;
       this.previousGyroZ = null;
       this.previousGyroAtMs = null;
+      this.previousGyroDeviceAtMs = null;
+      this.yawDeviceTimeRegression = new LinearRegression();
+      this.gyroReferencedYawStartDeg = null;
+      this.gyroReferencedYaw = new RunningStats();
+      this.gyroReferencedYawRegression = new LinearRegression();
+      this.gyroReferencedYawDeviceStartDeg = null;
+      this.gyroReferencedYawDevice = new RunningStats();
+      this.gyroReferencedYawDeviceRegression = new LinearRegression();
+      this.driftWindows = [];
+      this.driftWindowsTruncated = false;
     }
 
     addFrame(frame, hostTimestampMs) {
       if (!frame) return null;
       const now = finite(hostTimestampMs);
       const elapsedMs = Math.max(0, (now === null ? this.startAtMs : now) - this.startAtMs);
+      const frameDeviceAtMs = finite(frame.timestamp);
+      let deviceElapsedMs = null;
+      if (now !== null) {
+        if (this.firstFrameAtMs === null) this.firstFrameAtMs = now;
+        this.lastFrameAtMs = now;
+      }
+      if (frameDeviceAtMs !== null) {
+        if (this.lastDeviceAtMs !== null && frameDeviceAtMs < this.lastDeviceAtMs) {
+          this.deviceClockResets += 1;
+        } else {
+          if (this.firstDeviceAtMs === null) this.firstDeviceAtMs = frameDeviceAtMs;
+          this.lastDeviceAtMs = frameDeviceAtMs;
+          deviceElapsedMs = frameDeviceAtMs - this.firstDeviceAtMs;
+        }
+      }
       this.samples += 1;
       let packetGap = null;
       let packetIntervalMs = null;
@@ -242,18 +367,51 @@
 
       if (frame.euler && finite(frame.euler.yaw) !== null) {
         this.yaw.push(radToDeg(frame.euler.yaw), elapsedMs);
+        if (deviceElapsedMs !== null) this.yawDeviceTimeRegression.push(deviceElapsedMs, this.yaw.current);
       }
 
+      let gyroZ = null;
       if (frame.gyro && finite(frame.gyro.z) !== null) {
-        const gyroZ = Number(frame.gyro.z);
+        gyroZ = Number(frame.gyro.z);
         this.gyroZ.push(gyroZ);
         this.gyroZIntegralDeg += gyroZ * sampleIntervalSeconds(frame.mode || this.mode);
         if (now !== null && this.previousGyroAtMs !== null && this.previousGyroZ !== null) {
           const elapsedSeconds = Math.max(0, Math.min(1000, now - this.previousGyroAtMs)) / 1000;
           this.gyroZHostTimeIntegralDeg += this.previousGyroZ * elapsedSeconds;
         }
+        if (deviceElapsedMs !== null && this.previousGyroDeviceAtMs !== null && this.previousGyroZ !== null) {
+          const elapsedSeconds = Math.max(0, Math.min(1000, frameDeviceAtMs - this.previousGyroDeviceAtMs)) / 1000;
+          this.gyroZDeviceTimeIntegralDeg += this.previousGyroZ * elapsedSeconds;
+        }
         this.previousGyroZ = gyroZ;
         this.previousGyroAtMs = now;
+        if (deviceElapsedMs !== null) this.previousGyroDeviceAtMs = frameDeviceAtMs;
+      }
+
+      let gyroReferencedYawDeg = null;
+      if (this.yaw.current !== null && this.gyroZ.count > 0) {
+        const referenced = this.yaw.current - this.gyroZHostTimeIntegralDeg;
+        if (this.gyroReferencedYawStartDeg === null) this.gyroReferencedYawStartDeg = referenced;
+        gyroReferencedYawDeg = referenced - this.gyroReferencedYawStartDeg;
+        this.gyroReferencedYaw.push(gyroReferencedYawDeg);
+        this.gyroReferencedYawRegression.push(elapsedMs, gyroReferencedYawDeg);
+      }
+
+      let gyroReferencedYawDeviceDeg = null;
+      if (this.yaw.current !== null && this.gyroZ.count > 0 && deviceElapsedMs !== null) {
+        const referenced = this.yaw.current - this.gyroZDeviceTimeIntegralDeg;
+        if (this.gyroReferencedYawDeviceStartDeg === null) this.gyroReferencedYawDeviceStartDeg = referenced;
+        gyroReferencedYawDeviceDeg = referenced - this.gyroReferencedYawDeviceStartDeg;
+        this.gyroReferencedYawDevice.push(gyroReferencedYawDeviceDeg);
+        this.gyroReferencedYawDeviceRegression.push(deviceElapsedMs, gyroReferencedYawDeviceDeg);
+      }
+
+      const windowIndex = Math.floor(elapsedMs / DRIFT_WINDOW_MS);
+      if (windowIndex < MAX_DRIFT_WINDOWS) {
+        if (!this.driftWindows[windowIndex]) this.driftWindows[windowIndex] = new DriftWindowAccumulator(windowIndex);
+        this.driftWindows[windowIndex].push(elapsedMs, this.yaw.current, gyroZ, gyroReferencedYawDeg);
+      } else {
+        this.driftWindowsTruncated = true;
       }
 
       return {
@@ -262,26 +420,50 @@
         yawUnwrappedDeg: this.yaw.current,
         packetGap,
         packetIntervalMs,
+        gyroReferencedYawDeg,
+        gyroReferencedYawDeviceDeg,
         gyroZIntegralDeg: this.gyroZIntegralDeg,
-        gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg
+        gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg,
+        gyroZDeviceTimeIntegralDeg: this.gyroZDeviceTimeIntegralDeg
       };
     }
 
     snapshot(endAtMs) {
       const end = finite(endAtMs);
       const durationMs = Math.max(0, (end === null ? this.startAtMs : end) - this.startAtMs);
+      const observedDurationMs = this.firstFrameAtMs !== null && this.lastFrameAtMs !== null
+        ? Math.max(0, this.lastFrameAtMs - this.firstFrameAtMs)
+        : 0;
+      const deviceClockDurationMs = this.firstDeviceAtMs !== null && this.lastDeviceAtMs !== null
+        ? Math.max(0, this.lastDeviceAtMs - this.firstDeviceAtMs)
+        : 0;
+      const lastSampleElapsedMs = this.lastFrameAtMs === null ? 0 : Math.max(0, this.lastFrameAtMs - this.startAtMs);
       const expectedPackets = this.receivedPackets + this.lostPackets;
       const yaw = this.yaw.snapshot();
       const gyroZ = this.gyroZ.snapshot();
+      const gyroReferencedYaw = this.gyroReferencedYaw.snapshot();
+      const gyroReferencedSlope = this.gyroReferencedYawRegression.slope();
+      const yawDeviceTimeSlope = this.yawDeviceTimeRegression.slope();
+      const gyroReferencedDevice = this.gyroReferencedYawDevice.snapshot();
+      const gyroReferencedDeviceSlope = this.gyroReferencedYawDeviceRegression.slope();
       return {
         deviceId: this.deviceId,
         mode: this.mode,
         durationMs,
+        observedDurationMs,
+        deviceClockDurationMs,
+        hostToDeviceDurationRatio: deviceClockDurationMs > 0 ? observedDurationMs / deviceClockDurationMs : null,
+        deviceClockResets: this.deviceClockResets,
+        lastSampleElapsedMs,
+        completionPercent: durationMs > 0 ? Math.min(100, lastSampleElapsedMs * 100 / durationMs) : 0,
+        coveragePercent: durationMs > 0 ? Math.min(100, lastSampleElapsedMs * 100 / durationMs) : 0,
         samples: this.samples,
         sampleRateHz: durationMs > 0 ? this.samples * 1000 / durationMs : 0,
+        observedSampleRateHz: observedDurationMs > 0 ? Math.max(0, this.samples - 1) * 1000 / observedDurationMs : 0,
         expectedSampleRateHz: expectedSampleRate(this.mode),
         receivedPackets: this.receivedPackets,
         packetRateHz: durationMs > 0 ? this.receivedPackets * 1000 / durationMs : 0,
+        observedPacketRateHz: observedDurationMs > 0 ? Math.max(0, this.receivedPackets - 1) * 1000 / observedDurationMs : 0,
         expectedPacketRateHz: expectedPacketRate(this.mode),
         lostPackets: this.lostPackets,
         packetLossPercent: expectedPackets > 0 ? this.lostPackets * 100 / expectedPackets : 0,
@@ -293,11 +475,34 @@
         presence: Object.assign({}, this.presence),
         norm: this.norm.snapshot(),
         yaw,
+        yawDeviceClock: {
+          count: this.yawDeviceTimeRegression.count,
+          driftDegPerMin: yawDeviceTimeSlope === null ? null : yawDeviceTimeSlope * 60000,
+          residualStdDeg: this.yawDeviceTimeRegression.residualStd(),
+          rSquared: this.yawDeviceTimeRegression.rSquared()
+        },
         gyroZ,
         gyroZBiasDegPerMin: gyroZ.mean === null ? null : gyroZ.mean * 60,
         yawMinusGyroDegPerMin: yaw.driftDegPerMin === null || gyroZ.mean === null ? null : yaw.driftDegPerMin - gyroZ.mean * 60,
+        gyroReferencedYaw: {
+          ...gyroReferencedYaw,
+          rangeDeg: gyroReferencedYaw.count ? gyroReferencedYaw.max - gyroReferencedYaw.min : null,
+          driftDegPerMin: gyroReferencedSlope === null ? null : gyroReferencedSlope * 60000,
+          residualStdDeg: this.gyroReferencedYawRegression.residualStd(),
+          rSquared: this.gyroReferencedYawRegression.rSquared()
+        },
+        gyroReferencedYawDeviceClock: {
+          ...gyroReferencedDevice,
+          rangeDeg: gyroReferencedDevice.count ? gyroReferencedDevice.max - gyroReferencedDevice.min : null,
+          driftDegPerMin: gyroReferencedDeviceSlope === null ? null : gyroReferencedDeviceSlope * 60000,
+          residualStdDeg: this.gyroReferencedYawDeviceRegression.residualStd(),
+          rSquared: this.gyroReferencedYawDeviceRegression.rSquared()
+        },
+        driftWindows5Min: this.driftWindows.filter(Boolean).map(window => window.snapshot()),
+        driftWindowsTruncated: this.driftWindowsTruncated,
         gyroZIntegralDeg: this.gyroZIntegralDeg,
-        gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg
+        gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg,
+        gyroZDeviceTimeIntegralDeg: this.gyroZDeviceTimeIntegralDeg
       };
     }
   }
@@ -374,6 +579,139 @@
       lossStatus,
       rateStatus,
       message: `packet ${snapshot.packetRateHz.toFixed(1)}Hz / loss ${snapshot.packetLossPercent.toFixed(2)}% / max gap ${snapshot.maxGap}`
+    };
+  }
+
+  function evaluateYawDrift(snapshot) {
+    const yawDriftDegPerMin = finite(snapshot?.yaw?.driftDegPerMin);
+    const gyroBiasDegPerMin = finite(snapshot?.gyroZBiasDegPerMin);
+    const observedDurationMs = finite(snapshot?.observedDurationMs) ?? finite(snapshot?.durationMs) ?? 0;
+    if (yawDriftDegPerMin === null || gyroBiasDegPerMin === null || observedDurationMs < 60000) {
+      return {
+        kind: 'insufficient',
+        status: 'warn',
+        message: 'yaw/gyroの評価には60秒以上の静置データが必要です'
+      };
+    }
+
+    const integratedResidual = finite(snapshot?.gyroReferencedYaw?.driftDegPerMin);
+    const differenceDegPerMin = integratedResidual ?? (yawDriftDegPerMin - gyroBiasDegPerMin);
+    const yawToGyroScaleRatio = Math.abs(gyroBiasDegPerMin) >= 1
+      ? yawDriftDegPerMin / gyroBiasDegPerMin
+      : null;
+    const toleranceDegPerMin = Math.max(5, Math.abs(yawDriftDegPerMin) * 0.15);
+    const sameDirection = Math.abs(yawDriftDegPerMin) < 1 || Math.abs(gyroBiasDegPerMin) < 1 || Math.sign(yawDriftDegPerMin) === Math.sign(gyroBiasDegPerMin);
+    const residualStdDeg = finite(snapshot?.yaw?.residualStdDeg);
+    const rSquared = finite(snapshot?.yaw?.rSquared);
+    const residualToMinuteDrift = residualStdDeg === null
+      ? null
+      : residualStdDeg / Math.max(1, Math.abs(yawDriftDegPerMin));
+    const averageExplained = sameDirection && Math.abs(differenceDegPerMin) <= toleranceDegPerMin;
+    const windows = Array.isArray(snapshot?.driftWindows5Min)
+      ? snapshot.driftWindows5Min.filter(window => finite(window?.durationMs) >= 60000)
+      : [];
+    const windowRange = key => {
+      const values = windows.map(window => finite(window?.[key])).filter(value => value !== null);
+      return values.length < 2 ? null : Math.max(...values) - Math.min(...values);
+    };
+    const windowYawDriftRangeDegPerMin = windowRange('yawDriftDegPerMin');
+    const windowGyroBiasRangeDegPerMin = windowRange('gyroZBiasDegPerMin');
+    const windowResidualRangeDegPerMin = windowRange('gyroReferencedYawDriftDegPerMin');
+    const fixedCalibration = (() => {
+      if (windows.length < 2) return null;
+      const firstYawDrift = finite(windows[0].yawDriftDegPerMin);
+      const firstGyroBias = finite(windows[0].gyroZBiasDegPerMin);
+      if (firstYawDrift === null || firstGyroBias === null) return null;
+      const yawCalibrationResiduals = windows.slice(1)
+        .map(window => finite(window.yawDriftDegPerMin))
+        .filter(value => value !== null)
+        .map(value => value - firstYawDrift);
+      const gyroCalibrationResiduals = windows.slice(1)
+        .map(window => finite(window.yawDriftDegPerMin))
+        .filter(value => value !== null)
+        .map(value => value - firstGyroBias);
+      const summarize = values => values.length ? {
+        count: values.length,
+        meanDegPerMin: values.reduce((sum, value) => sum + value, 0) / values.length,
+        maxAbsDegPerMin: Math.max(...values.map(Math.abs)),
+      } : null;
+      const postYawCalibrationResidual = summarize(yawCalibrationResiduals);
+      const postGyroCalibrationResidual = summarize(gyroCalibrationResiduals);
+      if (!postYawCalibrationResidual || !postGyroCalibrationResidual) return null;
+      return {
+        calibrationWindowStartMinute: windows[0].startMinute,
+        yawCalibrationDegPerMin: firstYawDrift,
+        gyroCalibrationDegPerMin: firstGyroBias,
+        postYawCalibrationResidual,
+        postGyroCalibrationResidual,
+      };
+    })();
+    const windowStable = windowYawDriftRangeDegPerMin === null || (
+      windowYawDriftRangeDegPerMin <= Math.max(5, Math.abs(yawDriftDegPerMin) * 0.15)
+      && (windowResidualRangeDegPerMin === null || windowResidualRangeDegPerMin <= Math.max(2, Math.abs(yawDriftDegPerMin) * 0.05))
+    );
+    const linearEnough = (rSquared === null || rSquared >= 0.995)
+      && (residualToMinuteDrift === null || residualToMinuteDrift <= 0.25)
+      && windowStable;
+
+    let kind = 'mixed-or-unexplained';
+    let message = `gyro平均との差 ${differenceDegPerMin.toFixed(2)}°/min`;
+    if (averageExplained && linearEnough) {
+      kind = 'gyro-bias-dominant';
+      message = `平均ドリフトはgyroバイアスで説明可能（残差 ${differenceDegPerMin.toFixed(2)}°/min）`;
+    } else if (averageExplained) {
+      kind = 'gyro-bias-time-varying';
+      message = `平均値はgyroバイアスと整合するが時間変動あり（残差 ${differenceDegPerMin.toFixed(2)}°/min）`;
+    } else if (!sameDirection) {
+      kind = 'direction-mismatch';
+      message = `yawとgyroバイアスの方向が不一致（差 ${differenceDegPerMin.toFixed(2)}°/min）`;
+    }
+
+    return {
+      kind,
+      status: 'info',
+      yawDriftDegPerMin,
+      gyroBiasDegPerMin,
+      yawToGyroScaleRatio,
+      differenceDegPerMin,
+      toleranceDegPerMin,
+      sameDirection,
+      averageExplained,
+      linearEnough,
+      residualToMinuteDrift,
+      rSquared,
+      windowCount: windows.length,
+      windowStable,
+      windowYawDriftRangeDegPerMin,
+      windowGyroBiasRangeDegPerMin,
+      windowResidualRangeDegPerMin,
+      fixedCalibration,
+      differenceSource: integratedResidual === null ? 'mean-gyro' : 'host-time-integrated-gyro',
+      message
+    };
+  }
+
+  function evaluateStatic(snapshot) {
+    const quat = evaluateQuaternion(snapshot, { ignoreCommunication: true });
+    const drift = evaluateYawDrift(snapshot);
+    const expected = finite(snapshot?.expectedSampleRateHz) || expectedSampleRate(snapshot?.mode);
+    const effectiveSampleRateHz = finite(snapshot?.observedSampleRateHz) || finite(snapshot?.sampleRateHz) || 0;
+    let rateStatus = 'pass';
+    if (effectiveSampleRateHz < expected * 0.5) rateStatus = 'fail';
+    else if (effectiveSampleRateHz < expected * 0.8) rateStatus = 'warn';
+    const eulerStatus = finite(snapshot?.presence?.euler) > 0 ? 'pass' : 'fail';
+    const driftStatus = drift.status === 'warn' ? 'warn' : 'pass';
+    const order = { pass: 0, info: 1, warn: 2, fail: 3 };
+    const status = [quat.status, eulerStatus, driftStatus]
+      .reduce((worst, candidate) => order[candidate] > order[worst] ? candidate : worst, 'pass');
+    return {
+      snapshot,
+      status,
+      quat,
+      drift,
+      eulerStatus,
+      rateStatus,
+      communicationExcluded: true,
     };
   }
 
@@ -463,7 +801,7 @@
     return { kind: 'intermittent', status: 'warn', message: '高欠損が実物側・DEVICE枠・接続順のいずれにも一貫して追従しません。干渉・端末負荷を固定して再試行してください。' };
   }
 
-  function evaluateQuaternion(snapshot) {
+  function evaluateQuaternion(snapshot, options = {}) {
     const norm = snapshot && snapshot.norm;
     if (!norm || norm.count === 0) {
       return { status: 'fail', message: 'quaternionデータなし' };
@@ -472,7 +810,7 @@
     if (!scaleOk) {
       return { status: 'fail', message: `norm範囲 ${norm.min.toFixed(5)}〜${norm.max.toFixed(5)}` };
     }
-    if (snapshot.packetLossPercent > 5) {
+    if (!options.ignoreCommunication && snapshot.packetLossPercent > 5) {
       return { status: 'warn', message: `norm正常、欠損率 ${snapshot.packetLossPercent.toFixed(2)}%` };
     }
     return { status: 'pass', message: `norm平均 ${norm.mean.toFixed(6)}` };
@@ -481,16 +819,21 @@
   return {
     AngleTracker,
     DeviceAccumulator,
+    DriftWindowAccumulator,
     GapCoincidenceTracker,
     LinearRegression,
     RunningStats,
     compareCommunicationRuns,
+    connectionCoverage,
     evaluateCommunication,
     evaluateQuaternion,
+    evaluateStatic,
     evaluateStreamingMode,
+    evaluateYawDrift,
     expectedPacketRate,
     expectedSampleRate,
     quatNorm,
+    quaternionToEuler,
     radToDeg,
     sampleIntervalSeconds,
     serialGap,

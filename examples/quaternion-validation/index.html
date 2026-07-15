@@ -135,7 +135,7 @@
         <article class="test-card">
           <div class="test-number">B</div>
           <h3>静置テスト</h3>
-          <p>norm統計、yaw範囲・線形ドリフト・残差揺れ、gyro_z平均と欠損率を自動集計します。</p>
+          <p>norm統計、yaw範囲・線形ドリフト・残差揺れ、gyro_z平均と5分窓の変動を自動集計し、ドリフトがgyroバイアスで説明できるか分類します。途中切断は部分測定として残します。</p>
           <label>測定時間
             <span class="input-with-unit"><input id="staticMinutes" type="number" min="0.1" step="0.1" value="5"><span>分</span></span>
           </label>

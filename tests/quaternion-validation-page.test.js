@@ -24,8 +24,18 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.match(html, /src="\.\/app\.js"/);
   assert.match(html, /id="receivePath"/);
   assert.match(html, /value="raw" selected/);
-  assert.match(app, /OrpheInsole\.parseSensorValues\(data\)/);
+  assert.match(app, /OrpheInsole\.parseSensorValues\(data, sensorRangesFor\(deviceId\)\)/);
+  assert.match(app, /GYROSCOPE_RANGES/);
+  assert.match(app, /pending\[deviceId\]\.acc = copyVector\(acc\)/);
+  assert.match(app, /pending\[deviceId\]\.gyro = copyVector\(gyro\)/);
+  assert.match(app, /copyEuler\(quaternionToEuler\(quat\)\)/);
+  assert.doesNotMatch(app, /window\.Quaternion/);
   assert.doesNotMatch(app, /BLE rate=/);
+  assert.match(app, /gyro_referenced_yaw_deg/);
+  assert.match(app, /gyro_referenced_yaw_device_time_deg/);
+  assert.match(app, /connection coverage=/);
+  assert.match(app, /5-minute drift windows/);
+  assert.match(app, /first-window fixed calibration validation/);
 }
 
 function wait(ms) {
