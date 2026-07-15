@@ -3,6 +3,8 @@ const {
   AngleTracker,
   DeviceAccumulator,
   RunningStats,
+  compareCommunicationRuns,
+  evaluateCommunication,
   evaluateQuaternion,
   quatNorm,
   serialGap,
@@ -34,6 +36,9 @@ function near(actual, expected, tolerance, message) {
   const snapshot = yaw.snapshot();
   near(snapshot.deltaDeg, 40, 1e-12, 'unwrapped yaw delta');
   near(snapshot.driftDegPerMin, 1200, 1e-9, 'yaw regression slope');
+  near(snapshot.rangeDeg, 40, 1e-12, 'yaw range');
+  near(snapshot.residualStdDeg, 0, 1e-12, 'linear yaw residual');
+  near(snapshot.rSquared, 1, 1e-12, 'linear yaw r squared');
 }
 
 {
@@ -65,11 +70,54 @@ function near(actual, expected, tolerance, message) {
   assert.equal(snapshot.samples, 3);
   assert.equal(snapshot.receivedPackets, 2);
   assert.equal(snapshot.lostPackets, 1);
+  assert.equal(snapshot.gapEvents, 1);
+  assert.equal(snapshot.maxGap, 1);
+  assert.equal(snapshot.gapHistogram.one, 1);
+  near(snapshot.packetIntervalMs.mean, 20, 1e-12, 'packet interval mean');
   near(snapshot.packetLossPercent, 100 / 3, 1e-9, 'packet loss percent');
   near(snapshot.norm.mean, 1, 1e-12, 'norm mean');
   near(snapshot.yaw.deltaDeg, 20, 1e-12, 'device yaw unwrap');
   near(snapshot.gyroZIntegralDeg, 0.3, 1e-12, 'nominal gyro integration');
+  near(snapshot.gyroZHostTimeIntegralDeg, 0.2, 1e-12, 'host-time gyro integration');
+  near(snapshot.gyroZ.mean, 10, 1e-12, 'gyro z mean');
+  near(snapshot.gyroZBiasDegPerMin, 600, 1e-12, 'gyro bias equivalent');
   assert.equal(evaluateQuaternion(snapshot).status, 'warn');
+  assert.equal(evaluateCommunication(snapshot).status, 'fail');
+}
+
+{
+  const accumulator = new DeviceAccumulator(0, 0, 4);
+  accumulator.addFrame({ serial: 10, mode: 4 }, 0);
+  accumulator.addFrame({ serial: 13, mode: 4 }, 60);
+  const snapshot = accumulator.snapshot(100);
+  assert.equal(snapshot.lostPackets, 2);
+  assert.equal(snapshot.gapEvents, 1);
+  assert.equal(snapshot.maxGap, 2);
+  assert.equal(snapshot.gapHistogram.twoToThree, 1);
+}
+
+{
+  const first = {
+    devices: [
+      { deviceId: 0, side: 'L', packetLossPercent: 0.1 },
+      { deviceId: 1, side: 'R', packetLossPercent: 12 },
+    ],
+  };
+  const physicalFollow = {
+    devices: [
+      { deviceId: 0, side: 'R', packetLossPercent: 11 },
+      { deviceId: 1, side: 'L', packetLossPercent: 0.2 },
+    ],
+  };
+  const slotFollow = {
+    devices: [
+      { deviceId: 0, side: 'R', packetLossPercent: 0.2 },
+      { deviceId: 1, side: 'L', packetLossPercent: 11 },
+    ],
+  };
+  assert.equal(compareCommunicationRuns(first, physicalFollow).kind, 'follows-physical-side');
+  assert.equal(compareCommunicationRuns(first, slotFollow).kind, 'follows-slot');
+  assert.equal(compareCommunicationRuns(first, first).kind, 'awaiting-swap');
 }
 
 {

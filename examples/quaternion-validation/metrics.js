@@ -44,6 +44,10 @@
     return Number(mode) === 4 ? 100 : 200;
   }
 
+  function expectedPacketRate() {
+    return 50;
+  }
+
   class RunningStats {
     constructor() {
       this.count = 0;
@@ -83,6 +87,7 @@
       this.meanY = 0;
       this.sxx = 0;
       this.sxy = 0;
+      this.syy = 0;
     }
 
     push(x, y) {
@@ -96,12 +101,24 @@
       this.meanY += dy / this.count;
       this.sxx += dx * (nx - this.meanX);
       this.sxy += dx * (ny - this.meanY);
+      this.syy += dy * (ny - this.meanY);
       return true;
     }
 
     slope() {
       if (this.count < 2 || Math.abs(this.sxx) <= Number.EPSILON) return null;
       return this.sxy / this.sxx;
+    }
+
+    residualStd() {
+      if (this.count < 2 || Math.abs(this.sxx) <= Number.EPSILON) return null;
+      const residualSumSquares = Math.max(0, this.syy - (this.sxy * this.sxy / this.sxx));
+      return Math.sqrt(residualSumSquares / this.count);
+    }
+
+    rSquared() {
+      if (this.count < 2 || this.syy <= Number.EPSILON || Math.abs(this.sxx) <= Number.EPSILON) return null;
+      return Math.max(0, Math.min(1, (this.sxy * this.sxy) / (this.sxx * this.syy)));
     }
   }
 
@@ -143,7 +160,10 @@
         deltaDeg: this.count ? this.current - this.start : null,
         minDeg: this.count ? this.min : null,
         maxDeg: this.count ? this.max : null,
-        driftDegPerMin: slopePerMs === null ? null : slopePerMs * 60000
+        rangeDeg: this.count ? this.max - this.min : null,
+        driftDegPerMin: slopePerMs === null ? null : slopePerMs * 60000,
+        residualStdDeg: this.regression.residualStd(),
+        rSquared: this.regression.rSquared()
       };
     }
   }
@@ -158,10 +178,19 @@
       this.lostPackets = 0;
       this.serialResets = 0;
       this.lastSerial = null;
+      this.lastPacketAtMs = null;
+      this.gapEvents = 0;
+      this.maxGap = 0;
+      this.gapHistogram = { one: 0, twoToThree: 0, fourToSeven: 0, eightPlus: 0 };
+      this.packetIntervalMs = new RunningStats();
       this.presence = { press: 0, acc: 0, gyro: 0, quat: 0, euler: 0 };
       this.norm = new RunningStats();
       this.yaw = new AngleTracker();
+      this.gyroZ = new RunningStats();
       this.gyroZIntegralDeg = 0;
+      this.gyroZHostTimeIntegralDeg = 0;
+      this.previousGyroZ = null;
+      this.previousGyroAtMs = null;
     }
 
     addFrame(frame, hostTimestampMs) {
@@ -169,21 +198,38 @@
       const now = finite(hostTimestampMs);
       const elapsedMs = Math.max(0, (now === null ? this.startAtMs : now) - this.startAtMs);
       this.samples += 1;
+      let packetGap = null;
+      let packetIntervalMs = null;
 
       const serial = finite(frame.serial);
       if (serial !== null && Number.isInteger(serial)) {
         if (this.lastSerial === null) {
           this.receivedPackets += 1;
           this.lastSerial = serial;
+          this.lastPacketAtMs = now;
         } else if (serial !== this.lastSerial) {
           const gap = serialGap(serial, this.lastSerial);
           if (gap === null) {
             this.serialResets += 1;
           } else {
+            packetGap = gap;
             this.lostPackets += gap;
+            if (gap > 0) {
+              this.gapEvents += 1;
+              this.maxGap = Math.max(this.maxGap, gap);
+              if (gap === 1) this.gapHistogram.one += 1;
+              else if (gap <= 3) this.gapHistogram.twoToThree += 1;
+              else if (gap <= 7) this.gapHistogram.fourToSeven += 1;
+              else this.gapHistogram.eightPlus += 1;
+            }
+          }
+          if (now !== null && this.lastPacketAtMs !== null) {
+            packetIntervalMs = Math.max(0, now - this.lastPacketAtMs);
+            this.packetIntervalMs.push(packetIntervalMs);
           }
           this.receivedPackets += 1;
           this.lastSerial = serial;
+          this.lastPacketAtMs = now;
         }
       }
 
@@ -199,13 +245,25 @@
       }
 
       if (frame.gyro && finite(frame.gyro.z) !== null) {
-        this.gyroZIntegralDeg += Number(frame.gyro.z) * sampleIntervalSeconds(frame.mode || this.mode);
+        const gyroZ = Number(frame.gyro.z);
+        this.gyroZ.push(gyroZ);
+        this.gyroZIntegralDeg += gyroZ * sampleIntervalSeconds(frame.mode || this.mode);
+        if (now !== null && this.previousGyroAtMs !== null && this.previousGyroZ !== null) {
+          const elapsedSeconds = Math.max(0, Math.min(1000, now - this.previousGyroAtMs)) / 1000;
+          this.gyroZHostTimeIntegralDeg += this.previousGyroZ * elapsedSeconds;
+        }
+        this.previousGyroZ = gyroZ;
+        this.previousGyroAtMs = now;
       }
 
       return {
         elapsedMs,
         norm,
-        yawUnwrappedDeg: this.yaw.current
+        yawUnwrappedDeg: this.yaw.current,
+        packetGap,
+        packetIntervalMs,
+        gyroZIntegralDeg: this.gyroZIntegralDeg,
+        gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg
       };
     }
 
@@ -213,6 +271,8 @@
       const end = finite(endAtMs);
       const durationMs = Math.max(0, (end === null ? this.startAtMs : end) - this.startAtMs);
       const expectedPackets = this.receivedPackets + this.lostPackets;
+      const yaw = this.yaw.snapshot();
+      const gyroZ = this.gyroZ.snapshot();
       return {
         deviceId: this.deviceId,
         mode: this.mode,
@@ -221,15 +281,85 @@
         sampleRateHz: durationMs > 0 ? this.samples * 1000 / durationMs : 0,
         expectedSampleRateHz: expectedSampleRate(this.mode),
         receivedPackets: this.receivedPackets,
+        packetRateHz: durationMs > 0 ? this.receivedPackets * 1000 / durationMs : 0,
+        expectedPacketRateHz: expectedPacketRate(this.mode),
         lostPackets: this.lostPackets,
         packetLossPercent: expectedPackets > 0 ? this.lostPackets * 100 / expectedPackets : 0,
         serialResets: this.serialResets,
+        gapEvents: this.gapEvents,
+        maxGap: this.maxGap,
+        gapHistogram: Object.assign({}, this.gapHistogram),
+        packetIntervalMs: this.packetIntervalMs.snapshot(),
         presence: Object.assign({}, this.presence),
         norm: this.norm.snapshot(),
-        yaw: this.yaw.snapshot(),
-        gyroZIntegralDeg: this.gyroZIntegralDeg
+        yaw,
+        gyroZ,
+        gyroZBiasDegPerMin: gyroZ.mean === null ? null : gyroZ.mean * 60,
+        yawMinusGyroDegPerMin: yaw.driftDegPerMin === null || gyroZ.mean === null ? null : yaw.driftDegPerMin - gyroZ.mean * 60,
+        gyroZIntegralDeg: this.gyroZIntegralDeg,
+        gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg
       };
     }
+  }
+
+  function evaluateCommunication(snapshot) {
+    if (!snapshot || snapshot.receivedPackets < 2) {
+      return { status: 'fail', message: '受信パケット不足' };
+    }
+    let lossStatus = 'pass';
+    if (snapshot.packetLossPercent > 5) lossStatus = 'fail';
+    else if (snapshot.packetLossPercent > 1) lossStatus = 'warn';
+
+    let rateStatus = 'pass';
+    if (snapshot.packetRateHz < snapshot.expectedPacketRateHz * 0.8) rateStatus = 'fail';
+    else if (snapshot.packetRateHz < snapshot.expectedPacketRateHz * 0.9) rateStatus = 'warn';
+
+    const statusOrder = { pass: 0, warn: 1, fail: 2 };
+    const status = statusOrder[lossStatus] >= statusOrder[rateStatus] ? lossStatus : rateStatus;
+    return {
+      status,
+      lossStatus,
+      rateStatus,
+      message: `packet ${snapshot.packetRateHz.toFixed(1)}Hz / loss ${snapshot.packetLossPercent.toFixed(2)}% / max gap ${snapshot.maxGap}`
+    };
+  }
+
+  function compareCommunicationRuns(first, second) {
+    if (!first || !second) {
+      return { kind: 'awaiting', status: 'info', message: '通信診断を1回実行後、接続枠を左右逆にしてもう1回実行してください。' };
+    }
+    const firstDevices = first.devices || [];
+    const secondDevices = second.devices || [];
+    if (firstDevices.length < 2 || secondDevices.length < 2) {
+      return { kind: 'insufficient', status: 'warn', message: '左右2台の結果が必要です。' };
+    }
+
+    const firstBySlot = new Map(firstDevices.map(item => [item.deviceId, item]));
+    const secondBySlot = new Map(secondDevices.map(item => [item.deviceId, item]));
+    const slots = Array.from(firstBySlot.keys()).filter(slot => secondBySlot.has(slot));
+    const reversed = slots.length === 2 && slots.every(slot => firstBySlot.get(slot).side !== secondBySlot.get(slot).side);
+    if (!reversed) {
+      return { kind: 'awaiting-swap', status: 'info', message: '比較待ち: いったん切断し、L/RをDEVICE 0/1の逆の枠へ接続して再実行してください。' };
+    }
+
+    const highest = devices => devices.reduce((worst, item) => (
+      !worst || item.packetLossPercent > worst.packetLossPercent ? item : worst
+    ), null);
+    const firstWorst = highest(firstDevices);
+    const secondWorst = highest(secondDevices);
+    const firstHigh = firstWorst.packetLossPercent > 5;
+    const secondHigh = secondWorst.packetLossPercent > 5;
+
+    if (firstDevices.every(item => item.packetLossPercent <= 1) && secondDevices.every(item => item.packetLossPercent <= 1)) {
+      return { kind: 'not-reproduced', status: 'pass', message: '両テストとも欠損率1%以下で、高欠損は再現しませんでした。' };
+    }
+    if (firstHigh && secondHigh && firstWorst.side === secondWorst.side) {
+      return { kind: 'follows-physical-side', status: 'warn', message: `高欠損が実物の${firstWorst.side}側に追従しました。デバイス固有・電波条件を優先して調査してください。` };
+    }
+    if (firstHigh && secondHigh && firstWorst.deviceId === secondWorst.deviceId) {
+      return { kind: 'follows-slot', status: 'warn', message: `高欠損がDEVICE ${firstWorst.deviceId}枠に追従しました。接続順・ブラウザ受信処理を優先して調査してください。` };
+    }
+    return { kind: 'intermittent', status: 'warn', message: '欠損傾向が2回で一貫しません。距離・干渉・端末負荷を固定して再試行してください。' };
   }
 
   function evaluateQuaternion(snapshot) {
@@ -252,7 +382,10 @@
     DeviceAccumulator,
     LinearRegression,
     RunningStats,
+    compareCommunicationRuns,
+    evaluateCommunication,
     evaluateQuaternion,
+    expectedPacketRate,
     expectedSampleRate,
     quatNorm,
     radToDeg,

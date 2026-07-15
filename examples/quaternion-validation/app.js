@@ -5,6 +5,8 @@
 
   const {
     DeviceAccumulator,
+    compareCommunicationRuns,
+    evaluateCommunication,
     evaluateQuaternion,
     quatNorm,
     radToDeg,
@@ -54,7 +56,7 @@
   }
 
   function format(value, digits = 2, fallback = '-') {
-    return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : fallback;
+    return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : fallback;
   }
 
   function formatDuration(milliseconds) {
@@ -275,7 +277,8 @@
         'press0', 'press1', 'press2', 'press3', 'press4', 'press5',
         'acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z',
         'quat_w', 'quat_x', 'quat_y', 'quat_z', 'quat_norm',
-        'euler_pitch', 'euler_roll', 'euler_yaw', 'yaw_unwrapped_deg'
+        'euler_pitch', 'euler_roll', 'euler_yaw', 'yaw_unwrapped_deg',
+        'packet_gap', 'host_packet_interval_ms', 'gyro_integral_nominal_deg', 'gyro_integral_host_time_deg'
       ].join(',') + '\n';
       await this.writable.write(header);
       this.flushTimer = setInterval(() => this.flush(), 1000);
@@ -283,7 +286,7 @@
 
     append(run, frame, analysis) {
       if (this.closed || this.error) return;
-      const value = item => Number.isFinite(Number(item)) ? String(Number(item)) : '';
+      const value = item => item !== null && item !== undefined && item !== '' && Number.isFinite(Number(item)) ? String(Number(item)) : '';
       const press = frame.press || [];
       const row = [
         run.type, frame.device, frame.side, frame.mode, frame.hostEpochMs, frame.timestamp, frame.serial, frame.packetNumber,
@@ -293,7 +296,9 @@
         value(frame.quat && frame.quat.w), value(frame.quat && frame.quat.x), value(frame.quat && frame.quat.y), value(frame.quat && frame.quat.z),
         value(analysis && analysis.norm),
         value(frame.euler && frame.euler.pitch), value(frame.euler && frame.euler.roll), value(frame.euler && frame.euler.yaw),
-        value(analysis && analysis.yawUnwrappedDeg)
+        value(analysis && analysis.yawUnwrappedDeg),
+        value(analysis && analysis.packetGap), value(analysis && analysis.packetIntervalMs),
+        value(analysis && analysis.gyroZIntegralDeg), value(analysis && analysis.gyroZHostTimeIntegralDeg)
       ].join(',') + '\n';
       this.buffer.push(row);
       if (this.buffer.length >= 500) this.flush();
@@ -368,6 +373,14 @@
   }
 
   function evaluateSnapshots(type, snapshots, metadata) {
+    if (type === 'communication') {
+      const evaluations = snapshots.map(snapshot => {
+        const communication = evaluateCommunication(snapshot);
+        return { snapshot, status: communication.status, communication };
+      });
+      return { status: worstStatus(evaluations.map(item => item.status)), evaluations };
+    }
+
     if (type === 'smoke' || type === 'static') {
       const evaluations = snapshots.map(snapshot => {
         const quat = evaluateQuaternion(snapshot);
@@ -443,7 +456,10 @@
       if (result.type === 'mode3') {
         return `${prefix}: ${format(snapshot.sampleRateHz, 1)}Hz / press ${snapshot.presence.press} / quat ${snapshot.presence.quat} / loss ${format(snapshot.packetLossPercent, 2)}%`;
       }
-      return `${prefix}: norm ${format(snapshot.norm.mean, 6)} ± ${format(snapshot.norm.std, 6)} / drift ${format(snapshot.yaw.driftDegPerMin, 2)}°/min / loss ${format(snapshot.packetLossPercent, 2)}%`;
+      if (result.type === 'communication') {
+        return `${prefix}: sample ${format(snapshot.sampleRateHz, 1)}Hz / packet ${format(snapshot.packetRateHz, 1)}Hz / BLE ${format(snapshot.bleFrequencyHz, 1)}Hz / lost ${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%) / gap events ${snapshot.gapEvents}, max ${snapshot.maxGap}, interval max ${format(snapshot.packetIntervalMs.max, 1)}ms`;
+      }
+      return `${prefix}: norm ${format(snapshot.norm.mean, 6)} ± ${format(snapshot.norm.std, 6)} / sample ${format(snapshot.sampleRateHz, 1)}Hz / drift ${format(snapshot.yaw.driftDegPerMin, 2)}°/min / residual ${format(snapshot.yaw.residualStdDeg, 3)}° / gyro μ ${format(snapshot.gyroZ.mean, 4)}°/s / lost ${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)`;
     }).join(' ｜ ');
   }
 
@@ -456,6 +472,7 @@
     const snapshots = run.deviceIds.map(deviceId => {
       const snapshot = run.accumulators[deviceId].snapshot(endAt);
       snapshot.side = sideFor(deviceId);
+      snapshot.bleFrequencyHz = live[deviceId].frequency;
       return snapshot;
     });
 
@@ -483,6 +500,7 @@
     };
     results.push(result);
     log(`${run.label} 終了: ${evaluation.status.toUpperCase()} — ${describeResult(result)}`, evaluation.status);
+    if (run.type === 'communication') renderCommunicationComparison();
     renderResults();
     renderActiveRun();
     updateControls();
@@ -509,6 +527,33 @@
     setTimeout(() => {
       if (!activeRun && connected.every(Boolean)) void startSmoke(true);
     }, 1500);
+  }
+
+  async function startCommunication() {
+    const ids = connectedIds();
+    if (ids.length !== 2) {
+      log('通信A/B診断は左右2台を接続して実行してください', 'fail');
+      return;
+    }
+    try {
+      const seconds = Math.max(10, Number($('communicationSeconds').value) || 60);
+      const logger = await chooseCsvLogger('communicationRaw', 'communication');
+      beginRun({
+        type: 'communication',
+        label: `通信診断 ${seconds}秒`,
+        deviceIds: ids,
+        durationMs: seconds * 1000,
+        instruction: 'デバイスとPCを動かさず、受信packet Hz・serial gap・最大連続欠損・到着間隔を測定しています。',
+        metadata: {
+          requestedSeconds: seconds,
+          slotMap: ids.map(deviceId => ({ deviceId, side: sideFor(deviceId) })),
+        },
+        logger,
+      });
+    } catch (error) {
+      if (error && error.name === 'AbortError') log('CSV保存先の選択をキャンセルしました', 'warn');
+      else log(`通信診断を開始できません: ${error.message || error}`, 'fail');
+    }
   }
 
   async function startStatic() {
@@ -628,6 +673,7 @@
     const busy = running || exclusiveBusy;
     $('disconnectAll').disabled = !any || busy;
     $('runSmoke').disabled = !any || busy;
+    $('startCommunication').disabled = ids.length !== 2 || busy;
     $('startStatic').disabled = !any || busy;
     $('startRotation').disabled = !any || busy;
     $('startWalk').disabled = !any || busy;
@@ -658,6 +704,8 @@
         <td id="liveNorm${deviceId}">-</td>
         <td id="liveYaw${deviceId}">-</td>
         <td id="liveDrift${deviceId}">-</td>
+        <td id="liveGyro${deviceId}">-</td>
+        <td id="liveGap${deviceId}">-</td>
         <td id="liveLoss${deviceId}">-</td>`;
       tbody.appendChild(row);
     });
@@ -674,11 +722,13 @@
       $(`liveStatus${deviceId}`).textContent = connected[deviceId] ? (isLive ? 'LIVE' : '待機') : '未接続';
       $(`liveSide${deviceId}`).textContent = sideFor(deviceId);
       $(`liveMode${deviceId}`).textContent = connected[deviceId] ? String(devices[deviceId].streaming_mode || '-') : '-';
-      $(`liveRate${deviceId}`).textContent = connected[deviceId] ? `${format(snapshot.sampleRateHz, 1)} Hz` : '-';
+      $(`liveRate${deviceId}`).textContent = connected[deviceId] ? `sample ${format(snapshot.sampleRateHz, 1)} / packet ${format(snapshot.packetRateHz, 1)} / BLE ${format(live[deviceId].frequency, 1)} Hz` : '-';
       $(`liveNorm${deviceId}`).textContent = currentNorm === null ? '-' : `${format(currentNorm, 6)} / μ ${format(snapshot.norm.mean, 6)}`;
       $(`liveYaw${deviceId}`).textContent = currentYaw === null ? '-' : `${format(currentYaw, 1)}° / unwrap ${format(snapshot.yaw.endDeg, 1)}°`;
-      $(`liveDrift${deviceId}`).textContent = snapshot.yaw.driftDegPerMin === null ? '-' : `${format(snapshot.yaw.driftDegPerMin, 2)}°/min`;
-      $(`liveLoss${deviceId}`).textContent = connected[deviceId] ? `${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)` : '-';
+      $(`liveDrift${deviceId}`).textContent = snapshot.yaw.driftDegPerMin === null ? '-' : `${format(snapshot.yaw.driftDegPerMin, 2)}°/min / residual ${format(snapshot.yaw.residualStdDeg, 3)}°`;
+      $(`liveGyro${deviceId}`).textContent = snapshot.gyroZ.mean === null ? '-' : `μ ${format(snapshot.gyroZ.mean, 4)}°/s / ×60 ${format(snapshot.gyroZBiasDegPerMin, 2)}°/min`;
+      $(`liveGap${deviceId}`).textContent = connected[deviceId] ? `events ${snapshot.gapEvents} / max ${snapshot.maxGap} / interval max ${format(snapshot.packetIntervalMs.max, 1)}ms` : '-';
+      $(`liveLoss${deviceId}`).textContent = connected[deviceId] ? `${snapshot.lostPackets}/${snapshot.receivedPackets + snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)` : '-';
     });
   }
 
@@ -733,14 +783,28 @@
     updateControls();
   }
 
+  function renderCommunicationComparison() {
+    const communicationResults = results.filter(result => result.type === 'communication');
+    const latest = communicationResults.at(-1) || null;
+    const previous = communicationResults.at(-2) || null;
+    const comparison = compareCommunicationRuns(previous, latest);
+    const element = $('communicationComparison');
+    element.textContent = comparison.message;
+    element.className = `comparison ${comparison.status}`;
+  }
+
   function buildReportPayload() {
     return {
-      title: 'ORPHE INSOLE Quaternion Validation Report',
+      title: 'ORPHE INSOLE Sensor Validation Report',
       generatedAt: new Date().toISOString(),
       sdkVersion: '1.2.1',
       environment: simulatorMode ? 'simulator' : 'hardware',
       userAgent: navigator.userAgent,
       devices: deviceInfo.map((info, deviceId) => ({ deviceId, side: sideFor(deviceId), information: info })),
+      communicationComparison: (() => {
+        const communicationResults = results.filter(result => result.type === 'communication');
+        return compareCommunicationRuns(communicationResults.at(-2) || null, communicationResults.at(-1) || null);
+      })(),
       results,
     };
   }
@@ -748,7 +812,7 @@
   function buildMarkdownReport() {
     const payload = buildReportPayload();
     const lines = [
-      '# ORPHE INSOLE Quaternion Validation Report',
+      '# ORPHE INSOLE Sensor Validation Report',
       '',
       `- 実施日時: ${new Date(payload.generatedAt).toLocaleString()}`,
       `- SDK: v${payload.sdkVersion}`,
@@ -760,12 +824,13 @@
     results.forEach(result => {
       lines.push(`| ${result.status.toUpperCase()} | ${result.label} | ${formatDuration(result.durationMs)} | ${describeResult(result).replaceAll('|', '/')} |`);
     });
+    lines.push('', '## 通信A/B比較', '', payload.communicationComparison.message, '');
     lines.push('', '## デバイス別詳細', '');
     results.forEach(result => {
       lines.push(`### ${result.label}`);
       result.devices.forEach(snapshot => {
         lines.push(
-          `- DEVICE ${snapshot.deviceId} (${snapshot.side}): samples=${snapshot.samples}, rate=${format(snapshot.sampleRateHz, 2)}Hz, lost=${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 3)}%), norm mean=${format(snapshot.norm.mean, 8)}, std=${format(snapshot.norm.std, 8)}, min=${format(snapshot.norm.min, 8)}, max=${format(snapshot.norm.max, 8)}, yaw drift=${format(snapshot.yaw.driftDegPerMin, 3)}deg/min, yaw delta=${format(snapshot.yaw.deltaDeg, 3)}deg, gyro_z integral=${format(snapshot.gyroZIntegralDeg, 3)}deg`
+          `- DEVICE ${snapshot.deviceId} (${snapshot.side}): samples=${snapshot.samples}, sample rate=${format(snapshot.sampleRateHz, 2)}Hz, packets=${snapshot.receivedPackets}, packet rate=${format(snapshot.packetRateHz, 2)}Hz, BLE rate=${format(snapshot.bleFrequencyHz, 2)}Hz, lost=${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 3)}%), gap events=${snapshot.gapEvents}, max gap=${snapshot.maxGap}, interval mean/max=${format(snapshot.packetIntervalMs.mean, 3)}/${format(snapshot.packetIntervalMs.max, 3)}ms, gap histogram=${JSON.stringify(snapshot.gapHistogram)}, norm mean/std/min/max=${format(snapshot.norm.mean, 8)}/${format(snapshot.norm.std, 8)}/${format(snapshot.norm.min, 8)}/${format(snapshot.norm.max, 8)}, yaw drift=${format(snapshot.yaw.driftDegPerMin, 3)}deg/min, yaw residual=${format(snapshot.yaw.residualStdDeg, 4)}deg, yaw range=${format(snapshot.yaw.rangeDeg, 3)}deg, gyro_z mean=${format(snapshot.gyroZ.mean, 5)}deg/s, gyro bias equivalent=${format(snapshot.gyroZBiasDegPerMin, 3)}deg/min, yaw-minus-gyro=${format(snapshot.yawMinusGyroDegPerMin, 3)}deg/min, gyro integral nominal/host=${format(snapshot.gyroZIntegralDeg, 3)}/${format(snapshot.gyroZHostTimeIntegralDeg, 3)}deg`
         );
       });
       lines.push('');
@@ -788,6 +853,7 @@
     $('connect1').addEventListener('click', () => { void connectDevice(1); });
     $('disconnectAll').addEventListener('click', disconnectAll);
     $('runSmoke').addEventListener('click', () => { void startSmoke(false); });
+    $('startCommunication').addEventListener('click', () => { void startCommunication(); });
     $('startStatic').addEventListener('click', () => { void startStatic(); });
     $('startRotation').addEventListener('click', () => { void startRotation(); });
     $('finishRotation').addEventListener('click', () => { void finishActiveRun('target-reached'); });
@@ -804,6 +870,7 @@
     $('clearResults').addEventListener('click', () => {
       results.length = 0;
       renderResults();
+      renderCommunicationComparison();
       log('結果をクリアしました');
     });
     $('clearLog').addEventListener('click', () => { $('eventLog').innerHTML = ''; });
@@ -821,6 +888,7 @@
     updateControls();
     renderActiveRun();
     renderResults();
+    renderCommunicationComparison();
     setInterval(() => {
       renderLive();
       renderActiveRun();

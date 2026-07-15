@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Quaternion Validation — ORPHE INSOLE</title>
+  <title>Sensor Validation & Diagnostics — ORPHE INSOLE</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 
@@ -12,8 +12,8 @@
   <header class="hero">
     <div>
       <p class="eyebrow">ORPHE INSOLE / v1.2.1 validation</p>
-      <h1>Quaternion Validation Console</h1>
-      <p class="lead">左右をBLE接続した後は、欠損・norm・yawドリフトを自動集計します。長時間でも統計は定数メモリ、生データは必要な場合だけCSVへ逐次保存します。</p>
+      <h1>Sensor Validation & Diagnostics</h1>
+      <p class="lead">左右をBLE接続した後は、通信欠損の発生形態、quaternion norm、yawドリフトとgyroバイアスを自動集計します。長時間でも統計は定数メモリ、生データは必要な場合だけCSVへ逐次保存します。</p>
     </div>
     <div class="hero-status">
       <span id="environmentBadge" class="badge neutral">実機モード</span>
@@ -71,6 +71,8 @@
               <th>Quat norm</th>
               <th>Yaw</th>
               <th>Yaw drift</th>
+              <th>Gyro z</th>
+              <th>Gap</th>
               <th>欠損</th>
             </tr>
           </thead>
@@ -101,10 +103,22 @@
         </div>
       </div>
       <div class="test-grid">
-        <article class="test-card">
+        <article class="test-card communication-card">
           <div class="test-number">A</div>
+          <h3>通信欠損A/B診断</h3>
+          <p>packet Hz、serial gap、最大連続欠損、到着間隔を測定します。1回目の後に接続枠を左右逆にして再実行すると、欠損が実物と枠のどちらに追従するかを自動判定します。</p>
+          <label>測定時間
+            <span class="input-with-unit"><input id="communicationSeconds" type="number" min="10" step="10" value="60"><span>秒</span></span>
+          </label>
+          <label class="check"><input id="communicationRaw" type="checkbox"> 生データをCSVへ逐次保存</label>
+          <button id="startCommunication" class="button primary" disabled>通信診断を開始</button>
+          <div id="communicationComparison" class="comparison info"></div>
+        </article>
+
+        <article class="test-card">
+          <div class="test-number">B</div>
           <h3>静置テスト</h3>
-          <p>norm統計、yaw範囲、左右ドリフト、欠損率を自動集計します。</p>
+          <p>norm統計、yaw範囲・線形ドリフト・残差揺れ、gyro_z平均と欠損率を自動集計します。</p>
           <label>測定時間
             <span class="input-with-unit"><input id="staticMinutes" type="number" min="0.1" step="0.1" value="5"><span>分</span></span>
           </label>
@@ -113,7 +127,7 @@
         </article>
 
         <article class="test-card">
-          <div class="test-number">B</div>
+          <div class="test-number">C</div>
           <h3>既知角度回転</h3>
           <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を計算します。</p>
           <div class="form-row">
@@ -146,7 +160,7 @@
         </article>
 
         <article class="test-card">
-          <div class="test-number">C</div>
+          <div class="test-number">D</div>
           <h3>周回歩行</h3>
           <p>quat yaw累積、生gyro_z積分、実周回数×360°を並べて記録します。</p>
           <div class="form-row">
@@ -168,7 +182,7 @@
         </article>
 
         <article class="test-card">
-          <div class="test-number">D</div>
+          <div class="test-number">E</div>
           <h3>200Hz回帰</h3>
           <p>両方をmode 3へ自動切替し、acc/gyro/pressの受信とquat停止を確認後、mode 4へ戻します。</p>
           <label>測定時間

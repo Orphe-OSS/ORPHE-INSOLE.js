@@ -70,6 +70,9 @@ async function exerciseSimulatorPipeline() {
     assert.ok(snapshot.samples >= 8, `mode4 device ${snapshot.deviceId} should receive samples`);
     assert.ok(snapshot.norm.count >= 8, `mode4 device ${snapshot.deviceId} should receive quaternion`);
     assert.ok(Math.abs(snapshot.norm.mean - 1) < 1e-9, `mode4 device ${snapshot.deviceId} norm`);
+    assert.ok(snapshot.packetRateHz > 0, `mode4 device ${snapshot.deviceId} should report packet rate`);
+    assert.ok(snapshot.gyroZ.count >= 8, `mode4 device ${snapshot.deviceId} should report gyro statistics`);
+    assert.equal(snapshot.lostPackets, 0, `mode4 device ${snapshot.deviceId} simulator should not lose packets`);
   });
 
   await Promise.all(simulators.map(simulator => simulator.setDataStreamingMode(3)));

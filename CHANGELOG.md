@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Expand the hardware validation page with packet-rate and serial-gap diagnostics, connection-slot A/B comparison, yaw residuals, gyro bias statistics, and fixed-period versus host-time gyro integration.
+
 ### Fixed
 
 - Convert `gotConvertedGyro` values with the IMU sensitivity for the configured full-scale range instead of treating raw int16 as ideal Q15 full scale. The normalized `gotGyro` values remain unchanged.

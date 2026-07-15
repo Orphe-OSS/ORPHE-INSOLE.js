@@ -126,6 +126,7 @@ main { max-width: 1320px; margin: 0 auto; padding: 0 28px 40px; }
 .device-connect h3, .device-connect p { margin-bottom: 4px; }
 
 .test-card { position: relative; padding: 22px; overflow: hidden; }
+.communication-card { grid-column: 1 / -1; }
 .test-card p { min-height: 48px; color: var(--muted); font-size: 0.9rem; }
 .test-number { position: absolute; top: 9px; right: 16px; color: rgba(94,229,188,0.16); font-size: 3.4rem; line-height: 1; font-weight: 900; }
 .test-card label { display: grid; gap: 6px; margin: 12px 0; color: var(--muted); font-size: 0.82rem; }
@@ -168,6 +169,19 @@ th { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.05em; text-trans
 td strong { display: block; color: var(--text); }
 td small { color: var(--muted); }
 .empty { padding: 28px; color: var(--muted); text-align: center; }
+
+.comparison {
+  margin-top: 16px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.025);
+  font-size: 0.86rem;
+}
+.comparison.pass { color: var(--mint); border-color: rgba(94,229,188,0.55); }
+.comparison.warn { color: var(--amber); border-color: rgba(255,200,87,0.55); }
+.comparison.fail { color: #ff9494; border-color: rgba(255,107,107,0.55); }
 
 .active-panel { background: linear-gradient(135deg, rgba(36,200,149,0.12), rgba(12,24,22,0.98)); }
 .active-instruction { min-height: 25px; margin-bottom: 12px; color: var(--muted); }
