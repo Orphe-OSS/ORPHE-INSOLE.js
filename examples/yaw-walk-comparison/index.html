@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Yaw Walk Comparison — ORPHE INSOLE</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+  <header class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">ORPHE INSOLE / Guided validation</p>
+      <h1>Yaw Walk Comparison</h1>
+      <p class="lead">机や座席の周りを1周または2周歩き、yawの2つの修正を同じデータで比較します。画面の案内どおりに進めるだけで、グラフとCSVを保存できます。</p>
+      <div class="privacy-note"><span aria-hidden="true">✓</span> 測定データはこのブラウザ内だけで処理され、サーバーへ送信されません。</div>
+    </div>
+    <div class="hero-status" aria-live="polite">
+      <span id="environmentBadge" class="badge neutral">実機モード</span>
+      <span id="globalStatus" class="badge neutral">接続待ち</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel explanation-panel" aria-labelledby="fix-heading">
+      <div class="section-heading">
+        <div>
+          <span class="step">WHY</span>
+          <h2 id="fix-heading">このページで比較する3段階</h2>
+        </div>
+      </div>
+      <p class="section-intro">1回の歩行データから3種類のyawを同時に計算します。古いSDKへ戻したり、実機の設定を変更したりする必要はありません。</p>
+      <div class="pipeline" role="list">
+        <article class="stage-card legacy" role="listitem">
+          <span class="stage-number">1</span>
+          <p class="stage-label">修正前を再現</p>
+          <h3>旧スケール解釈</h3>
+          <p>現在のQuaternionを0.5倍し、当時と同じく正規化せずEuler角へ変換します。normは約0.5となり、yawが±20°付近へ圧縮される状態を再現します。</p>
+        </article>
+        <div class="pipeline-arrow" aria-hidden="true">→</div>
+        <article class="stage-card fixed" role="listitem">
+          <span class="stage-number">2</span>
+          <p class="stage-label">修正1</p>
+          <h3>スケール修正後</h3>
+          <p>Q14としてQuaternionを読み、Euler計算前にも正規化します。normは約1.0となり、360°を超える回転を連続的に追跡できます。</p>
+        </article>
+        <div class="pipeline-arrow" aria-hidden="true">→</div>
+        <article class="stage-card corrected" role="listitem">
+          <span class="stage-number">3</span>
+          <p class="stage-label">修正2・検証中</p>
+          <h3>静止ドリフト補正後</h3>
+          <p>開始前の静止中に、実際のyawが1秒あたり何度ずれるかを学習します。歩行中はその推定値を固定し、時間に応じたずれを差し引きます。</p>
+        </article>
+      </div>
+      <div class="callout caution"><strong>重要：</strong>3段階目は評価中の補正です。6軸IMUだけでは絶対方位を観測できないため、長時間・温度変化・別個体で誤差が残る可能性があります。</div>
+    </section>
+
+    <section class="panel" aria-labelledby="connect-heading">
+      <div class="section-heading">
+        <div>
+          <span class="step">01</span>
+          <h2 id="connect-heading">INSOLEを接続</h2>
+        </div>
+        <button id="disconnectAll" class="button ghost" disabled>すべて切断</button>
+      </div>
+      <p class="section-intro">ChromeまたはEdgeで開いてください。1台でも測定できますが、左右2台の同時測定を推奨します。</p>
+      <div class="connect-grid">
+        <article id="deviceCard0" class="device-card">
+          <div>
+            <p class="device-kicker">DEVICE 0</p>
+            <h3 id="deviceTitle0">INSOLE 01</h3>
+            <p id="deviceDetail0" class="muted">未接続</p>
+          </div>
+          <button id="connect0" class="button primary">BLE接続</button>
+        </article>
+        <article id="deviceCard1" class="device-card">
+          <div>
+            <p class="device-kicker">DEVICE 1</p>
+            <h3 id="deviceTitle1">INSOLE 02</h3>
+            <p id="deviceDetail1" class="muted">未接続</p>
+          </div>
+          <button id="connect1" class="button primary">BLE接続</button>
+        </article>
+      </div>
+      <div id="browserSupport" class="support-message" aria-live="polite"></div>
+    </section>
+
+    <section class="panel record-panel" aria-labelledby="record-heading">
+      <div class="section-heading">
+        <div>
+          <span class="step">02</span>
+          <h2 id="record-heading">静止校正して周回を記録</h2>
+        </div>
+      </div>
+
+      <div class="record-layout">
+        <div class="manual-card">
+          <h3>記録ボタンを押す前に</h3>
+          <ol class="manual-steps">
+            <li><span>1</span><div><strong>安全な経路を決める</strong><p>机や座席の島など、同じ位置・同じ向きへ戻れる閉じた経路を選びます。階段や混雑した場所は避けてください。</p></div></li>
+            <li><span>2</span><div><strong>開始位置と向きを決める</strong><p>床の目印などに両足をそろえ、歩き始める方向を正面にします。</p></div></li>
+            <li><span>3</span><div><strong>10秒間動かない</strong><p>「静止校正と記録準備」を押した後、立ったまま10秒間静止します。READYになるまで歩き始めないでください。</p></div></li>
+            <li><span>4</span><div><strong>指定方向へ歩く</strong><p>「歩行を開始」が有効になったら押し、普通の速さで指定した周回数を歩きます。</p></div></li>
+            <li><span>5</span><div><strong>同じ位置・向きで終了</strong><p>開始点へ戻り、同じ方向を向いて停止してから「開始位置で終了」を押します。そのまま3秒静止すると自動終了します。</p></div></li>
+          </ol>
+        </div>
+
+        <div class="record-controls">
+          <div class="form-row">
+            <label>周回数
+              <select id="walkLoops">
+                <option value="1">1周（目安 360°）</option>
+                <option value="2">2周（目安 720°）</option>
+              </select>
+            </label>
+            <label>方向
+              <select id="walkDirection">
+                <option value="CW">時計回り</option>
+                <option value="CCW">反時計回り</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="runStatus" class="run-status idle" aria-live="polite">
+            <div>
+              <p id="runPhase" class="run-phase">接続待ち</p>
+              <p id="runInstruction">INSOLEを1台以上接続してください。</p>
+            </div>
+            <div id="runTimer" class="run-timer">00:00</div>
+          </div>
+          <progress id="calibrationProgress" max="10" value="0" aria-label="静止校正の進捗"></progress>
+
+          <div id="calibrationDevices" class="calibration-devices"></div>
+
+          <div class="button-stack">
+            <button id="prepareTest" class="button primary large" disabled>静止校正と記録準備</button>
+            <button id="beginWalk" class="button accent large" disabled>歩行を開始</button>
+            <button id="finishWalk" class="button secondary large" disabled>開始位置で終了</button>
+            <button id="cancelTest" class="button ghost" disabled>測定を中止</button>
+          </div>
+          <p class="small-note">静止校正の開始から終了までがCSVに記録されます。測定中にページを閉じたり再読み込みしたりしないでください。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel chart-section" aria-labelledby="charts-heading">
+      <div class="section-heading">
+        <div>
+          <span class="step">03</span>
+          <h2 id="charts-heading">補正前・補正後をグラフで比較</h2>
+        </div>
+        <div class="legend" aria-label="デバイスの凡例">
+          <span><i class="legend-line device-zero"></i><span id="legend0">DEVICE 0</span></span>
+          <span><i class="legend-line device-one"></i><span id="legend1">DEVICE 1</span></span>
+          <span><i class="legend-line target"></i>周回目標</span>
+        </div>
+      </div>
+
+      <div class="comparison-block">
+        <div class="comparison-title">
+          <span class="comparison-number">比較A</span>
+          <div><h3>Quaternionスケール修正の効果</h3><p>左右は同じ縦軸です。旧解釈のyawが±20°付近へ圧縮され、修正後は周回角度を追跡できるか確認します。</p></div>
+        </div>
+        <div class="chart-pair">
+          <article class="chart-card legacy-chart">
+            <header><span>修正前を再現</span><h4>旧スケール解釈 yaw</h4></header>
+            <canvas id="legacyChart" width="720" height="380" aria-label="旧スケール解釈yawのグラフ"></canvas>
+            <p id="legacyChartMetric" class="chart-metric">測定待ち</p>
+          </article>
+          <article class="chart-card fixed-chart">
+            <header><span>修正1</span><h4>スケール修正後 yaw</h4></header>
+            <canvas id="fixedChartA" width="720" height="380" aria-label="スケール修正後yawのグラフ"></canvas>
+            <p id="fixedChartMetricA" class="chart-metric">測定待ち</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="comparison-block">
+        <div class="comparison-title">
+          <span class="comparison-number">比較B</span>
+          <div><h3>静止ドリフト補正の効果</h3><p>スケール修正後の生yawと、開始前に学習した静止ドリフトを差し引いたyawを比較します。</p></div>
+        </div>
+        <div class="chart-pair">
+          <article class="chart-card fixed-chart">
+            <header><span>修正1まで</span><h4>補正前 yaw</h4></header>
+            <canvas id="fixedChartB" width="720" height="380" aria-label="静止ドリフト補正前yawのグラフ"></canvas>
+            <p id="fixedChartMetricB" class="chart-metric">測定待ち</p>
+          </article>
+          <article class="chart-card corrected-chart">
+            <header><span>修正2・検証中</span><h4>静止ドリフト補正後 yaw</h4></header>
+            <canvas id="correctedChart" width="720" height="380" aria-label="静止ドリフト補正後yawのグラフ"></canvas>
+            <p id="correctedChartMetric" class="chart-metric">測定待ち</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel results-panel" aria-labelledby="results-heading">
+      <div class="section-heading">
+        <div>
+          <span class="step">04</span>
+          <h2 id="results-heading">結果を確認・保存</h2>
+        </div>
+        <div class="button-row">
+          <button id="downloadCsv" class="button primary" disabled>CSVを保存</button>
+          <button id="downloadJson" class="button ghost" disabled>結果JSONを保存</button>
+          <button id="resetResult" class="button ghost" disabled>新しい測定</button>
+        </div>
+      </div>
+      <div id="resultSummary" class="result-summary empty">測定が終了すると、各デバイスの回転量と誤差を表示します。</div>
+      <div class="table-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>装着側</th>
+              <th>旧解釈<br>最終値 / 範囲</th>
+              <th>スケール修正後<br>回転量 / 誤差</th>
+              <th>ドリフト補正後<br>回転量 / 誤差</th>
+              <th>誤差の変化</th>
+              <th>Quat norm<br>旧 / 修正後</th>
+              <th>静止ドリフト推定</th>
+              <th>通信欠損</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"><tr><td colspan="9" class="empty-cell">まだ測定結果はありません</td></tr></tbody>
+        </table>
+      </div>
+      <div class="callout info"><strong>結果の読み方：</strong>机周回の360°/720°は、ターンテーブルのような高精度な基準ではありません。最終誤差だけでなく、グラフの形、左右差、Quaternion norm、通信欠損も合わせて確認してください。</div>
+    </section>
+
+    <details class="panel technical-notes">
+      <summary>技術情報とCSV列の説明</summary>
+      <div class="technical-content">
+        <h2>計算方法</h2>
+        <ul>
+          <li><strong>旧スケール解釈：</strong>修正済みQuaternionの各成分を0.5倍し、正規化せずにZYX Euler yawを算出します。</li>
+          <li><strong>スケール修正後：</strong>Q14で復号したQuaternionを単位長へ正規化してZYX Euler yawを算出します。</li>
+          <li><strong>静止ドリフト補正後：</strong>静止判定中のunwrapped yaw変化率を指数移動平均で学習し、経過時間に応じた累積量を生yawから差し引きます。</li>
+          <li><strong>連続角度：</strong>±180°をまたぐたびに角度を連結し、1周を約360°、2周を約720°として表示します。</li>
+        </ul>
+        <h2>CSV</h2>
+        <p>測定条件、時刻、装着側、加速度、ジャイロ、圧力、修正済みQuaternion、旧解釈再現Quaternion、3段階のyaw、補正状態、補正量、パケット欠損をサンプルごとに保存します。</p>
+      </div>
+    </details>
+  </main>
+
+  <footer>
+    <p>本ページはセンサ出力と補正方式の技術評価用です。絶対方位、位置推定精度、特定用途への適合性を保証するものではありません。</p>
+  </footer>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleSimulator.js"></script>
+  <script src="../quaternion-validation/metrics.js"></script>
+  <script src="./comparison.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>
