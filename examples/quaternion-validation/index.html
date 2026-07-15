@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quaternion Validation — ORPHE INSOLE</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">ORPHE INSOLE / v1.2.1 validation</p>
+      <h1>Quaternion Validation Console</h1>
+      <p class="lead">左右をBLE接続した後は、欠損・norm・yawドリフトを自動集計します。長時間でも統計は定数メモリ、生データは必要な場合だけCSVへ逐次保存します。</p>
+    </div>
+    <div class="hero-status">
+      <span id="environmentBadge" class="badge neutral">実機モード</span>
+      <span id="globalStatus" class="badge neutral">接続待ち</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">01</span>
+          <h2>左右を接続</h2>
+        </div>
+        <button id="disconnectAll" class="button ghost" disabled>すべて切断</button>
+      </div>
+      <p class="hint">Chrome / Edge のlocalhostで開き、各ボタンから別々のINSOLEを選択してください。2台とも接続すると10秒のスモークチェックが自動で始まります。</p>
+      <div class="connect-grid">
+        <article class="device-connect" id="connectCard0">
+          <div>
+            <p class="device-kicker">DEVICE 0</p>
+            <h3 id="connectTitle0">INSOLE 01</h3>
+            <p id="connectDetail0" class="muted">未接続</p>
+          </div>
+          <button id="connect0" class="button primary">BLE接続</button>
+        </article>
+        <article class="device-connect" id="connectCard1">
+          <div>
+            <p class="device-kicker">DEVICE 1</p>
+            <h3 id="connectTitle1">INSOLE 02</h3>
+            <p id="connectDetail1" class="muted">未接続</p>
+          </div>
+          <button id="connect1" class="button primary">BLE接続</button>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">02</span>
+          <h2>ライブ診断</h2>
+        </div>
+        <button id="runSmoke" class="button secondary" disabled>10秒チェックを再実行</button>
+      </div>
+      <div class="table-wrap">
+        <table class="metrics-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>状態</th>
+              <th>Side</th>
+              <th>Mode</th>
+              <th>受信レート</th>
+              <th>Quat norm</th>
+              <th>Yaw</th>
+              <th>Yaw drift</th>
+              <th>欠損</th>
+            </tr>
+          </thead>
+          <tbody id="liveMetrics"></tbody>
+        </table>
+      </div>
+      <p class="footnote">Yawはunwrap後の値と回帰ドリフトを表示します。静置していても6軸IMUのyawドリフトは残るため、ゼロであることを合格条件にしません。</p>
+    </section>
+
+    <section class="panel active-panel" id="activePanel">
+      <div class="section-heading">
+        <div>
+          <span class="step">RUN</span>
+          <h2 id="activeTitle">テスト待機中</h2>
+        </div>
+        <button id="stopActive" class="button danger" disabled>現在のテストを終了</button>
+      </div>
+      <p id="activeInstruction" class="active-instruction">左右を接続してください。</p>
+      <progress id="activeProgress" value="0" max="1"></progress>
+      <div id="activeElapsed" class="timer">00:00</div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">03</span>
+          <h2>実機テスト</h2>
+        </div>
+      </div>
+      <div class="test-grid">
+        <article class="test-card">
+          <div class="test-number">A</div>
+          <h3>静置テスト</h3>
+          <p>norm統計、yaw範囲、左右ドリフト、欠損率を自動集計します。</p>
+          <label>測定時間
+            <span class="input-with-unit"><input id="staticMinutes" type="number" min="0.1" step="0.1" value="5"><span>分</span></span>
+          </label>
+          <label class="check"><input id="staticRaw" type="checkbox"> 生データをCSVへ逐次保存</label>
+          <button id="startStatic" class="button primary" disabled>静置テスト開始</button>
+        </article>
+
+        <article class="test-card">
+          <div class="test-number">B</div>
+          <h3>既知角度回転</h3>
+          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を計算します。</p>
+          <div class="form-row">
+            <label>対象
+              <select id="rotationDevice">
+                <option value="0">DEVICE 0</option>
+                <option value="1">DEVICE 1</option>
+                <option value="both">左右同時</option>
+              </select>
+            </label>
+            <label>実角度
+              <select id="rotationTarget">
+                <option value="90">90°</option>
+                <option value="180">180°</option>
+                <option value="360">360°</option>
+              </select>
+            </label>
+            <label>方向
+              <select id="rotationDirection">
+                <option value="CW">時計回り</option>
+                <option value="CCW">反時計回り</option>
+              </select>
+            </label>
+          </div>
+          <label class="check"><input id="rotationRaw" type="checkbox"> 生データをCSVへ逐次保存</label>
+          <div class="button-row">
+            <button id="startRotation" class="button primary" disabled>基準を記録して開始</button>
+            <button id="finishRotation" class="button secondary" disabled>目標角度に到達</button>
+          </div>
+        </article>
+
+        <article class="test-card">
+          <div class="test-number">C</div>
+          <h3>周回歩行</h3>
+          <p>quat yaw累積、生gyro_z積分、実周回数×360°を並べて記録します。</p>
+          <div class="form-row">
+            <label>周回数
+              <input id="walkLoops" type="number" min="1" step="1" value="1">
+            </label>
+            <label>方向
+              <select id="walkDirection">
+                <option value="CW">時計回り</option>
+                <option value="CCW">反時計回り</option>
+              </select>
+            </label>
+          </div>
+          <label class="check"><input id="walkRaw" type="checkbox"> 生データをCSVへ逐次保存</label>
+          <div class="button-row">
+            <button id="startWalk" class="button primary" disabled>歩行記録開始</button>
+            <button id="finishWalk" class="button secondary" disabled>開始位置で終了</button>
+          </div>
+        </article>
+
+        <article class="test-card">
+          <div class="test-number">D</div>
+          <h3>200Hz回帰</h3>
+          <p>両方をmode 3へ自動切替し、acc/gyro/pressの受信とquat停止を確認後、mode 4へ戻します。</p>
+          <label>測定時間
+            <span class="input-with-unit"><input id="mode3Seconds" type="number" min="5" step="1" value="15"><span>秒</span></span>
+          </label>
+          <button id="runMode3" class="button primary" disabled>mode 3回帰を実行</button>
+        </article>
+      </div>
+      <p id="fileSupport" class="footnote"></p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">04</span>
+          <h2>結果と出力</h2>
+        </div>
+        <div class="button-row">
+          <button id="downloadJson" class="button ghost" disabled>JSON保存</button>
+          <button id="downloadMarkdown" class="button ghost" disabled>Markdown保存</button>
+          <button id="clearResults" class="button ghost" disabled>結果をクリア</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="results-table">
+          <thead><tr><th>日時</th><th>テスト</th><th>結果</th><th>観測値</th></tr></thead>
+          <tbody id="resultsBody"><tr><td colspan="4" class="empty">まだ結果はありません</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">LOG</span>
+          <h2>イベントログ</h2>
+        </div>
+        <button id="clearLog" class="button ghost">ログをクリア</button>
+      </div>
+      <div id="eventLog" class="event-log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer>
+    このページはSDK検証用です。姿勢推定精度全体や医療用途への適合性を保証するものではありません。
+  </footer>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleSimulator.js"></script>
+  <script src="./metrics.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>

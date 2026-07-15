@@ -32,13 +32,17 @@ function near(actual, expected, message) {
   assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: expected ${expected}, got ${actual}`);
 }
 
+function quatNorm(quat) {
+  return Math.hypot(quat.w, quat.x, quat.y, quat.z);
+}
+
 async function main() {
   assert.equal(OrpheInsole, Orphe);
   assert.equal(typeof Orphe.parseSensorValues, 'function');
 
   {
     const data = createPacket(56);
-    setQuat(data, 8 + 32, [32768 - 1, 0, -32768, 16384]);
+    setQuat(data, 8 + 32, [11585, 0, 0, 11585]);
     setVec3(data, 16 + 32, [3277, -3277, 8192]);
     setVec3(data, 22 + 32, [16384, -8192, 4096]);
     setPress(data, 28 + 32, [101, 102, 103, 104, 105, 106]);
@@ -55,6 +59,8 @@ async function main() {
     assert.equal(parsed.samples[1].packet_number, 1);
     assert.deepEqual(parsed.samples[0].press.values, [101, 102, 103, 104, 105, 106]);
     assert.deepEqual(parsed.samples[1].press.values, [201, 202, 203, 204, 205, 206]);
+    assert.ok(Math.abs(quatNorm(parsed.samples[0].quat) - 1) < 1e-4, 'mode 56 Q14 quat norm');
+    near(parsed.samples[0].quat.w, 11585 / 16384, 'mode 56 Q14 quat w');
     near(parsed.samples[0].acc.x, 16384 / 32768, 'mode 56 acc');
     near(parsed.samples[0].converted_acc.x, (16384 / 32768) * 16, 'mode 56 converted acc');
     near(parsed.samples[0].gyro.x, 3277 / 32768, 'mode 56 gyro');
@@ -81,7 +87,7 @@ async function main() {
     data.setUint8(70, 5);
     data.setUint8(49, 7);
     data.setUint8(28, 11);
-    setQuat(data, 8 + 21 * 3, [32767, 0, 0, 0]);
+    setQuat(data, 8 + 21 * 3, [16384, 0, 0, 0]);
     setVec3(data, 16 + 21 * 3, [100, 200, 300]);
     setVec3(data, 22 + 21 * 3, [400, 500, 600]);
 
@@ -93,6 +99,8 @@ async function main() {
     assert.equal(parsed.samples[2].timestamp - parsed.samples[1].timestamp, 7);
     assert.equal(parsed.samples[3].timestamp - parsed.samples[2].timestamp, 11);
     assert.equal(parsed.samples[0].press, undefined);
+    assert.ok(Math.abs(quatNorm(parsed.samples[0].quat) - 1) < 1e-4, 'mode 50 Q14 quat norm');
+    near(parsed.samples[0].quat.w, 1, 'mode 50 Q14 quat w');
   }
 
   {
@@ -115,11 +123,11 @@ async function main() {
 
   {
     const data = createPacket(56, 1);
-    setQuat(data, 8 + 32, [32768 - 1, 0, 0, 0]);
+    setQuat(data, 8 + 32, [16384, 0, 0, 0]);
     setVec3(data, 16 + 32, [100, 200, 300]);
     setVec3(data, 22 + 32, [400, 500, 600]);
     setPress(data, 28 + 32, [1, 2, 3, 4, 5, 6]);
-    setQuat(data, 8, [32768 - 1, 0, 0, 0]);
+    setQuat(data, 8, [16384, 0, 0, 0]);
     setVec3(data, 16, [700, 800, 900]);
     setVec3(data, 22, [1000, 1100, 1200]);
     setPress(data, 28, [7, 8, 9, 10, 11, 12]);
@@ -138,6 +146,44 @@ async function main() {
     assert.equal(calls.press.length, 2);
     assert.deepEqual(calls.press[0].values, [1, 2, 3, 4, 5, 6]);
     assert.deepEqual(calls.press[1].values, [7, 8, 9, 10, 11, 12]);
+  }
+
+  {
+    const data = createPacket(56, 2);
+    setQuat(data, 8 + 32, [8192, 0, 0, 8192]);
+    setQuat(data, 8, [8192, 0, 0, 8192]);
+
+    const eulerInputNorms = [];
+    const previousQuaternion = global.Quaternion;
+    global.Quaternion = class TestQuaternion {
+      constructor(w, x, y, z) {
+        this.w = w;
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        eulerInputNorms.push(Math.hypot(this.w, this.x, this.y, this.z));
+      }
+
+      toEuler() {
+        return { pitch: 0, roll: 0, yaw: 0 };
+      }
+    };
+
+    try {
+      const insole = new Orphe(0);
+      const eulerCalls = [];
+      insole.gotEuler = value => eulerCalls.push(value);
+      insole.onRead(data, 'SENSOR_VALUES');
+
+      assert.equal(eulerCalls.length, 2);
+      assert.equal(eulerInputNorms.length, 2);
+      for (const norm of eulerInputNorms) {
+        assert.ok(Math.abs(norm - 1) < 1e-12, `Euler input quaternion must be normalized, got ${norm}`);
+      }
+    } finally {
+      if (previousQuaternion === undefined) delete global.Quaternion;
+      else global.Quaternion = previousQuaternion;
+    }
   }
 
   {
