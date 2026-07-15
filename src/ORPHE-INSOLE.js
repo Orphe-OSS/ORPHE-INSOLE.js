@@ -134,6 +134,22 @@ function _orpheInsoleNormalizeQuaternion(quat) {
   };
 }
 
+// DEVICE_INFORMATION stores range settings as indices, while the parser API
+// accepts physical full-scale values. Keep these tables private so the public
+// callback shapes remain unchanged.
+const _ORPHE_INSOLE_ACC_RANGES = Object.freeze([2, 4, 8, 16]);
+const _ORPHE_INSOLE_GYRO_RANGES = Object.freeze([250, 500, 1000, 2000]);
+// LSM6DSOX typical sensitivity is 0.035 mdps/LSB per dps of full scale
+// (8.75/17.5/35/70 mdps/LSB for 250/500/1000/2000 dps).
+const _ORPHE_INSOLE_GYRO_DPS_PER_LSB_PER_RANGE = 0.000035;
+
+function _orpheInsoleRangeFromSetting(ranges, setting, fallback) {
+  const index = Number(setting);
+  return Number.isInteger(index) && index >= 0 && index < ranges.length
+    ? ranges[index]
+    : fallback;
+}
+
 /**
  * code プロパティ付き Error を生成する（エラー種別のプログラム判定用）。
  * message は従来の文字列エラーと同一文字列を維持する（後方互換）。
@@ -165,6 +181,7 @@ function parseInsoleSensorValues(data, options = {}) {
   const serial_number = data.getUint16(1);
   const gyroRange = Number.isFinite(Number(options.gyroRange)) ? Number(options.gyroRange) : 2000;
   const accRange = Number.isFinite(Number(options.accRange)) ? Number(options.accRange) : 16;
+  const gyroSensitivity = gyroRange * _ORPHE_INSOLE_GYRO_DPS_PER_LSB_PER_RANGE;
   const t_start = _orpheInsoleTimestampToday(
     data.getUint8(3),
     data.getUint8(4),
@@ -172,8 +189,8 @@ function parseInsoleSensorValues(data, options = {}) {
     data.getUint16(6)
   );
   const samples = [];
-  // Observed INSOLE packets encode quaternion components as signed Q14
-  // (1.0 = 16384). acc/gyro below remain signed Q15 (1.0 = 32768).
+  // INSOLE packets encode quaternion components as signed Q14
+  // (1.0 = 16384). acc/gyro normalized callbacks retain int16/32768.
   const quatScale = 16384;
 
   function vector3(x, y, z, timestamp, packet_number) {
@@ -202,9 +219,9 @@ function parseInsoleSensorValues(data, options = {}) {
   function withConverted(sample) {
     if (sample.gyro) {
       sample.converted_gyro = {
-        x: sample.gyro.x * gyroRange,
-        y: sample.gyro.y * gyroRange,
-        z: sample.gyro.z * gyroRange,
+        x: sample.gyro.x * 32768 * gyroSensitivity,
+        y: sample.gyro.y * 32768 * gyroSensitivity,
+        z: sample.gyro.z * 32768 * gyroSensitivity,
         timestamp: sample.timestamp,
         serial_number,
         packet_number: sample.packet_number
@@ -1452,7 +1469,19 @@ class OrpheInsole {
     if (uuid == 'DEVICE_INFORMATION') {
     }
     else if (uuid == 'SENSOR_VALUES') {
-      const parsed = parseInsoleSensorValues(data);
+      const range = this.device_information && this.device_information.range;
+      const parsed = parseInsoleSensorValues(data, {
+        accRange: _orpheInsoleRangeFromSetting(
+          _ORPHE_INSOLE_ACC_RANGES,
+          range && range.acc,
+          16
+        ),
+        gyroRange: _orpheInsoleRangeFromSetting(
+          _ORPHE_INSOLE_GYRO_RANGES,
+          range && range.gyro,
+          2000
+        )
+      });
       if (!parsed) {
         console.warn("SENSOR VALUES: Data length is not 104");
         return;

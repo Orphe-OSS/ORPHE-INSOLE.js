@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Convert `gotConvertedGyro` values with the IMU sensitivity for the configured full-scale range instead of treating raw int16 as ideal Q15 full scale. The normalized `gotGyro` values remain unchanged.
+- Apply the accelerometer and gyroscope range settings returned by `getDeviceInformation()` when parsing live SENSOR_VALUES callbacks.
+
+### Documentation
+
+- Clarify quaternion and gyroscope payload scales and anonymize the validation notes.
+
 ## [1.2.1] - 2026-07-15
 
 ### Added

@@ -64,7 +64,15 @@ async function main() {
     near(parsed.samples[0].acc.x, 16384 / 32768, 'mode 56 acc');
     near(parsed.samples[0].converted_acc.x, (16384 / 32768) * 16, 'mode 56 converted acc');
     near(parsed.samples[0].gyro.x, 3277 / 32768, 'mode 56 gyro');
-    near(parsed.samples[0].converted_gyro.x, (3277 / 32768) * 2000, 'mode 56 converted gyro');
+    near(parsed.samples[0].converted_gyro.x, 3277 * 0.07, 'mode 56 converted gyro');
+  }
+
+  {
+    const data = createPacket(56);
+    setVec3(data, 16 + 32, [1000, -1000, 2000]);
+    const parsed = parseInsoleSensorValues(data, { gyroRange: 500 });
+    near(parsed.samples[0].converted_gyro.x, 1000 * 0.0175, '500 dps converted gyro');
+    near(parsed.samples[0].converted_gyro.y, -1000 * 0.0175, '500 dps converted gyro negative');
   }
 
   {
@@ -133,19 +141,26 @@ async function main() {
     setPress(data, 28, [7, 8, 9, 10, 11, 12]);
 
     const insole = new Orphe(0);
-    const calls = { quat: [], acc: [], gyro: [], press: [] };
+    const calls = { quat: [], acc: [], gyro: [], press: [], convertedAcc: [], convertedGyro: [] };
+    insole.device_information = { range: { acc: 0, gyro: 1 } };
     insole.gotQuat = value => calls.quat.push(value);
     insole.gotAcc = value => calls.acc.push(value);
     insole.gotGyro = value => calls.gyro.push(value);
     insole.gotPress = value => calls.press.push(value);
+    insole.gotConvertedAcc = value => calls.convertedAcc.push(value);
+    insole.gotConvertedGyro = value => calls.convertedGyro.push(value);
     insole.onRead(data, 'SENSOR_VALUES');
 
     assert.equal(calls.quat.length, 2);
     assert.equal(calls.acc.length, 2);
     assert.equal(calls.gyro.length, 2);
     assert.equal(calls.press.length, 2);
+    assert.equal(calls.convertedAcc.length, 2);
+    assert.equal(calls.convertedGyro.length, 2);
     assert.deepEqual(calls.press[0].values, [1, 2, 3, 4, 5, 6]);
     assert.deepEqual(calls.press[1].values, [7, 8, 9, 10, 11, 12]);
+    near(calls.convertedAcc[0].x, (400 / 32768) * 2, 'device acc range setting');
+    near(calls.convertedGyro[0].x, 100 * 0.0175, 'device gyro range setting');
   }
 
   {
