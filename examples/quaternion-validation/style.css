@@ -113,6 +113,35 @@ main { max-width: 1320px; margin: 0 auto; padding: 0 28px 40px; }
 .receive-path select { min-height: 38px; }
 .receive-path span { line-height: 1.4; }
 
+.experiment-panel {
+  border-color: rgba(97, 217, 238, 0.42);
+  background: linear-gradient(145deg, rgba(18, 42, 42, 0.96), rgba(10, 22, 21, 0.96));
+}
+
+.experiment-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.experiment-controls label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.experiment-controls .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.bias-table td:nth-child(2) { color: var(--cyan); font-weight: 800; }
+.bias-table td:nth-child(6) { color: var(--mint); }
+
 .connect-grid, .test-grid {
   display: grid;
   gap: 14px;
@@ -237,6 +266,7 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 28px 45px; color: var(--m
   .section-heading { align-items: flex-start; flex-direction: column; }
   .device-connect { align-items: flex-start; }
   .receive-path { grid-template-columns: 1fr; }
+  .experiment-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
@@ -244,4 +274,5 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 28px 45px; color: var(--m
   .panel { padding: 18px; }
   .device-connect { flex-direction: column; }
   .device-connect .button { width: 100%; }
+  .experiment-controls { grid-template-columns: 1fr; }
 }

@@ -23,6 +23,13 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.match(html, /src="\.\/metrics\.js"/);
   assert.match(html, /src="\.\/app\.js"/);
   assert.match(html, /id="receivePath"/);
+  assert.match(html, /id="biasEnabled"/);
+  assert.match(html, /id="biasGyroThreshold"/);
+  assert.match(html, /id="biasAccTolerance"/);
+  assert.match(html, /id="biasDwellSeconds"/);
+  assert.match(html, /id="biasTimeConstantSeconds"/);
+  assert.match(html, /id="resetBias"/);
+  assert.match(html, /id="biasMetrics"/);
   assert.match(html, /value="raw" selected/);
   assert.match(app, /OrpheInsole\.parseSensorValues\(data, sensorRangesFor\(deviceId\)\)/);
   assert.match(app, /GYROSCOPE_RANGES/);
@@ -33,8 +40,11 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.doesNotMatch(app, /BLE rate=/);
   assert.match(app, /gyro_referenced_yaw_deg/);
   assert.match(app, /gyro_referenced_yaw_device_time_deg/);
+  assert.match(app, /yaw_bias_corrected_deg/);
+  assert.match(app, /adaptiveYawBias/);
+  assert.match(app, /補正quat/);
   assert.match(app, /const signedGyroObservedDeg = snapshot\.gyroZDeviceTimeIntegralDeg/);
-  assert.match(app, /gyro\(device time\)/);
+  assert.match(app, /gyro_z\(body\/device time\)/);
   assert.match(app, /connection coverage=/);
   assert.match(app, /5-minute drift windows/);
   assert.match(app, /first-window fixed calibration validation/);

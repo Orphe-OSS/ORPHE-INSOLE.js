@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const {
+  AdaptiveYawBiasTracker,
   AngleTracker,
   DeviceAccumulator,
   GapCoincidenceTracker,
@@ -15,6 +16,7 @@ const {
   quaternionToEuler,
   serialGap,
   wrappedDeltaDegrees,
+  yawRateFromGyroBias,
 } = require('../examples/quaternion-validation/metrics.js');
 
 function near(actual, expected, tolerance, message) {
@@ -87,6 +89,74 @@ function near(actual, expected, tolerance, message) {
   near(snapshot.rangeDeg, 40, 1e-12, 'yaw range');
   near(snapshot.residualStdDeg, 0, 1e-12, 'linear yaw residual');
   near(snapshot.rSquared, 1, 1e-12, 'linear yaw r squared');
+}
+
+{
+  near(yawRateFromGyroBias({ x: 0, y: 0, z: 1 }, { roll: Math.PI / 3, pitch: 0 }), 0.5, 1e-12, 'bias projected to Euler yaw rate');
+  assert.equal(yawRateFromGyroBias({ x: 0, y: 0, z: 1 }, { roll: 0, pitch: Math.PI / 2 }), null);
+}
+
+{
+  const tracker = new AdaptiveYawBiasTracker({
+    stationaryDwellMs: 500,
+    biasTimeConstantMs: 1000,
+  });
+  for (let elapsedMs = 0; elapsedMs <= 60000; elapsedMs += 100) {
+    const yawDeg = 1.2 * elapsedMs / 1000;
+    tracker.addFrame({
+      mode: 4,
+      timestamp: elapsedMs,
+      gyro: { x: 0.1, y: -0.2, z: 1.2 },
+      acc: { x: 0, y: 0, z: 1 },
+      euler: { pitch: 0, roll: 0, yaw: yawDeg * Math.PI / 180 },
+    }, elapsedMs);
+  }
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.ready, true);
+  assert.equal(snapshot.state, 'updating');
+  near(snapshot.bias.x, 0.1, 1e-9, 'adaptive gyro x bias');
+  near(snapshot.bias.y, -0.2, 1e-9, 'adaptive gyro y bias');
+  near(snapshot.bias.z, 1.2, 1e-9, 'adaptive gyro z bias');
+  near(snapshot.correctedYaw.deltaDeg, 0, 1e-8, 'constant bias corrected yaw delta');
+  near(snapshot.correctedYaw.driftDegPerMin, 0, 0.02, 'constant bias corrected yaw drift');
+}
+
+{
+  const tracker = new AdaptiveYawBiasTracker({ stationaryDwellMs: 500 });
+  for (let elapsedMs = 0; elapsedMs <= 4000; elapsedMs += 100) {
+    const moving = elapsedMs > 2000;
+    const yawDeg = moving
+      ? -4 - 92 * (elapsedMs - 2000) / 1000
+      : -2 * elapsedMs / 1000;
+    tracker.addFrame({
+      mode: 4,
+      timestamp: elapsedMs,
+      gyro: { x: 0, y: 0, z: moving ? -92 : -2 },
+      acc: { x: 0, y: 0, z: 1 },
+      euler: { pitch: 0, roll: 0, yaw: yawDeg * Math.PI / 180 },
+    }, elapsedMs);
+  }
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.ready, true);
+  assert.equal(snapshot.state, 'holding');
+  near(snapshot.bias.z, -2, 1e-9, 'movement holds learned bias');
+  near(snapshot.correctedYaw.deltaDeg, -180, 1e-8, 'learned bias removed during rotation');
+}
+
+{
+  const tracker = new AdaptiveYawBiasTracker({ stationaryDwellMs: 200 });
+  for (let elapsedMs = 0; elapsedMs <= 1000; elapsedMs += 100) {
+    tracker.addFrame({
+      mode: 4,
+      timestamp: elapsedMs,
+      gyro: { x: 0, y: 0, z: 1 },
+      acc: { x: 0, y: 0, z: 1.4 },
+      euler: { pitch: 0, roll: 0, yaw: 0 },
+    }, elapsedMs);
+  }
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.ready, false);
+  assert.equal(snapshot.state, 'waiting');
 }
 
 {

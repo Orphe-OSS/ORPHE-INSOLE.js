@@ -89,6 +89,49 @@
       <p class="footnote">Yawはunwrap後の値と回帰ドリフトを表示します。静置していても6軸IMUのyawドリフトは残るため、ゼロであることを合格条件にしません。SDKのgotBLEFrequencyは直近1通知の瞬間値なので、平均受信レートや合否には使いません。</p>
     </section>
 
+    <section class="panel experiment-panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">EXP</span>
+          <h2>適応ジャイロバイアス補正（実験）</h2>
+        </div>
+        <button id="resetBias" class="button secondary" disabled>設定を適用して補正をリセット</button>
+      </div>
+      <p class="hint">低角速度かつ加速度ノルムが1g付近の区間を静止・立脚候補として3軸gyroバイアスを学習します。動作中は推定値を固定し、現在のroll/pitchに応じたyaw方向のバイアスだけを生yawから差し引きます。</p>
+      <div class="experiment-controls">
+        <label class="check"><input id="biasEnabled" type="checkbox" checked> 補正を有効にする</label>
+        <label>静止gyro上限
+          <span class="input-with-unit"><input id="biasGyroThreshold" type="number" min="0.1" step="0.1" value="4"><span>°/s</span></span>
+        </label>
+        <label>1g許容幅
+          <span class="input-with-unit"><input id="biasAccTolerance" type="number" min="0.01" step="0.01" value="0.12"><span>g</span></span>
+        </label>
+        <label>連続静止時間
+          <span class="input-with-unit"><input id="biasDwellSeconds" type="number" min="0" step="0.1" value="0.5"><span>秒</span></span>
+        </label>
+        <label>追従時定数 τ
+          <span class="input-with-unit"><input id="biasTimeConstantSeconds" type="number" min="0.1" step="0.1" value="3"><span>秒</span></span>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table class="metrics-table bias-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>補正状態</th>
+              <th>推定bias x/y/z</th>
+              <th>静止判定</th>
+              <th>生yaw</th>
+              <th>補正yaw</th>
+              <th>累積補正量</th>
+            </tr>
+          </thead>
+          <tbody id="biasMetrics"></tbody>
+        </table>
+      </div>
+      <p class="footnote">テスト開始後は2秒ほど静止し、補正状態がREADY相当になってから動いてください。この補正はページ内の比較実験だけに適用され、SDKのquat/euler値は変更しません。固定補正より改善するか、静置・回転・周回歩行で数値比較してください。</p>
+    </section>
+
     <section class="panel active-panel" id="activePanel">
       <div class="section-heading">
         <div>
@@ -146,7 +189,7 @@
         <article class="test-card">
           <div class="test-number">C</div>
           <h3>既知角度回転</h3>
-          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を計算します。</p>
+          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を、生yaw・適応補正yaw・生gyro_zで比較します。</p>
           <div class="form-row">
             <label>対象
               <select id="rotationDevice">
@@ -179,7 +222,7 @@
         <article class="test-card">
           <div class="test-number">D</div>
           <h3>周回歩行</h3>
-          <p>安全な屋内の廊下や広い部屋で、開始位置と向きを決めて閉じた経路を1周します。quat yaw累積、生gyro_z積分、実周回数×360°を並べます。</p>
+          <p>安全な屋内の廊下や広い部屋で、開始位置と向きを決めて閉じた経路を1周します。quat yaw累積、適応補正yaw、生gyro_z積分、実周回数×360°を並べます。</p>
           <details class="protocol">
             <summary>歩き方を見る</summary>
             <ol>

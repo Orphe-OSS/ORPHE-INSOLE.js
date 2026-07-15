@@ -7,6 +7,14 @@
 
   const DRIFT_WINDOW_MS = 5 * 60 * 1000;
   const MAX_DRIFT_WINDOWS = 288;
+  const ADAPTIVE_BIAS_DEFAULTS = Object.freeze({
+    enabled: true,
+    gyroThresholdDegPerSecond: 4,
+    accToleranceG: 0.12,
+    stationaryDwellMs: 500,
+    biasTimeConstantMs: 3000,
+    maxIntegrationGapMs: 1000,
+  });
 
   function finite(value) {
     const number = Number(value);
@@ -64,6 +72,33 @@
 
   function expectedPacketRate() {
     return 50;
+  }
+
+  function adaptiveBiasOptions(options = {}) {
+    const numberOrDefault = (value, fallback, minimum) => {
+      const number = finite(value);
+      return number === null ? fallback : Math.max(minimum, number);
+    };
+    return {
+      enabled: options.enabled !== false,
+      gyroThresholdDegPerSecond: numberOrDefault(options.gyroThresholdDegPerSecond, ADAPTIVE_BIAS_DEFAULTS.gyroThresholdDegPerSecond, 0.1),
+      accToleranceG: numberOrDefault(options.accToleranceG, ADAPTIVE_BIAS_DEFAULTS.accToleranceG, 0.01),
+      stationaryDwellMs: numberOrDefault(options.stationaryDwellMs, ADAPTIVE_BIAS_DEFAULTS.stationaryDwellMs, 0),
+      biasTimeConstantMs: numberOrDefault(options.biasTimeConstantMs, ADAPTIVE_BIAS_DEFAULTS.biasTimeConstantMs, 1),
+      maxIntegrationGapMs: numberOrDefault(options.maxIntegrationGapMs, ADAPTIVE_BIAS_DEFAULTS.maxIntegrationGapMs, 1),
+    };
+  }
+
+  function yawRateFromGyroBias(bias, euler) {
+    if (!bias || !euler) return null;
+    const biasY = finite(bias.y);
+    const biasZ = finite(bias.z);
+    const roll = finite(euler.roll);
+    const pitch = finite(euler.pitch);
+    if (biasY === null || biasZ === null || roll === null || pitch === null) return null;
+    const cosPitch = Math.cos(pitch);
+    if (Math.abs(cosPitch) < 0.2) return null;
+    return (Math.sin(roll) * biasY + Math.cos(roll) * biasZ) / cosPitch;
   }
 
   function connectionCoverage(interruptions, deviceId, durationMs) {
@@ -221,6 +256,189 @@
     }
   }
 
+  class AdaptiveYawBiasTracker {
+    constructor(options = {}) {
+      this.options = adaptiveBiasOptions(options);
+      this.firstAtMs = null;
+      this.lastAtMs = null;
+      this.previousEuler = null;
+      this.clockResets = 0;
+      this.eligibleSamples = 0;
+      this.stationarySamples = 0;
+      this.stationary = false;
+      this.stationarySinceMs = null;
+      this.stationarySegmentSum = { x: 0, y: 0, z: 0 };
+      this.stationarySegmentSamples = 0;
+      this.bias = { x: 0, y: 0, z: 0 };
+      this.biasReady = false;
+      this.biasUpdates = 0;
+      this.readyAtMs = null;
+      this.correctionIntegralDeg = 0;
+      this.rawYaw = new AngleTracker();
+      this.correctedCount = 0;
+      this.correctedStartDeg = null;
+      this.correctedCurrentDeg = null;
+      this.correctedMinDeg = Infinity;
+      this.correctedMaxDeg = -Infinity;
+      this.correctedRegression = new LinearRegression();
+      this.lastBiasYawRateDegPerSecond = null;
+    }
+
+    _timeFor(frame, hostTimestampMs) {
+      const deviceAtMs = finite(frame && frame.timestamp);
+      return deviceAtMs === null ? finite(hostTimestampMs) : deviceAtMs;
+    }
+
+    _motion(frame) {
+      if (!frame || !frame.gyro || !frame.acc) return null;
+      const gyro = {
+        x: finite(frame.gyro.x),
+        y: finite(frame.gyro.y),
+        z: finite(frame.gyro.z),
+      };
+      const acc = {
+        x: finite(frame.acc.x),
+        y: finite(frame.acc.y),
+        z: finite(frame.acc.z),
+      };
+      if (Object.values(gyro).some(value => value === null) || Object.values(acc).some(value => value === null)) return null;
+      const gyroMagnitude = Math.hypot(gyro.x, gyro.y, gyro.z);
+      const accMagnitude = Math.hypot(acc.x, acc.y, acc.z);
+      return {
+        gyro,
+        gyroMagnitude,
+        accMagnitude,
+        stationary: gyroMagnitude <= this.options.gyroThresholdDegPerSecond
+          && Math.abs(accMagnitude - 1) <= this.options.accToleranceG,
+      };
+    }
+
+    _clearStationarySegment() {
+      this.stationarySinceMs = null;
+      this.stationarySegmentSum = { x: 0, y: 0, z: 0 };
+      this.stationarySegmentSamples = 0;
+    }
+
+    _updateBias(motion, atMs, frame) {
+      this.eligibleSamples += 1;
+      this.stationary = motion.stationary;
+      if (!motion.stationary || !this.options.enabled) {
+        this._clearStationarySegment();
+        return;
+      }
+
+      this.stationarySamples += 1;
+      if (this.stationarySinceMs === null) this.stationarySinceMs = atMs;
+      this.stationarySegmentSum.x += motion.gyro.x;
+      this.stationarySegmentSum.y += motion.gyro.y;
+      this.stationarySegmentSum.z += motion.gyro.z;
+      this.stationarySegmentSamples += 1;
+      const dwellMs = Math.max(0, atMs - this.stationarySinceMs);
+      if (dwellMs < this.options.stationaryDwellMs) return;
+
+      if (!this.biasReady) {
+        this.bias = {
+          x: this.stationarySegmentSum.x / this.stationarySegmentSamples,
+          y: this.stationarySegmentSum.y / this.stationarySegmentSamples,
+          z: this.stationarySegmentSum.z / this.stationarySegmentSamples,
+        };
+        this.biasReady = true;
+        this.biasUpdates = 1;
+        this.readyAtMs = atMs;
+        const initialYawBias = yawRateFromGyroBias(this.bias, frame.euler);
+        if (initialYawBias !== null) this.correctionIntegralDeg += initialYawBias * dwellMs / 1000;
+        return;
+      }
+
+      const nominalMs = sampleIntervalSeconds(frame.mode || 4) * 1000;
+      const alpha = 1 - Math.exp(-nominalMs / this.options.biasTimeConstantMs);
+      this.bias.x += alpha * (motion.gyro.x - this.bias.x);
+      this.bias.y += alpha * (motion.gyro.y - this.bias.y);
+      this.bias.z += alpha * (motion.gyro.z - this.bias.z);
+      this.biasUpdates += 1;
+    }
+
+    addFrame(frame, hostTimestampMs) {
+      if (!frame) return null;
+      const atMs = this._timeFor(frame, hostTimestampMs);
+      if (atMs === null) return null;
+      if (this.firstAtMs === null) this.firstAtMs = atMs;
+      let elapsedStepMs = 0;
+      if (this.lastAtMs !== null) {
+        if (atMs < this.lastAtMs) {
+          this.clockResets += 1;
+        } else {
+          elapsedStepMs = Math.min(this.options.maxIntegrationGapMs, atMs - this.lastAtMs);
+        }
+      }
+
+      if (this.options.enabled && this.biasReady && elapsedStepMs > 0) {
+        const yawBiasRate = yawRateFromGyroBias(this.bias, this.previousEuler || frame.euler);
+        if (yawBiasRate !== null) this.correctionIntegralDeg += yawBiasRate * elapsedStepMs / 1000;
+      }
+
+      const motion = this._motion(frame);
+      if (motion) this._updateBias(motion, atMs, frame);
+      else {
+        this.stationary = false;
+        this._clearStationarySegment();
+      }
+
+      const elapsedMs = Math.max(0, atMs - this.firstAtMs);
+      if (frame.euler && finite(frame.euler.yaw) !== null) {
+        this.rawYaw.push(radToDeg(frame.euler.yaw), elapsedMs);
+        const corrected = this.rawYaw.current - this.correctionIntegralDeg;
+        if (this.correctedStartDeg === null) this.correctedStartDeg = corrected;
+        this.correctedCurrentDeg = corrected;
+        this.correctedCount += 1;
+        this.correctedMinDeg = Math.min(this.correctedMinDeg, corrected);
+        this.correctedMaxDeg = Math.max(this.correctedMaxDeg, corrected);
+        this.correctedRegression.push(elapsedMs, corrected);
+      }
+
+      this.lastBiasYawRateDegPerSecond = this.biasReady ? yawRateFromGyroBias(this.bias, frame.euler) : null;
+      this.lastAtMs = atMs;
+      this.previousEuler = frame.euler || this.previousEuler;
+      return this.snapshot();
+    }
+
+    snapshot() {
+      const correctedSlope = this.correctedRegression.slope();
+      const stationaryElapsedMs = this.stationary && this.stationarySinceMs !== null && this.lastAtMs !== null
+        ? Math.max(0, this.lastAtMs - this.stationarySinceMs)
+        : 0;
+      return {
+        enabled: this.options.enabled,
+        state: !this.options.enabled ? 'disabled' : (this.biasReady ? (this.stationary ? 'updating' : 'holding') : (this.stationary ? 'learning' : 'waiting')),
+        ready: this.biasReady,
+        readyAtMs: this.readyAtMs,
+        bias: this.biasReady ? { ...this.bias } : null,
+        biasUpdates: this.biasUpdates,
+        biasYawRateDegPerSecond: this.lastBiasYawRateDegPerSecond,
+        correctionDeg: this.correctionIntegralDeg,
+        stationary: this.stationary,
+        stationaryElapsedMs,
+        stationarySamples: this.stationarySamples,
+        eligibleSamples: this.eligibleSamples,
+        stationaryPercent: this.eligibleSamples ? this.stationarySamples * 100 / this.eligibleSamples : 0,
+        clockResets: this.clockResets,
+        options: { ...this.options },
+        correctedYaw: {
+          count: this.correctedCount,
+          startDeg: this.correctedStartDeg,
+          endDeg: this.correctedCurrentDeg,
+          deltaDeg: this.correctedCount ? this.correctedCurrentDeg - this.correctedStartDeg : null,
+          minDeg: this.correctedCount ? this.correctedMinDeg : null,
+          maxDeg: this.correctedCount ? this.correctedMaxDeg : null,
+          rangeDeg: this.correctedCount ? this.correctedMaxDeg - this.correctedMinDeg : null,
+          driftDegPerMin: correctedSlope === null ? null : correctedSlope * 60000,
+          residualStdDeg: this.correctedRegression.residualStd(),
+          rSquared: this.correctedRegression.rSquared(),
+        },
+      };
+    }
+  }
+
   class DriftWindowAccumulator {
     constructor(index) {
       this.index = index;
@@ -263,7 +481,7 @@
   }
 
   class DeviceAccumulator {
-    constructor(deviceId, startAtMs, mode) {
+    constructor(deviceId, startAtMs, mode, options = {}) {
       this.deviceId = Number(deviceId);
       this.startAtMs = Number(startAtMs) || 0;
       this.mode = Number(mode) || 4;
@@ -301,6 +519,7 @@
       this.gyroReferencedYawDeviceRegression = new LinearRegression();
       this.driftWindows = [];
       this.driftWindowsTruncated = false;
+      this.adaptiveYawBias = new AdaptiveYawBiasTracker(options.adaptiveBias || {});
     }
 
     addFrame(frame, hostTimestampMs) {
@@ -365,6 +584,8 @@
       const norm = quatNorm(frame.quat);
       if (norm !== null) this.norm.push(norm);
 
+      const adaptiveYawBias = this.adaptiveYawBias.addFrame(frame, now);
+
       if (frame.euler && finite(frame.euler.yaw) !== null) {
         this.yaw.push(radToDeg(frame.euler.yaw), elapsedMs);
         if (deviceElapsedMs !== null) this.yawDeviceTimeRegression.push(deviceElapsedMs, this.yaw.current);
@@ -424,7 +645,8 @@
         gyroReferencedYawDeviceDeg,
         gyroZIntegralDeg: this.gyroZIntegralDeg,
         gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg,
-        gyroZDeviceTimeIntegralDeg: this.gyroZDeviceTimeIntegralDeg
+        gyroZDeviceTimeIntegralDeg: this.gyroZDeviceTimeIntegralDeg,
+        adaptiveYawBias,
       };
     }
 
@@ -502,7 +724,8 @@
         driftWindowsTruncated: this.driftWindowsTruncated,
         gyroZIntegralDeg: this.gyroZIntegralDeg,
         gyroZHostTimeIntegralDeg: this.gyroZHostTimeIntegralDeg,
-        gyroZDeviceTimeIntegralDeg: this.gyroZDeviceTimeIntegralDeg
+        gyroZDeviceTimeIntegralDeg: this.gyroZDeviceTimeIntegralDeg,
+        adaptiveYawBias: this.adaptiveYawBias.snapshot(),
       };
     }
   }
@@ -817,6 +1040,8 @@
   }
 
   return {
+    ADAPTIVE_BIAS_DEFAULTS,
+    AdaptiveYawBiasTracker,
     AngleTracker,
     DeviceAccumulator,
     DriftWindowAccumulator,
@@ -837,6 +1062,7 @@
     radToDeg,
     sampleIntervalSeconds,
     serialGap,
-    wrappedDeltaDegrees
+    wrappedDeltaDegrees,
+    yawRateFromGyroBias,
   };
 });
