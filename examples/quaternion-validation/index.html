@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Quaternion Validation — ORPHE INSOLE</title>
+  <title>Sensor Validation & Diagnostics — ORPHE INSOLE</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 
@@ -12,8 +12,8 @@
   <header class="hero">
     <div>
       <p class="eyebrow">ORPHE INSOLE / v1.2.1 validation</p>
-      <h1>Quaternion Validation Console</h1>
-      <p class="lead">左右をBLE接続した後は、欠損・norm・yawドリフトを自動集計します。長時間でも統計は定数メモリ、生データは必要な場合だけCSVへ逐次保存します。</p>
+      <h1>Sensor Validation & Diagnostics</h1>
+      <p class="lead">左右をBLE接続した後は、通信欠損の発生形態、quaternion norm、yawドリフトとgyroバイアスを自動集計します。長時間でも統計は定数メモリ、生データは必要な場合だけCSVへ逐次保存します。</p>
     </div>
     <div class="hero-status">
       <span id="environmentBadge" class="badge neutral">実機モード</span>
@@ -31,6 +31,13 @@
         <button id="disconnectAll" class="button ghost" disabled>すべて切断</button>
       </div>
       <p class="hint">Chrome / Edge のlocalhostで開き、各ボタンから別々のINSOLEを選択してください。2台とも接続すると10秒のスモークチェックが自動で始まります。</p>
+      <label class="receive-path">受信処理
+        <select id="receivePath">
+          <option value="raw" selected>軽量raw packet（推奨）</option>
+          <option value="callbacks">SDK標準callbacks（比較用）</option>
+        </select>
+        <span>軽量処理は1通知を1回だけparseし、ページ描画用callbackの連鎖を省きます。変更する場合はいったん全切断してください。</span>
+      </label>
       <div class="connect-grid">
         <article class="device-connect" id="connectCard0">
           <div>
@@ -71,13 +78,59 @@
               <th>Quat norm</th>
               <th>Yaw</th>
               <th>Yaw drift</th>
+              <th>Gyro z</th>
+              <th>Gap</th>
               <th>欠損</th>
             </tr>
           </thead>
           <tbody id="liveMetrics"></tbody>
         </table>
       </div>
-      <p class="footnote">Yawはunwrap後の値と回帰ドリフトを表示します。静置していても6軸IMUのyawドリフトは残るため、ゼロであることを合格条件にしません。</p>
+      <p class="footnote">Yawはunwrap後の値と回帰ドリフトを表示します。静置していても6軸IMUのyawドリフトは残るため、ゼロであることを合格条件にしません。SDKのgotBLEFrequencyは直近1通知の瞬間値なので、平均受信レートや合否には使いません。</p>
+    </section>
+
+    <section class="panel experiment-panel">
+      <div class="section-heading">
+        <div>
+          <span class="step">EXP</span>
+          <h2>適応ジャイロバイアス補正（実験）</h2>
+        </div>
+        <button id="resetBias" class="button secondary" disabled>設定を適用して補正をリセット</button>
+      </div>
+      <p class="hint">低角速度かつ加速度ノルムが1g付近の区間を静止・立脚候補として3軸gyroバイアスを学習します。動作中は推定値を固定し、現在のroll/pitchに応じたyaw方向のバイアスだけを生yawから差し引きます。</p>
+      <div class="experiment-controls">
+        <label class="check"><input id="biasEnabled" type="checkbox" checked> 補正を有効にする</label>
+        <label>静止gyro上限
+          <span class="input-with-unit"><input id="biasGyroThreshold" type="number" min="0.1" step="0.1" value="4"><span>°/s</span></span>
+        </label>
+        <label>1g許容幅
+          <span class="input-with-unit"><input id="biasAccTolerance" type="number" min="0.01" step="0.01" value="0.12"><span>g</span></span>
+        </label>
+        <label>連続静止時間
+          <span class="input-with-unit"><input id="biasDwellSeconds" type="number" min="0" step="0.1" value="0.5"><span>秒</span></span>
+        </label>
+        <label>追従時定数 τ
+          <span class="input-with-unit"><input id="biasTimeConstantSeconds" type="number" min="0.1" step="0.1" value="3"><span>秒</span></span>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table class="metrics-table bias-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>補正状態</th>
+              <th>推定bias x/y/z</th>
+              <th>静止判定</th>
+              <th>生yaw</th>
+              <th>gyro投影補正yaw</th>
+              <th>yaw実測補正yaw</th>
+              <th>累積補正量</th>
+            </tr>
+          </thead>
+          <tbody id="biasMetrics"></tbody>
+        </table>
+      </div>
+      <p class="footnote">テスト開始後は2秒ほど静止し、補正状態がREADY相当になってから動いてください。gyro biasをEuler yawへ投影する方式と、静止中のyawドリフトを直接学習する方式を同時比較します。どちらもページ内の比較実験だけに適用され、SDKのquat/euler値は変更しません。</p>
     </section>
 
     <section class="panel active-panel" id="activePanel">
@@ -101,10 +154,32 @@
         </div>
       </div>
       <div class="test-grid">
-        <article class="test-card">
+        <article class="test-card communication-card">
           <div class="test-number">A</div>
+          <h3>通信欠損切り分け</h3>
+          <p>packet Hz、serial gap、最大連続欠損、到着間隔、2台の同期gap率を測定します。単体測定と3回の2台同時測定で、実物・DEVICE枠・接続順を混同せずに切り分けます。</p>
+          <details class="protocol" open>
+            <summary>推奨手順（この順で実施）</summary>
+            <ol>
+              <li>任意: 1台だけ接続して60秒測定し、もう一方も単体で繰り返す。</li>
+              <li>A: DEVICE 0へLを先に、DEVICE 1へRを後に接続して測定。</li>
+              <li>B: DEVICE 0へRを先に、DEVICE 1へLを後に接続して測定。</li>
+              <li>C: Bと同じ割当のまま、DEVICE 1のLを先に、DEVICE 0のRを後に接続して測定。</li>
+            </ol>
+            <p>各回の間に「すべて切断」を押します。A/BだけではDEVICE 0と1番目の接続が重なるため、Cまで必要です。</p>
+          </details>
+          <label>測定時間
+            <span class="input-with-unit"><input id="communicationSeconds" type="number" min="10" step="10" value="60"><span>秒</span></span>
+          </label>
+          <label class="check"><input id="communicationRaw" type="checkbox"> 生データをCSVへ逐次保存</label>
+          <button id="startCommunication" class="button primary" disabled>通信診断を開始</button>
+          <div id="communicationComparison" class="comparison info"></div>
+        </article>
+
+        <article class="test-card">
+          <div class="test-number">B</div>
           <h3>静置テスト</h3>
-          <p>norm統計、yaw範囲、左右ドリフト、欠損率を自動集計します。</p>
+          <p>norm統計、yaw範囲・線形ドリフト・残差揺れ、gyro_z平均と5分窓の変動を自動集計し、ドリフトがgyroバイアスで説明できるか分類します。途中切断は部分測定として残します。</p>
           <label>測定時間
             <span class="input-with-unit"><input id="staticMinutes" type="number" min="0.1" step="0.1" value="5"><span>分</span></span>
           </label>
@@ -113,9 +188,9 @@
         </article>
 
         <article class="test-card">
-          <div class="test-number">B</div>
+          <div class="test-number">C</div>
           <h3>既知角度回転</h3>
-          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を計算します。</p>
+          <p>開始時のyawを基準に、wrapを越えた回転量と実角度との差を、生yaw・gyro投影補正yaw・yaw実測補正yaw・生gyro_zで比較します。</p>
           <div class="form-row">
             <label>対象
               <select id="rotationDevice">
@@ -146,9 +221,19 @@
         </article>
 
         <article class="test-card">
-          <div class="test-number">C</div>
+          <div class="test-number">D</div>
           <h3>周回歩行</h3>
-          <p>quat yaw累積、生gyro_z積分、実周回数×360°を並べて記録します。</p>
+          <p>安全な屋内の廊下や広い部屋で、開始位置と向きを決めて閉じた経路を1周します。quat yaw累積、2方式の適応補正yaw、生gyro_z積分、実周回数×360°を並べます。</p>
+          <details class="protocol">
+            <summary>歩き方を見る</summary>
+            <ol>
+              <li>混雑・階段を避け、床に開始位置と進行方向の目印を置く。</li>
+              <li>両足に装着し、目印で静止して「歩行記録開始」を押す。</li>
+              <li>普通の速さで長方形などの閉じた経路を指定方向に1周する。</li>
+              <li>同じ位置・同じ向きへ戻って静止し、「開始位置で終了」を押す。</li>
+            </ol>
+            <p>まず通信診断を優先し、欠損率が高い間の歩行結果は参考値として扱ってください。</p>
+          </details>
           <div class="form-row">
             <label>周回数
               <input id="walkLoops" type="number" min="1" step="1" value="1">
@@ -168,9 +253,9 @@
         </article>
 
         <article class="test-card">
-          <div class="test-number">D</div>
+          <div class="test-number">E</div>
           <h3>200Hz回帰</h3>
-          <p>両方をmode 3へ自動切替し、acc/gyro/pressの受信とquat停止を確認後、mode 4へ戻します。</p>
+          <p>両方をmode 3へ自動切替し、acc/gyro/pressの受信、quat停止、200Hzに対する受信率と欠損率を確認後、mode 4へ戻します。</p>
           <label>測定時間
             <span class="input-with-unit"><input id="mode3Seconds" type="number" min="5" step="1" value="15"><span>秒</span></span>
           </label>

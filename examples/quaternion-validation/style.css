@@ -101,6 +101,47 @@ main { max-width: 1320px; margin: 0 auto; padding: 0 28px 40px; }
 .hint { margin-bottom: 18px; }
 .footnote { margin: 14px 0 0; font-size: 0.82rem; }
 
+.receive-path {
+  display: grid;
+  grid-template-columns: auto minmax(230px, 360px) 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.receive-path select { min-height: 38px; }
+.receive-path span { line-height: 1.4; }
+
+.experiment-panel {
+  border-color: rgba(97, 217, 238, 0.42);
+  background: linear-gradient(145deg, rgba(18, 42, 42, 0.96), rgba(10, 22, 21, 0.96));
+}
+
+.experiment-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.experiment-controls label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.experiment-controls .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.bias-table td:nth-child(2) { color: var(--cyan); font-weight: 800; }
+.bias-table td:nth-child(6) { color: var(--mint); }
+
 .connect-grid, .test-grid {
   display: grid;
   gap: 14px;
@@ -126,11 +167,26 @@ main { max-width: 1320px; margin: 0 auto; padding: 0 28px 40px; }
 .device-connect h3, .device-connect p { margin-bottom: 4px; }
 
 .test-card { position: relative; padding: 22px; overflow: hidden; }
+.communication-card { grid-column: 1 / -1; }
 .test-card p { min-height: 48px; color: var(--muted); font-size: 0.9rem; }
 .test-number { position: absolute; top: 9px; right: 16px; color: rgba(94,229,188,0.16); font-size: 3.4rem; line-height: 1; font-weight: 900; }
 .test-card label { display: grid; gap: 6px; margin: 12px 0; color: var(--muted); font-size: 0.82rem; }
 .test-card .check { display: flex; grid-template-columns: auto 1fr; align-items: center; }
 .test-card .button { margin-top: 6px; }
+
+.protocol {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.14);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.protocol summary { color: var(--text); cursor: pointer; font-weight: 800; }
+.protocol ol { margin: 10px 0 0; padding-left: 1.4rem; }
+.protocol li + li { margin-top: 5px; }
+.test-card .protocol p { min-height: 0; margin: 10px 0 0; font-size: 0.8rem; }
 
 input, select {
   width: 100%;
@@ -169,6 +225,19 @@ td strong { display: block; color: var(--text); }
 td small { color: var(--muted); }
 .empty { padding: 28px; color: var(--muted); text-align: center; }
 
+.comparison {
+  margin-top: 16px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.025);
+  font-size: 0.86rem;
+}
+.comparison.pass { color: var(--mint); border-color: rgba(94,229,188,0.55); }
+.comparison.warn { color: var(--amber); border-color: rgba(255,200,87,0.55); }
+.comparison.fail { color: #ff9494; border-color: rgba(255,107,107,0.55); }
+
 .active-panel { background: linear-gradient(135deg, rgba(36,200,149,0.12), rgba(12,24,22,0.98)); }
 .active-instruction { min-height: 25px; margin-bottom: 12px; color: var(--muted); }
 progress { width: 100%; height: 10px; border: 0; border-radius: 999px; overflow: hidden; background: #07110f; }
@@ -196,6 +265,8 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 28px 45px; color: var(--m
   .connect-grid, .test-grid { grid-template-columns: 1fr; }
   .section-heading { align-items: flex-start; flex-direction: column; }
   .device-connect { align-items: flex-start; }
+  .receive-path { grid-template-columns: 1fr; }
+  .experiment-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
@@ -203,4 +274,5 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 28px 45px; color: var(--m
   .panel { padding: 18px; }
   .device-connect { flex-direction: column; }
   .device-connect .button { width: 100%; }
+  .experiment-controls { grid-template-columns: 1fr; }
 }

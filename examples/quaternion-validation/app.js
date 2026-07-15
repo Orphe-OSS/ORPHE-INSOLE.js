@@ -4,9 +4,17 @@
   'use strict';
 
   const {
+    ADAPTIVE_BIAS_DEFAULTS,
     DeviceAccumulator,
+    GapCoincidenceTracker,
+    compareCommunicationRuns,
+    connectionCoverage,
+    evaluateCommunication,
     evaluateQuaternion,
+    evaluateStatic,
+    evaluateStreamingMode,
     quatNorm,
+    quaternionToEuler,
     radToDeg,
   } = OrpheQuaternionValidationMetrics;
 
@@ -14,29 +22,32 @@
   const simulatorMode = params.get('sim') === '1';
   const DeviceClass = simulatorMode ? OrpheInsoleSimulator : OrpheInsole;
   const devices = [new DeviceClass(0), new DeviceClass(1)];
+  const ACCELEROMETER_RANGES = [2, 4, 8, 16];
+  const GYROSCOPE_RANGES = [250, 500, 1000, 2000];
   const connected = [false, false];
   const deviceInfo = [null, null];
   const pending = [{}, {}];
   const live = [createLiveState(0), createLiveState(1)];
   const results = [];
+  const connectionRank = [null, null];
+  let connectionSequence = 0;
   let activeRun = null;
   let autoSmokeScheduled = false;
   let exclusiveBusy = false;
 
   const $ = id => document.getElementById(id);
 
-  function createLiveState(deviceId, mode = 4) {
+  function createLiveState(deviceId, mode = 4, adaptiveBias = ADAPTIVE_BIAS_DEFAULTS) {
     return {
-      accumulator: new DeviceAccumulator(deviceId, performance.now(), mode),
+      accumulator: new DeviceAccumulator(deviceId, performance.now(), mode, { adaptiveBias }),
       latestFrame: null,
       latestAnalysis: null,
-      frequency: 0,
       lastFrameAt: 0,
     };
   }
 
-  function resetLiveState(deviceId, mode) {
-    live[deviceId] = createLiveState(deviceId, mode);
+  function resetLiveState(deviceId, mode, adaptiveBias = biasExperimentOptions()) {
+    live[deviceId] = createLiveState(deviceId, mode, adaptiveBias);
   }
 
   function sideFor(deviceId) {
@@ -54,7 +65,24 @@
   }
 
   function format(value, digits = 2, fallback = '-') {
-    return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : fallback;
+    return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : fallback;
+  }
+
+  function biasExperimentOptions() {
+    const enabled = $('biasEnabled') ? $('biasEnabled').checked : ADAPTIVE_BIAS_DEFAULTS.enabled;
+    const number = (id, fallback, multiplier = 1, minimum = 0) => {
+      const element = $(id);
+      const value = element ? Number(element.value) * multiplier : fallback;
+      return Number.isFinite(value) ? Math.max(minimum, value) : fallback;
+    };
+    return {
+      enabled,
+      gyroThresholdDegPerSecond: number('biasGyroThreshold', ADAPTIVE_BIAS_DEFAULTS.gyroThresholdDegPerSecond, 1, 0.1),
+      accToleranceG: number('biasAccTolerance', ADAPTIVE_BIAS_DEFAULTS.accToleranceG, 1, 0.01),
+      stationaryDwellMs: number('biasDwellSeconds', ADAPTIVE_BIAS_DEFAULTS.stationaryDwellMs, 1000),
+      biasTimeConstantMs: number('biasTimeConstantSeconds', ADAPTIVE_BIAS_DEFAULTS.biasTimeConstantMs, 1000, 1),
+      maxIntegrationGapMs: ADAPTIVE_BIAS_DEFAULTS.maxIntegrationGapMs,
+    };
   }
 
   function formatDuration(milliseconds) {
@@ -105,6 +133,39 @@
     return sample ? { pitch: Number(sample.pitch), roll: Number(sample.roll), yaw: Number(sample.yaw) } : null;
   }
 
+  function selectedReceivePath() {
+    return simulatorMode ? 'callbacks' : $('receivePath').value;
+  }
+
+  function eulerFromQuaternion(quat) {
+    return copyEuler(quaternionToEuler(quat));
+  }
+
+  function sensorRangesFor(deviceId) {
+    const info = deviceInfo[deviceId] || devices[deviceId].device_information;
+    const accCode = Number(info && info.range && info.range.acc);
+    const gyroCode = Number(info && info.range && info.range.gyro);
+    return {
+      accRange: ACCELEROMETER_RANGES[accCode] || 16,
+      gyroRange: GYROSCOPE_RANGES[gyroCode] || 2000,
+    };
+  }
+
+  function recordFrame(deviceId, frame) {
+    const now = performance.now();
+    live[deviceId].latestFrame = frame;
+    live[deviceId].latestAnalysis = live[deviceId].accumulator.addFrame(frame, now);
+    live[deviceId].lastFrameAt = now;
+
+    if (activeRun && activeRun.accumulators[deviceId]) {
+      const analysis = activeRun.accumulators[deviceId].addFrame(frame, now);
+      if (activeRun.gapCoincidence && analysis && analysis.packetGap > 0) {
+        activeRun.gapCoincidence.add(deviceId, now);
+      }
+      if (activeRun.logger) activeRun.logger.append(activeRun, frame, analysis);
+    }
+  }
+
   function commitFrame(deviceId) {
     const current = pending[deviceId];
     const frame = {
@@ -122,15 +183,38 @@
       hostEpochMs: Date.now(),
     };
     pending[deviceId] = {};
+    recordFrame(deviceId, frame);
+  }
 
-    const now = performance.now();
-    live[deviceId].latestFrame = frame;
-    live[deviceId].latestAnalysis = live[deviceId].accumulator.addFrame(frame, now);
-    live[deviceId].lastFrameAt = now;
+  function recordParsedPacket(deviceId, data, uuid) {
+    if (uuid !== 'SENSOR_VALUES') return;
+    const parsed = OrpheInsole.parseSensorValues(data, sensorRangesFor(deviceId));
+    if (!parsed) return;
+    parsed.samples.forEach(sample => {
+      recordFrame(deviceId, {
+        device: deviceId,
+        side: sideFor(deviceId),
+        mode: Number(devices[deviceId].streaming_mode) || 4,
+        timestamp: sample.timestamp ?? null,
+        serial: sample.serial_number ?? parsed.serial_number ?? null,
+        packetNumber: sample.packet_number ?? null,
+        press: sample.press && Array.isArray(sample.press.values) ? sample.press.values.slice(0, 6) : null,
+        acc: copyVector(sample.converted_acc),
+        gyro: copyVector(sample.converted_gyro),
+        quat: copyQuat(sample.quat),
+        euler: eulerFromQuaternion(sample.quat),
+        hostEpochMs: Date.now(),
+      });
+    });
+  }
 
-    if (activeRun && activeRun.accumulators[deviceId]) {
-      const analysis = activeRun.accumulators[deviceId].addFrame(frame, now);
-      if (activeRun.logger) activeRun.logger.append(activeRun, frame, analysis);
+  function configureReceivePath(device, deviceId) {
+    if (selectedReceivePath() === 'raw') {
+      device.gotData = function (data, uuid) {
+        recordParsedPacket(deviceId, data, uuid);
+      };
+    } else {
+      device.gotData = device.defaultGotData;
     }
   }
 
@@ -141,11 +225,12 @@
     device.gotQuat = function (quat) {
       notePending(deviceId, quat);
       pending[deviceId].quat = copyQuat(quat);
+      pending[deviceId].euler = eulerFromQuaternion(quat);
     };
     device.gotEuler = function (euler) {
       notePending(deviceId, euler);
       pending[deviceId].euler = copyEuler(euler);
-      if (Number(device.streaming_mode) === 1) commitFrame(deviceId);
+      if (Number(device.streaming_mode) === 1 && simulatorMode) commitFrame(deviceId);
     };
     device.gotConvertedAcc = function (acc) {
       notePending(deviceId, acc);
@@ -154,31 +239,64 @@
     device.gotConvertedGyro = function (gyro) {
       notePending(deviceId, gyro);
       pending[deviceId].gyro = copyVector(gyro);
-      if (Number(device.streaming_mode) === 1 && typeof window.Quaternion === 'undefined') commitFrame(deviceId);
+      if (Number(device.streaming_mode) === 1 && !simulatorMode) commitFrame(deviceId);
     };
     device.gotPress = function (press) {
       notePending(deviceId, press);
       pending[deviceId].press = Array.isArray(press.values) ? press.values.slice(0, 6) : null;
       commitFrame(deviceId);
     };
-    device.gotBLEFrequency = function (frequency) {
-      live[deviceId].frequency = Number(frequency) || 0;
-    };
     device.lostData = function () {
       // 欠損はframeのserial_numberから集計する。Consoleへ大量出力しない。
     };
     device.onConnect = function () {
       connected[deviceId] = true;
+      if (activeRun && activeRun.disconnectFinishTimer) {
+        clearTimeout(activeRun.disconnectFinishTimer);
+        activeRun.disconnectFinishTimer = null;
+      }
       updateConnectionCard(deviceId);
     };
     device.onDisconnect = function () {
       connected[deviceId] = false;
+      if (activeRun && activeRun.deviceIds.includes(deviceId)) {
+        activeRun.interruptions.push({
+          type: 'disconnect',
+          deviceId,
+          side: sideFor(deviceId),
+          at: new Date().toISOString(),
+          elapsedMs: performance.now() - activeRun.startedAt,
+        });
+        if (activeRun.deviceIds.every(id => !connected[id]) && !activeRun.disconnectFinishTimer) {
+          activeRun.disconnectFinishTimer = setTimeout(() => {
+            if (activeRun) activeRun.disconnectFinishTimer = null;
+            if (activeRun && activeRun.deviceIds.every(id => !connected[id])) void finishActiveRun('all-devices-disconnected');
+          }, 10000);
+        }
+      }
       updateConnectionCard(deviceId);
       updateControls();
       log(`DEVICE ${deviceId} が切断されました`, 'warn');
     };
     device.onReconnectSuccess = function () {
       connected[deviceId] = true;
+      if (activeRun && activeRun.deviceIds.includes(deviceId)) {
+        activeRun.interruptions.push({
+          type: 'reconnect',
+          deviceId,
+          side: sideFor(deviceId),
+          at: new Date().toISOString(),
+          elapsedMs: performance.now() - activeRun.startedAt,
+        });
+        if (activeRun.disconnectFinishTimer) {
+          clearTimeout(activeRun.disconnectFinishTimer);
+          activeRun.disconnectFinishTimer = null;
+        }
+      }
+      if (!Number.isInteger(connectionRank[deviceId])) {
+        connectionSequence += 1;
+        connectionRank[deviceId] = connectionSequence;
+      }
       updateConnectionCard(deviceId);
       updateControls();
       log(`DEVICE ${deviceId} が自動再接続しました`, 'pass');
@@ -196,6 +314,7 @@
     button.disabled = true;
     button.textContent = simulatorMode ? '起動中…' : '選択中…';
     try {
+      configureReceivePath(devices[deviceId], deviceId);
       const options = simulatorMode
         ? { streamingMode: 4, preset: 'stand' }
         : { streamingMode: 4, autoReconnect: true, forceDeviceSelection: true };
@@ -213,9 +332,14 @@
 
       deviceInfo[deviceId] = await devices[deviceId].getDeviceInformation();
       connected[deviceId] = true;
+      if (!Number.isInteger(connectionRank[deviceId])) {
+        connectionSequence += 1;
+        connectionRank[deviceId] = connectionSequence;
+      }
       pending[deviceId] = {};
       resetLiveState(deviceId, 4);
-      log(`DEVICE ${deviceId} 接続完了: side=${sideFor(deviceId)} / mode 4`, 'pass');
+      const ranges = sensorRangesFor(deviceId);
+      log(`DEVICE ${deviceId} 接続完了: side=${sideFor(deviceId)} / 接続順=${connectionRank[deviceId]} / mode 4 / ${selectedReceivePath()} / acc ±${ranges.accRange}g / gyro ±${ranges.gyroRange}°/s`, 'pass');
       updateConnectionCard(deviceId);
       updateControls();
       scheduleAutoSmoke();
@@ -233,13 +357,25 @@
       if (connected[deviceId]) device.reset();
       connected[deviceId] = false;
       deviceInfo[deviceId] = null;
+      connectionRank[deviceId] = null;
       pending[deviceId] = {};
       resetLiveState(deviceId, 4);
       updateConnectionCard(deviceId);
     });
+    connectionSequence = 0;
     autoSmokeScheduled = false;
     updateControls();
     log('全デバイスを切断しました');
+  }
+
+  function resetBiasExperiment() {
+    if (activeRun || exclusiveBusy) return;
+    const adaptiveBias = biasExperimentOptions();
+    connectedIds().forEach(deviceId => {
+      resetLiveState(deviceId, Number(devices[deviceId].streaming_mode) || 4, adaptiveBias);
+    });
+    log(`適応バイアス実験をリセットしました: gyro≤${format(adaptiveBias.gyroThresholdDegPerSecond, 1)}°/s / |acc|-1≤${format(adaptiveBias.accToleranceG, 2)}g / dwell ${format(adaptiveBias.stationaryDwellMs / 1000, 1)}秒 / τ ${format(adaptiveBias.biasTimeConstantMs / 1000, 1)}秒`);
+    renderBiasExperiment();
   }
 
   function updateConnectionCard(deviceId) {
@@ -251,7 +387,7 @@
       button.textContent = '接続済み';
       button.disabled = true;
       const battery = deviceInfo[deviceId] && deviceInfo[deviceId].battery;
-      detail.textContent = `${sideFor(deviceId)} / mode ${devices[deviceId].streaming_mode || 4}${battery !== undefined ? ` / battery ${battery}` : ''}`;
+      detail.textContent = `${sideFor(deviceId)} / 接続順 ${connectionRank[deviceId] || '-'} / mode ${devices[deviceId].streaming_mode || 4}${battery !== undefined ? ` / battery ${battery}` : ''}`;
     } else {
       button.textContent = simulatorMode ? 'シミュレータ起動' : 'BLE接続';
       button.disabled = Boolean(activeRun) || exclusiveBusy;
@@ -275,7 +411,13 @@
         'press0', 'press1', 'press2', 'press3', 'press4', 'press5',
         'acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z',
         'quat_w', 'quat_x', 'quat_y', 'quat_z', 'quat_norm',
-        'euler_pitch', 'euler_roll', 'euler_yaw', 'yaw_unwrapped_deg'
+        'euler_pitch', 'euler_roll', 'euler_yaw', 'yaw_unwrapped_deg',
+        'packet_gap', 'host_packet_interval_ms', 'gyro_integral_nominal_deg', 'gyro_integral_host_time_deg', 'gyro_referenced_yaw_deg',
+        'gyro_integral_device_time_deg', 'gyro_referenced_yaw_device_time_deg',
+        'bias_stationary', 'bias_ready', 'gyro_bias_x', 'gyro_bias_y', 'gyro_bias_z',
+        'yaw_bias_rate_deg_s', 'yaw_bias_correction_deg', 'yaw_bias_corrected_deg',
+        'observed_yaw_bias_ready', 'observed_yaw_bias_rate_deg_s', 'observed_yaw_bias_correction_deg',
+        'observed_yaw_bias_corrected_deg'
       ].join(',') + '\n';
       await this.writable.write(header);
       this.flushTimer = setInterval(() => this.flush(), 1000);
@@ -283,7 +425,7 @@
 
     append(run, frame, analysis) {
       if (this.closed || this.error) return;
-      const value = item => Number.isFinite(Number(item)) ? String(Number(item)) : '';
+      const value = item => item !== null && item !== undefined && item !== '' && Number.isFinite(Number(item)) ? String(Number(item)) : '';
       const press = frame.press || [];
       const row = [
         run.type, frame.device, frame.side, frame.mode, frame.hostEpochMs, frame.timestamp, frame.serial, frame.packetNumber,
@@ -293,7 +435,23 @@
         value(frame.quat && frame.quat.w), value(frame.quat && frame.quat.x), value(frame.quat && frame.quat.y), value(frame.quat && frame.quat.z),
         value(analysis && analysis.norm),
         value(frame.euler && frame.euler.pitch), value(frame.euler && frame.euler.roll), value(frame.euler && frame.euler.yaw),
-        value(analysis && analysis.yawUnwrappedDeg)
+        value(analysis && analysis.yawUnwrappedDeg),
+        value(analysis && analysis.packetGap), value(analysis && analysis.packetIntervalMs),
+        value(analysis && analysis.gyroZIntegralDeg), value(analysis && analysis.gyroZHostTimeIntegralDeg),
+        value(analysis && analysis.gyroReferencedYawDeg), value(analysis && analysis.gyroZDeviceTimeIntegralDeg),
+        value(analysis && analysis.gyroReferencedYawDeviceDeg),
+        analysis && analysis.adaptiveYawBias ? String(Boolean(analysis.adaptiveYawBias.stationary)) : '',
+        analysis && analysis.adaptiveYawBias ? String(Boolean(analysis.adaptiveYawBias.ready)) : '',
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.bias && analysis.adaptiveYawBias.bias.x),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.bias && analysis.adaptiveYawBias.bias.y),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.bias && analysis.adaptiveYawBias.bias.z),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.biasYawRateDegPerSecond),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.correctionDeg),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.correctedYaw && analysis.adaptiveYawBias.correctedYaw.endDeg),
+        analysis && analysis.adaptiveYawBias ? String(Boolean(analysis.adaptiveYawBias.observedYawReady)) : '',
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.observedYawBiasRateDegPerSecond),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.observedYawCorrectionDeg),
+        value(analysis && analysis.adaptiveYawBias && analysis.adaptiveYawBias.observedCorrectedYaw && analysis.adaptiveYawBias.observedCorrectedYaw.endDeg)
       ].join(',') + '\n';
       this.buffer.push(row);
       if (this.buffer.length >= 500) this.flush();
@@ -341,9 +499,10 @@
     const ids = options.deviceIds.filter(id => connected[id]);
     if (ids.length === 0) throw new Error('接続済みデバイスがありません');
     const startAt = performance.now();
+    const adaptiveBias = biasExperimentOptions();
     const accumulators = {};
     ids.forEach(id => {
-      accumulators[id] = new DeviceAccumulator(id, startAt, Number(devices[id].streaming_mode) || options.mode || 4);
+      accumulators[id] = new DeviceAccumulator(id, startAt, Number(devices[id].streaming_mode) || options.mode || 4, { adaptiveBias });
     });
     activeRun = {
       type: options.type,
@@ -353,8 +512,11 @@
       startedAtIso: new Date().toISOString(),
       durationMs: options.durationMs || null,
       instruction: options.instruction || '',
-      metadata: options.metadata || {},
+      metadata: { ...(options.metadata || {}), adaptiveBias },
       accumulators,
+      gapCoincidence: options.type === 'communication' && ids.length >= 2 ? new GapCoincidenceTracker(ids, 25) : null,
+      interruptions: [],
+      disconnectFinishTimer: null,
       logger: options.logger || null,
       timeout: null,
     };
@@ -368,15 +530,34 @@
   }
 
   function evaluateSnapshots(type, snapshots, metadata) {
+    if (type === 'communication') {
+      const evaluations = snapshots.map(snapshot => {
+        const communication = evaluateCommunication(snapshot);
+        return { snapshot, status: communication.status, communication };
+      });
+      return { status: worstStatus(evaluations.map(item => item.status)), evaluations };
+    }
+
     if (type === 'smoke' || type === 'static') {
       const evaluations = snapshots.map(snapshot => {
+        if (type === 'static') return evaluateStatic(snapshot);
         const quat = evaluateQuaternion(snapshot);
+        const drift = null;
         const expected = snapshot.expectedSampleRateHz;
+        const effectiveSampleRateHz = snapshot.observedSampleRateHz || snapshot.sampleRateHz;
         let rateStatus = 'pass';
-        if (snapshot.sampleRateHz < expected * 0.5) rateStatus = 'fail';
-        else if (snapshot.sampleRateHz < expected * 0.8) rateStatus = 'warn';
+        if (effectiveSampleRateHz < expected * 0.5) rateStatus = 'fail';
+        else if (effectiveSampleRateHz < expected * 0.8) rateStatus = 'warn';
         const eulerStatus = snapshot.presence.euler > 0 ? 'pass' : 'fail';
-        return { snapshot, status: worstStatus([quat.status, rateStatus, eulerStatus]), quat, eulerStatus };
+        return {
+          snapshot,
+          status: worstStatus([quat.status, rateStatus, eulerStatus]),
+          quat,
+          drift,
+          eulerStatus,
+          rateStatus,
+          communicationExcluded: false,
+        };
       });
       return { status: worstStatus(evaluations.map(item => item.status)), evaluations };
     }
@@ -386,14 +567,40 @@
       const evaluations = snapshots.map(snapshot => {
         const observed = Math.abs(snapshot.yaw.deltaDeg || 0);
         const errorDeg = observed - target;
+        const signedGyroObservedDeg = snapshot.gyroZDeviceTimeIntegralDeg;
+        const gyroObservedDeg = Math.abs(signedGyroObservedDeg || 0);
+        const gyroErrorDeg = gyroObservedDeg - target;
+        const signedCorrectedObservedDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.correctedYaw
+          ? snapshot.adaptiveYawBias.correctedYaw.deltaDeg
+          : null;
+        const correctedObservedDeg = Math.abs(signedCorrectedObservedDeg || 0);
+        const correctedErrorDeg = correctedObservedDeg - target;
+        const signedObservedBiasCorrectedDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.observedCorrectedYaw
+          ? snapshot.adaptiveYawBias.observedCorrectedYaw.deltaDeg
+          : null;
+        const observedBiasCorrectedDeg = Math.abs(signedObservedBiasCorrectedDeg || 0);
+        const observedBiasCorrectedErrorDeg = observedBiasCorrectedDeg - target;
         const tolerance = Math.max(5, target * 0.1);
+        const sensorsPresent = snapshot.presence.euler > 0 && snapshot.presence.gyro > 0;
         return {
           snapshot,
           observedDeg: observed,
           signedObservedDeg: snapshot.yaw.deltaDeg,
           errorDeg,
           errorPercent: target ? Math.abs(errorDeg) * 100 / target : null,
-          status: snapshot.presence.euler === 0 ? 'fail' : (Math.abs(errorDeg) <= tolerance ? 'pass' : 'warn'),
+          gyroObservedDeg,
+          signedGyroObservedDeg,
+          gyroErrorDeg,
+          gyroErrorPercent: target ? Math.abs(gyroErrorDeg) * 100 / target : null,
+          signedCorrectedObservedDeg,
+          correctedObservedDeg,
+          correctedErrorDeg,
+          correctedErrorPercent: target ? Math.abs(correctedErrorDeg) * 100 / target : null,
+          signedObservedBiasCorrectedDeg,
+          observedBiasCorrectedDeg,
+          observedBiasCorrectedErrorDeg,
+          observedBiasCorrectedErrorPercent: target ? Math.abs(observedBiasCorrectedErrorDeg) * 100 / target : null,
+          status: !sensorsPresent ? 'fail' : (Math.abs(errorDeg) <= tolerance && Math.abs(gyroErrorDeg) <= tolerance ? 'pass' : 'warn'),
         };
       });
       return { status: worstStatus(evaluations.map(item => item.status)), evaluations };
@@ -401,28 +608,32 @@
 
     if (type === 'walk') {
       const expected = Number(metadata.loops) * 360;
-      const evaluations = snapshots.map(snapshot => ({
-        snapshot,
-        expectedDeg: expected,
-        quatErrorDeg: Math.abs(snapshot.yaw.deltaDeg || 0) - expected,
-        gyroErrorDeg: Math.abs(snapshot.gyroZIntegralDeg || 0) - expected,
-        status: 'info',
-      }));
+      const evaluations = snapshots.map(snapshot => {
+        const correctedDeltaDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.correctedYaw
+          ? snapshot.adaptiveYawBias.correctedYaw.deltaDeg
+          : null;
+        const observedBiasCorrectedDeltaDeg = snapshot.adaptiveYawBias && snapshot.adaptiveYawBias.observedCorrectedYaw
+          ? snapshot.adaptiveYawBias.observedCorrectedYaw.deltaDeg
+          : null;
+        return {
+          snapshot,
+          expectedDeg: expected,
+          quatErrorDeg: Math.abs(snapshot.yaw.deltaDeg || 0) - expected,
+          gyroErrorDeg: Math.abs(snapshot.gyroZDeviceTimeIntegralDeg || 0) - expected,
+          correctedDeltaDeg,
+          correctedErrorDeg: correctedDeltaDeg === null ? null : Math.abs(correctedDeltaDeg) - expected,
+          observedBiasCorrectedDeltaDeg,
+          observedBiasCorrectedErrorDeg: observedBiasCorrectedDeltaDeg === null ? null : Math.abs(observedBiasCorrectedDeltaDeg) - expected,
+          status: 'info',
+        };
+      });
       return { status: 'info', evaluations };
     }
 
     if (type === 'mode3') {
       const evaluations = snapshots.map(snapshot => {
-        const hasSensors = snapshot.presence.press > 0 && snapshot.presence.acc > 0 && snapshot.presence.gyro > 0;
-        const quatStopped = snapshot.presence.quat === 0 && snapshot.presence.euler === 0;
-        const rateOk = snapshot.sampleRateHz >= 100;
-        return {
-          snapshot,
-          status: hasSensors && quatStopped && rateOk ? 'pass' : 'fail',
-          hasSensors,
-          quatStopped,
-          rateOk,
-        };
+        const streaming = evaluateStreamingMode(snapshot);
+        return { snapshot, ...streaming };
       });
       return { status: worstStatus(evaluations.map(item => item.status)), evaluations };
     }
@@ -431,20 +642,41 @@
   }
 
   function describeResult(result) {
-    return result.evaluation.evaluations.map(item => {
+    const deviceDescriptions = result.evaluation.evaluations.map(item => {
       const snapshot = item.snapshot;
       const prefix = `D${snapshot.deviceId}(${snapshot.side})`;
       if (result.type === 'rotation') {
-        return `${prefix}: yaw ${format(item.signedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.errorDeg), 1)}°`;
+        return `${prefix}: yaw ${format(item.signedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.errorDeg), 1)}° / gyro投影補正 ${format(item.signedCorrectedObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.correctedErrorDeg), 1)}° / yaw実測補正 ${format(item.signedObservedBiasCorrectedDeg, 1)}° / |誤差| ${format(Math.abs(item.observedBiasCorrectedErrorDeg), 1)}° / gyro_z(body/device time) ${format(item.signedGyroObservedDeg, 1)}° / |誤差| ${format(Math.abs(item.gyroErrorDeg), 1)}°`;
       }
       if (result.type === 'walk') {
-        return `${prefix}: quat ${format(snapshot.yaw.deltaDeg, 1)}° / gyro ${format(snapshot.gyroZIntegralDeg, 1)}° / 実角 ${format(item.expectedDeg, 0)}°`;
+        return `${prefix}: quat ${format(snapshot.yaw.deltaDeg, 1)}° / gyro投影補正 ${format(item.correctedDeltaDeg, 1)}° / yaw実測補正 ${format(item.observedBiasCorrectedDeltaDeg, 1)}° / gyro_z(body/device time) ${format(snapshot.gyroZDeviceTimeIntegralDeg, 1)}° / 実角 ${format(item.expectedDeg, 0)}°`;
       }
       if (result.type === 'mode3') {
-        return `${prefix}: ${format(snapshot.sampleRateHz, 1)}Hz / press ${snapshot.presence.press} / quat ${snapshot.presence.quat} / loss ${format(snapshot.packetLossPercent, 2)}%`;
+        return `${prefix}: sample ${format(snapshot.sampleRateHz, 1)}Hz (${item.sampleRateStatus.toUpperCase()}) / press ${snapshot.presence.press} / quat ${snapshot.presence.quat} / loss ${format(snapshot.packetLossPercent, 2)}%`;
       }
-      return `${prefix}: norm ${format(snapshot.norm.mean, 6)} ± ${format(snapshot.norm.std, 6)} / drift ${format(snapshot.yaw.driftDegPerMin, 2)}°/min / loss ${format(snapshot.packetLossPercent, 2)}%`;
+      if (result.type === 'communication') {
+        return `${prefix}[${snapshot.connectionRank || '-'}番目]: sample ${format(snapshot.sampleRateHz, 1)}Hz / packet ${format(snapshot.packetRateHz, 1)}Hz / lost ${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%) / gap events ${snapshot.gapEvents}, max ${snapshot.maxGap}, interval max ${format(snapshot.packetIntervalMs.max, 1)}ms`;
+      }
+      const driftDiagnosis = result.type === 'static' && item.drift ? ` / ${item.drift.message} / yaw÷gyro ${format(item.drift.yawToGyroScaleRatio, 4)}` : '';
+      const driftWindowVariation = result.type === 'static' && item.drift && item.drift.windowCount >= 2
+        ? ` / 5分窓幅 yaw ${format(item.drift.windowYawDriftRangeDegPerMin, 2)}・gyro ${format(item.drift.windowGyroBiasRangeDegPerMin, 2)}・差引後 ${format(item.drift.windowResidualRangeDegPerMin, 2)}°/min`
+        : '';
+      const calibrationValidation = result.type === 'static' && item.drift && item.drift.fixedCalibration
+        ? ` / 初回5分固定後の最大残差 yaw補正 ${format(item.drift.fixedCalibration.postYawCalibrationResidual.maxAbsDegPerMin, 2)}・gyro補正 ${format(item.drift.fixedCalibration.postGyroCalibrationResidual.maxAbsDegPerMin, 2)}°/min`
+        : '';
+      const adaptive = snapshot.adaptiveYawBias;
+      const adaptiveDescription = adaptive
+        ? ` / 適応補正 ${adaptive.ready ? 'READY' : 'WAIT'}・bias z ${format(adaptive.bias && adaptive.bias.z, 4)}°/s・gyro投影drift ${format(adaptive.correctedYaw && adaptive.correctedYaw.driftDegPerMin, 2)}°/min・yaw実測drift ${format(adaptive.observedCorrectedYaw && adaptive.observedCorrectedYaw.driftDegPerMin, 2)}°/min`
+        : '';
+      return `${prefix}: norm ${format(snapshot.norm.mean, 6)} ± ${format(snapshot.norm.std, 6)} / sample ${format(snapshot.observedSampleRateHz || snapshot.sampleRateHz, 1)}Hz / completion ${format(snapshot.completionPercent, 1)}% / connected ${format(snapshot.connectionCoveragePercent, 1)}% / drift ${format(snapshot.yaw.driftDegPerMin, 2)}°/min / gyro換算 ${format(snapshot.gyroZBiasDegPerMin, 2)}°/min / residual ${format(snapshot.yaw.residualStdDeg, 3)}°${adaptiveDescription}${driftDiagnosis}${driftWindowVariation}${calibrationValidation} / lost ${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)`;
     }).join(' ｜ ');
+    if (result.type === 'communication' && result.gapCoincidence) {
+      const overlap = result.gapCoincidence.devices
+        .map(item => `D${item.deviceId} ${format(item.matchedPercent, 1)}%`)
+        .join(' / ');
+      return `${deviceDescriptions} ｜ 同期gap(±${result.gapCoincidence.toleranceMs}ms): ${overlap}`;
+    }
+    return deviceDescriptions;
   }
 
   async function finishActiveRun(reason = 'manual') {
@@ -452,10 +684,15 @@
     const run = activeRun;
     activeRun = null;
     if (run.timeout) clearTimeout(run.timeout);
+    if (run.disconnectFinishTimer) clearTimeout(run.disconnectFinishTimer);
     const endAt = performance.now();
     const snapshots = run.deviceIds.map(deviceId => {
       const snapshot = run.accumulators[deviceId].snapshot(endAt);
       snapshot.side = sideFor(deviceId);
+      snapshot.connectionRank = connectionRank[deviceId];
+      snapshot.receivePath = run.metadata.receivePath || selectedReceivePath();
+      Object.assign(snapshot, sensorRangesFor(deviceId));
+      Object.assign(snapshot, connectionCoverage(run.interruptions, deviceId, endAt - run.startedAt));
       return snapshot;
     });
 
@@ -469,20 +706,24 @@
     }
 
     const evaluation = evaluateSnapshots(run.type, snapshots, run.metadata);
+    const resultStatus = run.interruptions.length ? worstStatus([evaluation.status, 'warn']) : evaluation.status;
     const result = {
       type: run.type,
       label: run.label,
-      status: evaluation.status,
+      status: resultStatus,
       reason,
       startedAt: run.startedAtIso,
       endedAt: new Date().toISOString(),
       durationMs: endAt - run.startedAt,
       metadata: run.metadata,
+      gapCoincidence: run.gapCoincidence ? run.gapCoincidence.snapshot() : null,
+      interruptions: run.interruptions.slice(),
       devices: snapshots,
       evaluation,
     };
     results.push(result);
-    log(`${run.label} 終了: ${evaluation.status.toUpperCase()} — ${describeResult(result)}`, evaluation.status);
+    log(`${run.label} 終了: ${resultStatus.toUpperCase()} — ${describeResult(result)}`, resultStatus);
+    if (run.type === 'communication') renderCommunicationComparison();
     renderResults();
     renderActiveRun();
     updateControls();
@@ -498,7 +739,7 @@
       label: auto ? '自動10秒スモークチェック' : '10秒スモークチェック',
       deviceIds: ids,
       durationMs: 10000,
-      instruction: 'そのまま動かさず、norm・受信レート・欠損率を自動確認しています。',
+      instruction: 'そのまま動かさず、norm・受信レート・欠損率と適応バイアスの初期学習を自動確認しています。',
       metadata: { automatic: auto },
     });
   }
@@ -511,6 +752,34 @@
     }, 1500);
   }
 
+  async function startCommunication() {
+    const ids = connectedIds();
+    if (ids.length === 0) {
+      log('通信診断は1台以上を接続して実行してください', 'fail');
+      return;
+    }
+    try {
+      const seconds = Math.max(10, Number($('communicationSeconds').value) || 60);
+      const logger = await chooseCsvLogger('communicationRaw', 'communication');
+      beginRun({
+        type: 'communication',
+        label: `通信診断 ${seconds}秒${ids.length === 1 ? '（単体）' : ''}`,
+        deviceIds: ids,
+        durationMs: seconds * 1000,
+        instruction: 'デバイスとPCを動かさず、受信packet Hz・serial gap・最大連続欠損・到着間隔を測定しています。',
+        metadata: {
+          requestedSeconds: seconds,
+          receivePath: selectedReceivePath(),
+          connectionMap: ids.map(deviceId => ({ deviceId, side: sideFor(deviceId), connectionRank: connectionRank[deviceId] })),
+        },
+        logger,
+      });
+    } catch (error) {
+      if (error && error.name === 'AbortError') log('CSV保存先の選択をキャンセルしました', 'warn');
+      else log(`通信診断を開始できません: ${error.message || error}`, 'fail');
+    }
+  }
+
   async function startStatic() {
     try {
       const minutes = Math.max(0.1, Number($('staticMinutes').value) || 5);
@@ -520,7 +789,7 @@
         label: `静置テスト ${minutes}分`,
         deviceIds: connectedIds(),
         durationMs: minutes * 60000,
-        instruction: '左右を机上で動かさないでください。終了時にnorm統計とyawドリフトを自動保存します。',
+        instruction: '左右を机上で動かさないでください。生yawと適応バイアス補正yawのドリフトを並べて保存します。',
         metadata: { requestedMinutes: minutes },
         logger,
       });
@@ -546,7 +815,7 @@
         type: 'rotation',
         label: `回転 ${target}° ${direction}`,
         deviceIds: selectedRotationIds(),
-        instruction: `水平を保ち、${direction === 'CW' ? '時計回り' : '反時計回り'}に${target}°回してください。到達後「目標角度に到達」を押します。`,
+        instruction: `開始後2秒静止して補正をREADYにし、水平を保って${direction === 'CW' ? '時計回り' : '反時計回り'}に${target}°回してください。到達後も2秒静止してから「目標角度に到達」を押します。`,
         metadata: { targetDeg: target, direction },
         logger,
       });
@@ -565,7 +834,7 @@
         type: 'walk',
         label: `周回歩行 ${loops}周 ${direction}`,
         deviceIds: connectedIds(),
-        instruction: `${direction === 'CW' ? '時計回り' : '反時計回り'}に${loops}周し、開始位置・開始方向へ戻ったら「開始位置で終了」を押してください。`,
+        instruction: `開始後2秒静止して補正をREADYにしてから、${direction === 'CW' ? '時計回り' : '反時計回り'}に${loops}周します。開始位置・開始方向へ戻り、2秒静止してから「開始位置で終了」を押してください。`,
         metadata: { loops, direction, expectedDeg: loops * 360 },
         logger,
       });
@@ -628,16 +897,21 @@
     const busy = running || exclusiveBusy;
     $('disconnectAll').disabled = !any || busy;
     $('runSmoke').disabled = !any || busy;
+    $('startCommunication').disabled = !any || busy;
     $('startStatic').disabled = !any || busy;
     $('startRotation').disabled = !any || busy;
     $('startWalk').disabled = !any || busy;
     $('runMode3').disabled = !any || busy;
+    $('resetBias').disabled = !any || busy;
+    ['biasEnabled', 'biasGyroThreshold', 'biasAccTolerance', 'biasDwellSeconds', 'biasTimeConstantSeconds']
+      .forEach(id => { $(id).disabled = busy; });
     $('finishRotation').disabled = !activeRun || activeRun.type !== 'rotation';
     $('finishWalk').disabled = !activeRun || activeRun.type !== 'walk';
     $('stopActive').disabled = !running || (activeRun && activeRun.type === 'mode3');
     $('downloadJson').disabled = results.length === 0;
     $('downloadMarkdown').disabled = results.length === 0;
     $('clearResults').disabled = results.length === 0 || running;
+    $('receivePath').disabled = any || busy || simulatorMode;
     [0, 1].forEach(updateConnectionCard);
 
     $('globalStatus').textContent = busy ? 'テスト実行中' : (ids.length === 2 ? '左右接続済み' : (ids.length === 1 ? '1台接続済み' : '接続待ち'));
@@ -658,8 +932,65 @@
         <td id="liveNorm${deviceId}">-</td>
         <td id="liveYaw${deviceId}">-</td>
         <td id="liveDrift${deviceId}">-</td>
+        <td id="liveGyro${deviceId}">-</td>
+        <td id="liveGap${deviceId}">-</td>
         <td id="liveLoss${deviceId}">-</td>`;
       tbody.appendChild(row);
+    });
+  }
+
+  function initBiasRows() {
+    const tbody = $('biasMetrics');
+    tbody.innerHTML = '';
+    [0, 1].forEach(deviceId => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>DEVICE ${deviceId}</strong><small>INSOLE 0${deviceId + 1}</small></td>
+        <td id="biasState${deviceId}">未接続</td>
+        <td id="biasEstimate${deviceId}">-</td>
+        <td id="biasStationary${deviceId}">-</td>
+        <td id="biasRawYaw${deviceId}">-</td>
+        <td id="biasCorrectedYaw${deviceId}">-</td>
+        <td id="biasObservedCorrectedYaw${deviceId}">-</td>
+        <td id="biasCorrection${deviceId}">-</td>`;
+      tbody.appendChild(row);
+    });
+  }
+
+  function renderBiasExperiment() {
+    const stateLabels = {
+      disabled: 'OFF',
+      waiting: '静止待ち',
+      learning: '学習中',
+      holding: 'READY / 保持',
+      updating: 'READY / 更新中',
+    };
+    const now = performance.now();
+    [0, 1].forEach(deviceId => {
+      const accumulator = activeRun && activeRun.accumulators[deviceId]
+        ? activeRun.accumulators[deviceId]
+        : live[deviceId].accumulator;
+      const snapshot = accumulator.snapshot(now);
+      const adaptive = snapshot.adaptiveYawBias;
+      if (!connected[deviceId] || !adaptive) {
+        $(`biasState${deviceId}`).textContent = '未接続';
+        $(`biasEstimate${deviceId}`).textContent = '-';
+        $(`biasStationary${deviceId}`).textContent = '-';
+        $(`biasRawYaw${deviceId}`).textContent = '-';
+        $(`biasCorrectedYaw${deviceId}`).textContent = '-';
+        $(`biasObservedCorrectedYaw${deviceId}`).textContent = '-';
+        $(`biasCorrection${deviceId}`).textContent = '-';
+        return;
+      }
+      $(`biasState${deviceId}`).textContent = stateLabels[adaptive.state] || adaptive.state;
+      $(`biasEstimate${deviceId}`).textContent = adaptive.bias
+        ? `x ${format(adaptive.bias.x, 3)} / y ${format(adaptive.bias.y, 3)} / z ${format(adaptive.bias.z, 3)} °/s`
+        : '-';
+      $(`biasStationary${deviceId}`).textContent = `${adaptive.stationary ? 'YES' : 'NO'} / ${format(adaptive.stationaryPercent, 1)}% / 継続 ${format(adaptive.stationaryElapsedMs / 1000, 1)}s`;
+      $(`biasRawYaw${deviceId}`).textContent = `Δ ${format(snapshot.yaw.deltaDeg, 1)}° / ${format(snapshot.yaw.driftDegPerMin, 2)}°/min`;
+      $(`biasCorrectedYaw${deviceId}`).textContent = `Δ ${format(adaptive.correctedYaw.deltaDeg, 1)}° / ${format(adaptive.correctedYaw.driftDegPerMin, 2)}°/min`;
+      $(`biasObservedCorrectedYaw${deviceId}`).textContent = `Δ ${format(adaptive.observedCorrectedYaw.deltaDeg, 1)}° / ${format(adaptive.observedCorrectedYaw.driftDegPerMin, 2)}°/min`;
+      $(`biasCorrection${deviceId}`).textContent = `gyro ${format(adaptive.correctionDeg, 2)}° @ ${format(adaptive.biasYawRateDegPerSecond, 3)}°/s / yaw ${format(adaptive.observedYawCorrectionDeg, 2)}° @ ${format(adaptive.observedYawBiasRateDegPerSecond, 3)}°/s`;
     });
   }
 
@@ -674,11 +1005,13 @@
       $(`liveStatus${deviceId}`).textContent = connected[deviceId] ? (isLive ? 'LIVE' : '待機') : '未接続';
       $(`liveSide${deviceId}`).textContent = sideFor(deviceId);
       $(`liveMode${deviceId}`).textContent = connected[deviceId] ? String(devices[deviceId].streaming_mode || '-') : '-';
-      $(`liveRate${deviceId}`).textContent = connected[deviceId] ? `${format(snapshot.sampleRateHz, 1)} Hz` : '-';
+      $(`liveRate${deviceId}`).textContent = connected[deviceId] ? `sample ${format(snapshot.sampleRateHz, 1)} / packet ${format(snapshot.packetRateHz, 1)} Hz` : '-';
       $(`liveNorm${deviceId}`).textContent = currentNorm === null ? '-' : `${format(currentNorm, 6)} / μ ${format(snapshot.norm.mean, 6)}`;
       $(`liveYaw${deviceId}`).textContent = currentYaw === null ? '-' : `${format(currentYaw, 1)}° / unwrap ${format(snapshot.yaw.endDeg, 1)}°`;
-      $(`liveDrift${deviceId}`).textContent = snapshot.yaw.driftDegPerMin === null ? '-' : `${format(snapshot.yaw.driftDegPerMin, 2)}°/min`;
-      $(`liveLoss${deviceId}`).textContent = connected[deviceId] ? `${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)` : '-';
+      $(`liveDrift${deviceId}`).textContent = snapshot.yaw.driftDegPerMin === null ? '-' : `${format(snapshot.yaw.driftDegPerMin, 2)}°/min / residual ${format(snapshot.yaw.residualStdDeg, 3)}°`;
+      $(`liveGyro${deviceId}`).textContent = snapshot.gyroZ.mean === null ? '-' : `μ ${format(snapshot.gyroZ.mean, 4)}°/s / ×60 ${format(snapshot.gyroZBiasDegPerMin, 2)}°/min`;
+      $(`liveGap${deviceId}`).textContent = connected[deviceId] ? `events ${snapshot.gapEvents} / max ${snapshot.maxGap} / interval max ${format(snapshot.packetIntervalMs.max, 1)}ms` : '-';
+      $(`liveLoss${deviceId}`).textContent = connected[deviceId] ? `${snapshot.lostPackets}/${snapshot.receivedPackets + snapshot.lostPackets} (${format(snapshot.packetLossPercent, 2)}%)` : '-';
     });
   }
 
@@ -733,14 +1066,39 @@
     updateControls();
   }
 
+  function currentCommunicationComparison() {
+    const communicationResults = results.filter(result => result.type === 'communication');
+    const latest = communicationResults.at(-1) || null;
+    const dualResults = communicationResults.filter(result => result.devices.length >= 2);
+    const latestPath = dualResults.at(-1)?.metadata?.receivePath || selectedReceivePath();
+    const comparable = dualResults.filter(result => (result.metadata?.receivePath || 'callbacks') === latestPath).slice(-3);
+    const comparison = compareCommunicationRuns(comparable);
+    if (latest && latest.devices.length === 1) {
+      return {
+        ...comparison,
+        message: `単体ベースラインを記録しました（${describeResult(latest)}）。 ${comparison.message}`
+      };
+    }
+    return comparison;
+  }
+
+  function renderCommunicationComparison() {
+    const comparison = currentCommunicationComparison();
+    const element = $('communicationComparison');
+    element.textContent = comparison.message;
+    element.className = `comparison ${comparison.status}`;
+  }
+
   function buildReportPayload() {
     return {
-      title: 'ORPHE INSOLE Quaternion Validation Report',
+      title: 'ORPHE INSOLE Sensor Validation Report',
       generatedAt: new Date().toISOString(),
       sdkVersion: '1.2.1',
       environment: simulatorMode ? 'simulator' : 'hardware',
       userAgent: navigator.userAgent,
+      receivePath: selectedReceivePath(),
       devices: deviceInfo.map((info, deviceId) => ({ deviceId, side: sideFor(deviceId), information: info })),
+      communicationComparison: currentCommunicationComparison(),
       results,
     };
   }
@@ -748,7 +1106,7 @@
   function buildMarkdownReport() {
     const payload = buildReportPayload();
     const lines = [
-      '# ORPHE INSOLE Quaternion Validation Report',
+      '# ORPHE INSOLE Sensor Validation Report',
       '',
       `- 実施日時: ${new Date(payload.generatedAt).toLocaleString()}`,
       `- SDK: v${payload.sdkVersion}`,
@@ -760,16 +1118,42 @@
     results.forEach(result => {
       lines.push(`| ${result.status.toUpperCase()} | ${result.label} | ${formatDuration(result.durationMs)} | ${describeResult(result).replaceAll('|', '/')} |`);
     });
+    lines.push('', '## 通信条件比較', '', payload.communicationComparison.message, '');
     lines.push('', '## デバイス別詳細', '');
     results.forEach(result => {
       lines.push(`### ${result.label}`);
+      if (result.gapCoincidence) {
+        const overlap = result.gapCoincidence.devices
+          .map(item => `D${item.deviceId}=${format(item.matchedPercent, 2)}% (${item.matchedEvents}/${item.totalEvents})`)
+          .join(', ');
+        lines.push(`- Synchronized gap events within ±${result.gapCoincidence.toleranceMs}ms: ${overlap}; matched pairs=${result.gapCoincidence.matchedPairs}`);
+      }
+      if (result.interruptions && result.interruptions.length) {
+        lines.push(`- Connection interruptions: ${JSON.stringify(result.interruptions)}`);
+      }
       result.devices.forEach(snapshot => {
         lines.push(
-          `- DEVICE ${snapshot.deviceId} (${snapshot.side}): samples=${snapshot.samples}, rate=${format(snapshot.sampleRateHz, 2)}Hz, lost=${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 3)}%), norm mean=${format(snapshot.norm.mean, 8)}, std=${format(snapshot.norm.std, 8)}, min=${format(snapshot.norm.min, 8)}, max=${format(snapshot.norm.max, 8)}, yaw drift=${format(snapshot.yaw.driftDegPerMin, 3)}deg/min, yaw delta=${format(snapshot.yaw.deltaDeg, 3)}deg, gyro_z integral=${format(snapshot.gyroZIntegralDeg, 3)}deg`
+          `- DEVICE ${snapshot.deviceId} (${snapshot.side}, connection order=${snapshot.connectionRank || '-'}, receive path=${snapshot.receivePath || '-'}, ranges=±${snapshot.accRange}g/±${snapshot.gyroRange}deg/s): samples=${snapshot.samples}, sample rate run/observed=${format(snapshot.sampleRateHz, 2)}/${format(snapshot.observedSampleRateHz, 2)}Hz, completion=${format(snapshot.completionPercent, 2)}%, connection coverage=${format(snapshot.connectionCoveragePercent, 2)}% (${format(snapshot.connectedDurationMs / 1000, 1)}s connected), packets=${snapshot.receivedPackets}, packet rate run/observed=${format(snapshot.packetRateHz, 2)}/${format(snapshot.observedPacketRateHz, 2)}Hz, lost=${snapshot.lostPackets} (${format(snapshot.packetLossPercent, 3)}%), gap events=${snapshot.gapEvents}, max gap=${snapshot.maxGap}, interval mean/max=${format(snapshot.packetIntervalMs.mean, 3)}/${format(snapshot.packetIntervalMs.max, 3)}ms, gap histogram=${JSON.stringify(snapshot.gapHistogram)}, norm mean/std/min/max=${format(snapshot.norm.mean, 8)}/${format(snapshot.norm.std, 8)}/${format(snapshot.norm.min, 8)}/${format(snapshot.norm.max, 8)}, yaw drift host/device=${format(snapshot.yaw.driftDegPerMin, 3)}/${format(snapshot.yawDeviceClock && snapshot.yawDeviceClock.driftDegPerMin, 3)}deg/min, yaw residual=${format(snapshot.yaw.residualStdDeg, 4)}deg, yaw range=${format(snapshot.yaw.rangeDeg, 3)}deg, gyro_z mean=${format(snapshot.gyroZ.mean, 5)}deg/s, gyro bias equivalent=${format(snapshot.gyroZBiasDegPerMin, 3)}deg/min, yaw-minus-gyro=${format(snapshot.yawMinusGyroDegPerMin, 3)}deg/min, gyro-referenced yaw drift host/device=${format(snapshot.gyroReferencedYaw && snapshot.gyroReferencedYaw.driftDegPerMin, 3)}/${format(snapshot.gyroReferencedYawDeviceClock && snapshot.gyroReferencedYawDeviceClock.driftDegPerMin, 3)}deg/min, clock duration ratio=${format(snapshot.hostToDeviceDurationRatio, 6)}, gyro integral nominal/host/device=${format(snapshot.gyroZIntegralDeg, 3)}/${format(snapshot.gyroZHostTimeIntegralDeg, 3)}/${format(snapshot.gyroZDeviceTimeIntegralDeg, 3)}deg`
         );
+        if (snapshot.adaptiveYawBias) {
+          const adaptive = snapshot.adaptiveYawBias;
+          lines.push(`- DEVICE ${snapshot.deviceId} adaptive bias experiment: state=${adaptive.state}, ready=${adaptive.ready}, stationary=${format(adaptive.stationaryPercent, 2)}%, bias=${JSON.stringify(adaptive.bias)}, gyro-projected-yaw-bias-rate=${format(adaptive.biasYawRateDegPerSecond, 5)}deg/s, gyro-projected-correction=${format(adaptive.correctionDeg, 3)}deg, gyro-projected-corrected-yaw-delta/drift=${format(adaptive.correctedYaw && adaptive.correctedYaw.deltaDeg, 3)}deg/${format(adaptive.correctedYaw && adaptive.correctedYaw.driftDegPerMin, 3)}deg/min, observed-yaw-bias-rate=${format(adaptive.observedYawBiasRateDegPerSecond, 5)}deg/s, observed-yaw-correction=${format(adaptive.observedYawCorrectionDeg, 3)}deg, observed-corrected-yaw-delta/drift=${format(adaptive.observedCorrectedYaw && adaptive.observedCorrectedYaw.deltaDeg, 3)}deg/${format(adaptive.observedCorrectedYaw && adaptive.observedCorrectedYaw.driftDegPerMin, 3)}deg/min, options=${JSON.stringify(adaptive.options)}`);
+        }
+        if (snapshot.driftWindows5Min && snapshot.driftWindows5Min.length) {
+          const windows = snapshot.driftWindows5Min
+            .filter(window => window.durationMs >= 60000)
+            .map(window => `${window.startMinute}min:yaw=${format(window.yawDriftDegPerMin, 3)},gyro=${format(window.gyroZBiasDegPerMin, 3)},gyro-referenced=${format(window.gyroReferencedYawDriftDegPerMin, 3)}deg/min`)
+            .join('; ');
+          if (windows) lines.push(`- DEVICE ${snapshot.deviceId} 5-minute drift windows: ${windows}`);
+        }
+        const driftEvaluation = result.evaluation.evaluations.find(item => item.snapshot === snapshot)?.drift;
+        if (driftEvaluation && driftEvaluation.fixedCalibration) {
+          lines.push(`- DEVICE ${snapshot.deviceId} first-window fixed calibration validation: ${JSON.stringify(driftEvaluation.fixedCalibration)}`);
+        }
       });
       lines.push('');
     });
+    lines.push('> 適応バイアス補正は診断ページ上の実験値です。SDKが返すquat/euler自体は変更していません。');
     lines.push('> yawドリフトは6軸IMUの原理上残るため、ゼロであることを合格条件にしていません。');
     return lines.join('\n');
   }
@@ -788,12 +1172,14 @@
     $('connect1').addEventListener('click', () => { void connectDevice(1); });
     $('disconnectAll').addEventListener('click', disconnectAll);
     $('runSmoke').addEventListener('click', () => { void startSmoke(false); });
+    $('startCommunication').addEventListener('click', () => { void startCommunication(); });
     $('startStatic').addEventListener('click', () => { void startStatic(); });
     $('startRotation').addEventListener('click', () => { void startRotation(); });
     $('finishRotation').addEventListener('click', () => { void finishActiveRun('target-reached'); });
     $('startWalk').addEventListener('click', () => { void startWalk(); });
     $('finishWalk').addEventListener('click', () => { void finishActiveRun('returned-to-start'); });
     $('runMode3').addEventListener('click', () => { void runMode3Regression(); });
+    $('resetBias').addEventListener('click', resetBiasExperiment);
     $('stopActive').addEventListener('click', () => { void finishActiveRun('stopped'); });
     $('downloadJson').addEventListener('click', () => {
       downloadBlob(JSON.stringify(buildReportPayload(), null, 2), 'application/json', `orphe-quaternion-report-${fileStamp()}.json`);
@@ -804,6 +1190,7 @@
     $('clearResults').addEventListener('click', () => {
       results.length = 0;
       renderResults();
+      renderCommunicationComparison();
       log('結果をクリアしました');
     });
     $('clearLog').addEventListener('click', () => { $('eventLog').innerHTML = ''; });
@@ -816,13 +1203,16 @@
       ? '生CSVはメモリへ溜めず、選択したファイルへ約1秒ごとに追記します。保存先の選択は各テスト開始時に一度だけ表示されます。'
       : 'このブラウザは生CSVの逐次保存に未対応です。統計とJSON/Markdownレポートは利用できます。';
     initLiveRows();
+    initBiasRows();
     wireEvents();
     [0, 1].forEach(updateConnectionCard);
     updateControls();
     renderActiveRun();
     renderResults();
+    renderCommunicationComparison();
     setInterval(() => {
       renderLive();
+      renderBiasExperiment();
       renderActiveRun();
     }, 500);
     log(simulatorMode ? 'シミュレータ検証モードで起動しました' : '実機検証ページを起動しました');

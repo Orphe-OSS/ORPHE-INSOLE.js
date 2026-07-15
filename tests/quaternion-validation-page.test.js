@@ -22,6 +22,34 @@ const app = fs.readFileSync(path.join(root, 'examples/quaternion-validation/app.
   assert.match(html, /src="\.\.\/\.\.\/src\/InsoleSimulator\.js"/);
   assert.match(html, /src="\.\/metrics\.js"/);
   assert.match(html, /src="\.\/app\.js"/);
+  assert.match(html, /id="receivePath"/);
+  assert.match(html, /id="biasEnabled"/);
+  assert.match(html, /id="biasGyroThreshold"/);
+  assert.match(html, /id="biasAccTolerance"/);
+  assert.match(html, /id="biasDwellSeconds"/);
+  assert.match(html, /id="biasTimeConstantSeconds"/);
+  assert.match(html, /id="resetBias"/);
+  assert.match(html, /id="biasMetrics"/);
+  assert.match(html, /value="raw" selected/);
+  assert.match(app, /OrpheInsole\.parseSensorValues\(data, sensorRangesFor\(deviceId\)\)/);
+  assert.match(app, /GYROSCOPE_RANGES/);
+  assert.match(app, /pending\[deviceId\]\.acc = copyVector\(acc\)/);
+  assert.match(app, /pending\[deviceId\]\.gyro = copyVector\(gyro\)/);
+  assert.match(app, /copyEuler\(quaternionToEuler\(quat\)\)/);
+  assert.doesNotMatch(app, /window\.Quaternion/);
+  assert.doesNotMatch(app, /BLE rate=/);
+  assert.match(app, /gyro_referenced_yaw_deg/);
+  assert.match(app, /gyro_referenced_yaw_device_time_deg/);
+  assert.match(app, /yaw_bias_corrected_deg/);
+  assert.match(app, /observed_yaw_bias_corrected_deg/);
+  assert.match(app, /adaptiveYawBias/);
+  assert.match(app, /gyro投影補正/);
+  assert.match(app, /yaw実測補正/);
+  assert.match(app, /const signedGyroObservedDeg = snapshot\.gyroZDeviceTimeIntegralDeg/);
+  assert.match(app, /gyro_z\(body\/device time\)/);
+  assert.match(app, /connection coverage=/);
+  assert.match(app, /5-minute drift windows/);
+  assert.match(app, /first-window fixed calibration validation/);
 }
 
 function wait(ms) {
@@ -70,6 +98,9 @@ async function exerciseSimulatorPipeline() {
     assert.ok(snapshot.samples >= 8, `mode4 device ${snapshot.deviceId} should receive samples`);
     assert.ok(snapshot.norm.count >= 8, `mode4 device ${snapshot.deviceId} should receive quaternion`);
     assert.ok(Math.abs(snapshot.norm.mean - 1) < 1e-9, `mode4 device ${snapshot.deviceId} norm`);
+    assert.ok(snapshot.packetRateHz > 0, `mode4 device ${snapshot.deviceId} should report packet rate`);
+    assert.ok(snapshot.gyroZ.count >= 8, `mode4 device ${snapshot.deviceId} should report gyro statistics`);
+    assert.equal(snapshot.lostPackets, 0, `mode4 device ${snapshot.deviceId} simulator should not lose packets`);
   });
 
   await Promise.all(simulators.map(simulator => simulator.setDataStreamingMode(3)));
