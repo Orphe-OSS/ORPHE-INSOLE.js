@@ -169,6 +169,8 @@ BLEの取りこぼしは carryOver で自動再要求され回復する（`dropp
 ```javascript
 fifo.onDataLoss = (info) => {
   // reason: 'ring_overflow'（追従遅れ）| 'carryover_overflow' | 'fw_nodata'
+  //       | 'resync_backlog'（再同期時に要求しきれなかった分）
+  //       | 'stopped_pending'（再要求が成功しないまま収録停止した分）
   console.warn(`欠損 ${info.dropped}（累計 ${info.cumulative}）`, info.reason);
 };
 // 欠損した瞬間に収録を止めたい場合:

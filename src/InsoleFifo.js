@@ -298,6 +298,32 @@
       this.dropped = 0;             // 回復不能に失われた累計シリアル数
       this.lossEvents = [];         // 未通知の回復不能ロスイベント（呼び出し側が drain）
       this.resyncPending = false;   // lastSerial=null が「再同期由来」か（初回start直後と区別）
+      this.firstStoredSerial = null; // 最初に格納したシリアル（収録スパンの起点）
+      this.storedSpanMax = 0;        // firstStoredSerial からの最大距離（収録スパン-1）
+    }
+
+    // rawStore へ格納したシリアルの収録スパンを記録する（wraparound は serialDistance で吸収）
+    noteStored(serial) {
+      if (this.firstStoredSerial === null) {
+        this.firstStoredSerial = serial;
+        this.storedSpanMax = 0;
+        return;
+      }
+      const d = serialDistance(this.firstStoredSerial, serial);
+      if (d > this.storedSpanMax) this.storedSpanMax = d;
+    }
+
+    // 収集終了時の最終計上。収録スパン内で「格納も回復不能計上もされていない」
+    // シリアル（＝再要求が成功しないまま停止した carryOver 残り等）を dropped に計上する。
+    // 不変条件: スパン内シリアル数 = rawStore.size + dropped（各経路の計上漏れをここで必ず埋める）
+    finalizePendingLoss() {
+      if (this.firstStoredSerial === null) return 0;
+      const expected = this.storedSpanMax + 1;
+      const pending = expected - this.rawStore.size - this.dropped;
+      if (pending <= 0) return 0;
+      this.dropped += pending;
+      this.lossEvents.push({ reason: 'stopped_pending', dropped: pending });
+      return pending;
     }
 
     // 新規リクエストの [startSerial, requestSize] を計算。
@@ -398,6 +424,7 @@
       this._restoreMode = null;
       this._tornDown = false;
       this._autoStopped = false;
+      this._lastCurrentSerial = null; // 最後にポーリングで得た FW 側シリアル（停止時の通知用）
       this.lag = 0;             // 現在の追従遅れ（未取得シリアル数）。バッファ容量に近づくと欠損の危険。
 
       // コールバック（ユーザが上書き）
@@ -518,6 +545,19 @@
       } catch (e) {
         this._reportError(e);
       } finally {
+        // 停止時の最終計上: 再要求（carryOver）が成功しないままループを抜けた分は
+        // どの経路でも計上されずに消えるため、収録スパンとの差分をここで必ず dropped に反映する。
+        // （「droppedCount === 0 なら CSV は完全」の保証を停止時にも成立させる）
+        const pending = this.state.finalizePendingLoss();
+        if (pending > 0 && typeof this.onDataLoss === 'function') {
+          this._safe(() => this.onDataLoss({
+            reason: 'stopped_pending',
+            dropped: pending,
+            cumulative: this.state.dropped,
+            currentSerial: this._lastCurrentSerial,
+          }));
+        }
+        this.state.lossEvents.length = 0; // finalize 分は上で通知済み
         await this._teardownOnce();
         if (typeof this.onStopped === 'function') {
           this._safe(() => this.onStopped({
@@ -548,6 +588,7 @@
         if (current === null) { await sleep(POLLING_INTERVAL_MS); continue; }
 
         const { serial: currentSerial, accumulated: accumulatedCount } = current;
+        this._lastCurrentSerial = currentSerial;
 
         // 追従遅れ（まだ取得していないシリアル数）。RING_BUFFER_CAPACITY に近づくほど欠損危険。
         this.lag = state.lastSerial === null ? accumulatedCount : serialDistance(state.lastSerial, currentSerial);
@@ -621,6 +662,7 @@
         const decodedSamples = [];
         for (const [sn, dv] of received) {
           state.rawStore.set(sn, dv);
+          state.noteStored(sn);
           const decoded = decodePacket(dv);
           for (const s of decoded.samples) decodedSamples.push(s);
         }

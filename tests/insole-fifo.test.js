@@ -287,6 +287,79 @@ function near(actual, expected, tol, label) {
     assert.equal(mock.streaming_mode, 4, 'teardown でリアルタイムモードへ復帰');
   }
 
+  // ── 停止時の最終計上（stopped_pending）: 収録スパン内の未回収分を必ず dropped に反映 ──
+  {
+    // 欠損なし → 計上 0
+    const s0 = new Fifo.FifoLoopState();
+    for (let sn = 100; sn <= 109; sn++) { s0.rawStore.set(sn, null); s0.noteStored(sn); }
+    assert.equal(s0.finalizePendingLoss(), 0);
+    assert.equal(s0.dropped, 0);
+
+    // スパン内に穴（95 と 103 が未回収）→ 2 件計上
+    const s1 = new Fifo.FifoLoopState();
+    for (let sn = 91; sn <= 105; sn++) {
+      if (sn === 95 || sn === 103) continue;
+      s1.rawStore.set(sn, null); s1.noteStored(sn);
+    }
+    assert.equal(s1.finalizePendingLoss(), 2);
+    assert.equal(s1.dropped, 2);
+    assert.ok(s1.lossEvents.some((e) => e.reason === 'stopped_pending' && e.dropped === 2));
+
+    // 既計上分（fw_nodata 等で dropped 済み）は二重計上しない
+    const s2 = new Fifo.FifoLoopState();
+    for (let sn = 91; sn <= 105; sn++) {
+      if (sn === 95 || sn === 103) continue;
+      s2.rawStore.set(sn, null); s2.noteStored(sn);
+    }
+    s2.dropped = 1; // 95 は fw_nodata として計上済みという想定
+    assert.equal(s2.finalizePendingLoss(), 1, '未計上の 103 の分だけ追加される');
+    assert.equal(s2.dropped, 2);
+
+    // uint16 wraparound をまたぐスパンでも正しく数える
+    const s3 = new Fifo.FifoLoopState();
+    for (let i = 0; i < 10; i++) {
+      const sn = (65530 + i) % 65536;
+      if (i === 4) continue; // 1件欠け（65534）
+      s3.rawStore.set(sn, null); s3.noteStored(sn);
+    }
+    assert.equal(s3.finalizePendingLoss(), 1);
+
+    // 何も格納していなければ計上しない
+    const s4 = new Fifo.FifoLoopState();
+    assert.equal(s4.finalizePendingLoss(), 0);
+  }
+
+  // ── ループ終了時に stopped_pending が onDataLoss / onStopped.dropped へ反映される ──
+  {
+    const mock = {
+      id: 0,
+      streaming_mode: 4,
+      _fifoNotifySink: null,
+      isConnected: () => true,
+      async write() { /* teardown コマンドは応答不要（catch 済み） */ },
+    };
+    const fifo = new Fifo(mock, { startupDelayMs: 0 });
+    // 収録スパン 91..105 のうち 95 が carryOver に残ったまま停止した状況を再現
+    for (let sn = 91; sn <= 105; sn++) {
+      if (sn === 95) continue;
+      fifo.state.rawStore.set(sn, null); fifo.state.noteStored(sn);
+    }
+    fifo.state.carryOver = [[95, 1]];
+    fifo._running = false; // _runLoop は即終了し、finally の最終計上だけが走る
+
+    let lossInfo = null;
+    let stoppedInfo = null;
+    fifo.onDataLoss = (info) => { lossInfo = info; };
+    fifo.onStopped = (info) => { stoppedInfo = info; };
+    await fifo._runLoopWrapped();
+
+    assert.ok(lossInfo && lossInfo.reason === 'stopped_pending' && lossInfo.dropped === 1,
+      'onDataLoss(stopped_pending) が発火');
+    assert.equal(lossInfo.cumulative, 1);
+    assert.ok(stoppedInfo && stoppedInfo.dropped === 1, 'onStopped.dropped に反映');
+    assert.equal(fifo.droppedCount, 1);
+  }
+
   console.log('insole-fifo.test.js passed');
 })().catch((error) => {
   console.error(error);
