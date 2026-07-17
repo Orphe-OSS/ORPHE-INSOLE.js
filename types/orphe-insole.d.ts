@@ -444,13 +444,18 @@ export interface InsoleFifoProgress {
 }
 
 export interface InsoleFifoDataLoss {
-    /** 'ring_overflow'（追従遅れでFWバッファ上書き）| 'carryover_overflow' | 'fw_nodata' */
-    reason: 'ring_overflow' | 'carryover_overflow' | 'fw_nodata';
+    /**
+     * 'ring_overflow'（追従遅れでFWバッファ上書き）| 'carryover_overflow'（再要求キュー溢れ）|
+     * 'fw_nodata'（FWバッファから消失）| 'resync_backlog'（再同期時に要求しきれなかった分）|
+     * 'stopped_pending'（再要求が成功しないまま収録停止した分）
+     */
+    reason: 'ring_overflow' | 'carryover_overflow' | 'fw_nodata' | 'resync_backlog' | 'stopped_pending';
     /** このイベントで失われたシリアル数 */
     dropped: number;
     /** 失われた累計シリアル数 */
     cumulative: number;
-    currentSerial: number;
+    /** イベント時点の FW 側シリアル（'stopped_pending' でポーリング前に停止した場合は null） */
+    currentSerial: number | null;
 }
 
 export interface InsoleFifoAnomaly {
