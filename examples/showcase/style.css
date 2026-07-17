@@ -228,6 +228,11 @@ section {
   padding: 1rem;
 }
 
+.fifo-card {
+  background: #10171c;
+  border-color: #2b3a44 !important;
+}
+
 .pressure-total-track,
 .pressure-side-track {
   position: relative;

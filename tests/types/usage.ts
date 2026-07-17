@@ -150,6 +150,29 @@ void simulator.begin({ preset: 'run' });
 // @ts-expect-error simulator の streamingMode も 1|3|4 のみ
 void simulator.setDataStreamingMode(2);
 
+// ── OrpheInsoleFifo の型 ──
+const fifo = new globalThis.OrpheInsoleFifo(insole, { startupDelayMs: 500 });
+fifo.onSamples = (deviceId, samples) => {
+    const id: number = deviceId;
+    const press: number[] = samples[0].press.values;
+    const gyroX: number = samples[0].converted_gyro.x;
+    void id;
+    void press;
+    void gyroX;
+};
+fifo.onProgress = (info) => { const c: number = info.collected; void c; };
+async function runFifo() {
+    const started: boolean = await fifo.start();
+    void started;
+    const store: Map<number, DataView> = await fifo.stop();
+    void store;
+    const csv: string = fifo.toCSV();
+    void csv;
+}
+void runFifo();
+const fifoHeader: string = globalThis.OrpheInsoleFifo.CSV_HEADER;
+void fifoHeader;
+
 // ── connectionState / connectTimeoutMs / エラーcode の型 ──
 const state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = insole.connectionState;
 void state;

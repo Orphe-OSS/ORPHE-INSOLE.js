@@ -236,7 +236,10 @@ function parseInsoleSensorValues(data, options = {}) {
         acc: vector3(22 + 21 * i, 24 + 21 * i, 26 + 21 * i, timestamp, 3 - i)
       }));
     }
-  } else if (header === 55) {
+  } else if (header === 55 || header === 54) {
+    // header 55 (0x37): realtime gyro+acc+press (mode 3)
+    // header 54 (0x36): FIFO (lossless) data packet — identical byte layout,
+    //                   only the header byte differs. See src/InsoleFifo.js.
     const offset = 24;
     for (let i = 3; i >= 0; i--) {
       const timestamp = t_start;
@@ -1432,6 +1435,14 @@ class OrpheInsole {
    * @param {string} uuid
    */
   onRead(data, uuid) {
+    // FIFO (lossless) collection intercepts SENSOR_VALUES notifications here so
+    // its request/response protocol can consume command replies and data packets
+    // directly, bypassing the realtime got* dispatch. See src/InsoleFifo.js.
+    if (uuid === 'SENSOR_VALUES' && typeof this._fifoNotifySink === 'function') {
+      this._fifoNotifySink(data);
+      return;
+    }
+
     let ret = this.timestamp.getHz();
     if (ret > 0) this.gotBLEFrequency(ret);
 

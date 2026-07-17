@@ -27,7 +27,8 @@ ORPHE-INSOLE.js/
 │   ├── ORPHE-INSOLE.js        # Main SDK
 │   ├── InsoleToolkit.js       # Connection UI toolkit
 │   ├── InsoleSimulator.js     # 実機なし開発用シミュレータ（OrpheInsoleSimulator）
-│   └── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
+│   ├── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
+│   └── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
 │   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
@@ -132,6 +133,53 @@ What does your app need?
 └── 姿勢のみ・圧力不要
     └── Mode 1 (200Hz)
 ```
+
+## FIFO（ロスレス収録） - `src/InsoleFifo.js`
+
+リアルタイムストリーミング（上記モード）は BLE の取りこぼしでパケットが欠落しうる。
+**欠損なくデータを集めたい**場合は FIFO 収録を使う。FW のリングバッファに蓄積された
+サンプルを「シリアル番号を指定して取り出す」プル型プロトコルで回収し、通信で落ちた分は
+自動で再要求する（Python 参照実装 `insole_client` の `read_sensor_data_by_tokoroten_loop`
+相当。内部は単なる FIFO キューなので名前は `fifo`）。
+
+- クラス: `OrpheInsoleFifo`（`src/InsoleFifo.js`。コアSDKとは疎結合、純粋関数は Node でもテスト可）
+- **クォータニオンは含まれない**（ジャイロ・加速度・6ch圧力のみ。データパケットはヘッダ `0x36`）
+- 収録中はリアルタイム配信が一時停止する（FW の読み取りモードを切り替えるため）
+
+```javascript
+// insole は begin() で接続済みであること（SENSOR_VALUES 通知が開始済み）
+const fifo = new OrpheInsoleFifo(insole, { startupDelayMs: 1000 });
+fifo.onSamples = function (deviceId, samples) {
+  // samples[i]: { serial_number, packet_number, t, converted_gyro{dps}, converted_acc{G}, press{values[6] ADC} }
+  // 収録中のライブ可視化に使う（欠損回収のため数百ms遅延してバースト到着する）
+};
+fifo.onProgress = (info) => console.log(info.collected, info.lag);   // 収集済み数・追従遅れ
+await fifo.start();       // 読み取りモードをFIFOへ切替→バッファ回収ループ開始
+// ... 収録 ...
+await fifo.stop();        // 停止し、直前のリアルタイムモードへ復帰
+fifo.download('capture.csv');  // 参照実装互換CSV（serial,timestamp,gyro[dps],acc[G],press1..6[N]）
+```
+
+**欠損の可視化（重要）**: 追従（ポーリング）がFWバッファの上書きに間に合わない場合、
+回収前のデータは**回復不能に失われる**。この場合でも収録は自動終了せず飛ばして継続するため、
+「気づかない欠損」を防ぐには `onDataLoss` / `droppedCount` を監視すること。
+`lag`（未取得シリアル数）が `RING_BUFFER_CAPACITY`(1500) に近づくと危険。
+BLEの取りこぼしは carryOver で自動再要求され回復する（`droppedCount` には計上されない）。
+
+```javascript
+fifo.onDataLoss = (info) => {
+  // reason: 'ring_overflow'（追従遅れ）| 'carryover_overflow' | 'fw_nodata'
+  console.warn(`欠損 ${info.dropped}（累計 ${info.cumulative}）`, info.reason);
+};
+// 欠損した瞬間に収録を止めたい場合:
+const fifo2 = new OrpheInsoleFifo(insole, { stopOnLoss: true });
+// 収録後の判定: fifo.droppedCount === 0 なら欠損なし
+```
+
+CSV は timestamp 昇順・1パケット4行（フレーム5ms間隔）で、参照実装の
+`tools/check_tokoroten_data.py`（4行/serial・欠損なしを検証）と互換。
+実機（device 00000161/right）で欠損0のロスレス収録を確認済み。
+showcase の「ロスレス収録（FIFO）」パネルが利用例（収録データで各可視化がライブ更新）。
 
 ## API Reference
 

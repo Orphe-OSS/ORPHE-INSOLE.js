@@ -414,6 +414,100 @@ export declare class OrpheInsoleSimulator {
     onReset: () => void;
 }
 
+// ── InsoleFifo (src/InsoleFifo.js) — FIFO（ロスレス）センサーデータ収集 ──
+
+export interface InsoleFifoSample {
+    serial_number: number;
+    packet_number: number;
+    /** デバイス時刻ベースのミリ秒（当日 00:00 起点 + フレーム間 5ms オフセット） */
+    t: number;
+    converted_gyro: InsoleVector3;
+    converted_acc: InsoleVector3;
+    press: InsolePressSample;
+}
+
+export interface InsoleFifoOptions {
+    /** モニタ開始後にバッファへ蓄積を待つ時間[ms]（既定 1000） */
+    startupDelayMs?: number;
+    /** 回復不能な欠損が発生した時点で収録を自動停止する（既定 false） */
+    stopOnLoss?: boolean;
+}
+
+export interface InsoleFifoProgress {
+    collected: number;
+    lastReceived: number;
+    currentSerial: number;
+    /** 追従遅れ（未取得シリアル数）。大きいほど欠損の危険が高い */
+    lag: number;
+    /** 回復不能に失われた累計シリアル数 */
+    dropped: number;
+}
+
+export interface InsoleFifoDataLoss {
+    /** 'ring_overflow'（追従遅れでFWバッファ上書き）| 'carryover_overflow' | 'fw_nodata' */
+    reason: 'ring_overflow' | 'carryover_overflow' | 'fw_nodata';
+    /** このイベントで失われたシリアル数 */
+    dropped: number;
+    /** 失われた累計シリアル数 */
+    cumulative: number;
+    currentSerial: number;
+}
+
+export interface InsoleFifoAnomaly {
+    startSerial: number;
+    requestSize: number;
+    currentSerial: number;
+    received: number;
+    expected: number;
+    noData: number;
+    bleLoss: number;
+    confirmedLost: number;
+    newNoData: number;
+}
+
+export declare class OrpheInsoleFifo {
+    constructor(insole: OrpheInsole, options?: InsoleFifoOptions);
+    readonly deviceId: number;
+    readonly collectedCount: number;
+    /** 回復不能に失われた累計シリアル数（0 なら欠損なし） */
+    readonly droppedCount: number;
+    /** 現在の追従遅れ（未取得シリアル数） */
+    lag: number;
+    /** 回復不能な欠損が発生した時点で収録を自動停止するか */
+    stopOnLoss: boolean;
+    /** 収集したパケットのデコード結果（ライブ可視化用） */
+    onSamples: ((deviceId: number, samples: InsoleFifoSample[]) => void) | null;
+    onProgress: ((info: InsoleFifoProgress) => void) | null;
+    onAnomaly: ((info: InsoleFifoAnomaly) => void) | null;
+    /** 回復不能な欠損が起きたとき呼ばれる（気づかない欠損を防ぐ） */
+    onDataLoss: ((info: InsoleFifoDataLoss) => void) | null;
+    /** 収集終了時に呼ばれる（stopOnLoss による自動停止の検知に使う） */
+    onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number }) => void) | null;
+    onError: ((error: unknown) => void) | null;
+    /** FIFO 収集を開始（SENSOR_VALUES 通知は begin() 済みであること） */
+    start(): Promise<boolean>;
+    /** 収集を停止し、直前のリアルタイムモードへ復帰。収集した raw ストアを返す */
+    stop(): Promise<Map<number, DataView>>;
+    /** 収集データを参照実装互換の CSV 文字列にする（timestamp 昇順） */
+    toCSV(): string;
+    /** ブラウザで CSV をダウンロードする */
+    download(filename?: string): void;
+
+    static readonly CSV_HEADER: string;
+    static readonly READ_MODE_FIFO: number;
+    static serialDistance(startExclusive: number, endInclusive: number): number;
+    static buildRequestsFromSerials(serials: Iterable<number>): Array<[number, number]>;
+    static createGetSensorDataRequest(pairs: Array<[number, number]>): Uint8Array;
+    static parseCurrentSerial(dv: DataView): { serial: number; watermark: number; accumulated: number } | null;
+    static parseNoDataResponse(dv: DataView): [number, number] | null;
+    static extractSerialIfSensorPacket(dv: DataView): number | null;
+    static decodePacket(dv: DataView): { serial: number; timestamp: number; samples: InsoleFifoSample[] };
+    static packetToCsvRows(dv: DataView): string[];
+    static pressureToN(x: number, channel: number): number;
+}
+
+type OrpheInsoleFifoConstructor = typeof OrpheInsoleFifo;
+
 export interface BuildInsoleToolkitOptions extends InsoleBeginOptions {
     /** true にすると実機の代わりに OrpheInsoleSimulator を使う（要 InsoleSimulator.js） */
     simulator?: boolean;
@@ -435,6 +529,7 @@ declare global {
     var OrpheInsole: OrpheInsoleConstructor;
     var Orphe: OrpheInsoleConstructor;
     var OrpheInsoleSimulator: OrpheInsoleSimulatorConstructor;
+    var OrpheInsoleFifo: OrpheInsoleFifoConstructor;
     var insoles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var bles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var cores: Array<OrpheInsole | OrpheInsoleSimulator>;
