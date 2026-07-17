@@ -19,6 +19,8 @@ Happy hacking for ORPHE INSOLE module on javascript.
 
 INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-shoe](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe) へ（クリック/キーボードでも試奏できます。ジェスチャ収録ツール [GESTURE LAB](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe/lab.html) 付き）。
 
+通常モード（リアルタイム通知）と FIFO（ロスレス収録）の違いは [fifo-vs-realtime](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/fifo-vs-realtime) ページで、仕組みの解説と実機での欠損率比較ができます。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 

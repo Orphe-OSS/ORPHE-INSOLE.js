@@ -483,6 +483,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | ジェスチャ楽器 | examples/music-shoe | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、イベントルーパー、加算残光ビジュアライザ |
 | ジェスチャ収録 | examples/music-shoe/lab.html | ラベル付きCSV記録（しきい値設計用） |
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
+| 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 
 圧力データの検証・キャリブレーション・CoP・接地検出は `src/InsoleUtils.js`（`OrpheInsoleUtils`）に
