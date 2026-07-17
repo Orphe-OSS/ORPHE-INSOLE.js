@@ -114,7 +114,15 @@ function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) 
         updateInsoleModalParameters(parseInt(insole_id));
     })
 
-    let div_modal = ITbuildElement('div', '', 'modal fade', '', span_group);
+    // 設定モーダルは body 直下に置く。
+    // toolkit を position:sticky / transform / filter 等で stacking context を作る
+    // 要素（例: showcase の position:sticky ヘッダ）の内側に置くと、Bootstrap が
+    // body に挿す backdrop(z-index 1050) がモーダル本体(親の stacking context に
+    // 閉じ込められ実質 1030 相当)より前面に来て、モーダルがクリックできず固まって
+    // 見える。body 直下なら backdrop と同じ土俵に並ぶのでこの問題を回避できる。
+    const existingModal = document.getElementById(`settings_modal${insole_id}`);
+    if (existingModal) existingModal.remove(); // 再ビルド時の重複を防ぐ
+    let div_modal = ITbuildElement('div', '', 'modal fade', '', document.body);
     div_modal.id = `settings_modal${insole_id}`;
     div_modal.setAttribute('tabindex', '-1');
     div_modal.setAttribute('aria-hidden', 'true');
