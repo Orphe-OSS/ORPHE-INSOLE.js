@@ -128,7 +128,11 @@
   }
 
   // データ要求パケット [0x0B,0x02, 30組...] を作成（30組に満たない分は 0 埋め）
+  // FW は固定 30 スロット(2 + 30×4 = 122 bytes)前提で読むため、超過は不正パケットになる。
   function createGetSensorDataRequest(pairs) {
+    if (pairs.length > RE_REQUEST_DATA_NUM) {
+      throw new RangeError(`createGetSensorDataRequest: too many ranges (${pairs.length} > ${RE_REQUEST_DATA_NUM})`);
+    }
     const req = [OP_INFO, SUB_GET_DATA];
     for (const [serial, count] of pairs) {
       req.push((serial >> 8) & 0xFF, serial & 0xFF, (count >> 8) & 0xFF, count & 0xFF);
@@ -293,12 +297,26 @@
       this.rawStore = new Map();    // serial -> DataView
       this.dropped = 0;             // 回復不能に失われた累計シリアル数
       this.lossEvents = [];         // 未通知の回復不能ロスイベント（呼び出し側が drain）
+      this.resyncPending = false;   // lastSerial=null が「再同期由来」か（初回start直後と区別）
     }
 
     // 新規リクエストの [startSerial, requestSize] を計算。
     calcRequestRange(currentSerial, accumulatedCount, maxNewRequest) {
       if (this.lastSerial === null) {
         const requestSize = Math.min(accumulatedCount, maxNewRequest);
+        // 再同期直後は「直近 requestSize 件」だけを要求するため、それより古い
+        // 未回収バックログ（accumulatedCount 超過分）は要求されず失われる。
+        // これを無音欠損にしないよう回復不能ロスとして計上する。
+        // 初回 start() 直後（resyncPending=false）はバッファ消去済みで意図的な
+        // 「直近から開始」なので損失ではない。
+        if (this.resyncPending) {
+          const lost = Math.max(0, accumulatedCount - requestSize);
+          if (lost > 0) {
+            this.dropped += lost;
+            this.lossEvents.push({ reason: 'resync_backlog', dropped: lost });
+          }
+          this.resyncPending = false;
+        }
         const startSerial = requestSize > 0
           ? ((currentSerial - (requestSize - 1)) % UINT16_MAX + UINT16_MAX) % UINT16_MAX
           : 0;
@@ -333,12 +351,14 @@
           this.lossEvents.push({ reason: 'carryover_overflow', dropped: totalPending });
           this.carryOver = [];
           this.lastSerial = null;
+          this.resyncPending = true;   // 次ポーリングでバックログ超過分を計上する
           return 'resync';
         }
       }
       if (newNoData.size > 0) {
         this.lastSerial = null;
         this.carryOver = [];
+        this.resyncPending = true;     // 次ポーリングでバックログ超過分を計上する
       } else if (requestSize > 0) {
         this.lastSerial = (startSerial + requestSize - 1) % UINT16_MAX;
       }
@@ -373,6 +393,7 @@
       this.state = new FifoLoopState();
       this._queue = new NotifyQueue();
       this._running = false;
+      this._starting = false;
       this._loopPromise = null;
       this._restoreMode = null;
       this._tornDown = false;
@@ -443,7 +464,16 @@
      * @returns {Promise<boolean>} 準備に成功して収集を開始できたら true
      */
     async start() {
-      if (this._running) return true;
+      if (this._running || this._starting) return this._running;
+      // 直前の stop()/自動停止のライフサイクル完了を待つ。待たずに再開すると
+      // 旧ループと新ループが同じ NotifyQueue を奪い合い、ハンドシェイクの ACK を
+      // 旧ループが横取りしてしまう（公開クラスなので交差呼び出しに備える）。
+      this._starting = true;
+      try {
+        if (this._loopPromise) { try { await this._loopPromise; } catch (_) { /* noop */ } }
+      } finally {
+        this._starting = false;
+      }
       if (!this.insole || !this.insole.isConnected || !this.insole.isConnected()) {
         this._reportError(new Error('OrpheInsoleFifo.start(): insole is not connected'));
         return false;
@@ -522,7 +552,7 @@
         // 追従遅れ（まだ取得していないシリアル数）。RING_BUFFER_CAPACITY に近づくほど欠損危険。
         this.lag = state.lastSerial === null ? accumulatedCount : serialDistance(state.lastSerial, currentSerial);
 
-        const carryOverToSend = state.carryOver.slice(0, RE_REQUEST_DATA_NUM);
+        let carryOverToSend = state.carryOver.slice(0, RE_REQUEST_DATA_NUM);
         const carryOverSerialCount = carryOverToSend.reduce((sum, [, c]) => sum + c, 0);
         const maxNewRequest = Math.max(0, MAX_DATA_NUMBER_REQUESTED_AT_ONCE - carryOverSerialCount);
 
@@ -531,6 +561,12 @@
         if (requestSize <= 0 && carryOverToSend.length === 0) {
           await sleep(POLLING_INTERVAL_MS);
           continue;
+        }
+
+        // 新規レンジを送る場合は、固定 30 スロットを超えないよう carry-over を 29 組までに制限
+        // （合計 31 組になると createGetSensorDataRequest が規定超過パケットになるため）。
+        if (requestSize > 0 && carryOverToSend.length >= RE_REQUEST_DATA_NUM) {
+          carryOverToSend = carryOverToSend.slice(0, RE_REQUEST_DATA_NUM - 1);
         }
 
         const requests = [];

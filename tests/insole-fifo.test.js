@@ -54,6 +54,12 @@ function near(actual, expected, tol, label) {
   assert.deepEqual(Array.from(req.slice(2, 10)), [1, 2, 0, 3, 0, 200, 0, 2]);
   // 残りは 0 埋め
   assert.ok(Array.from(req.slice(10)).every((b) => b === 0));
+
+  // 固定 30 スロットちょうどは OK、超過は throw（規定超過パケットの黙認を防ぐ）
+  const exactly30 = Array.from({ length: 30 }, (_, i) => [i, 1]);
+  assert.equal(Fifo.createGetSensorDataRequest(exactly30).length, 122);
+  const over30 = Array.from({ length: 31 }, (_, i) => [i, 1]);
+  assert.throws(() => Fifo.createGetSensorDataRequest(over30), /too many ranges/);
 }
 
 // ── 応答パーサ ──
@@ -169,6 +175,20 @@ function near(actual, expected, tol, label) {
   assert.equal(s4.dropped, 100);
   assert.equal(s4.lossEvents[0].reason, 'ring_overflow');
   assert.equal(s4.lossEvents[0].dropped, 100);
+
+  // 初回 start（resyncPending=false）: バックログ超過は意図的な「直近から開始」で損失計上しない
+  const sInit = new Fifo.FifoLoopState();
+  const [, sizeInit] = sInit.calcRequestRange(5000, 500, 200);
+  assert.equal(sizeInit, 200);
+  assert.equal(sInit.dropped, 0);
+
+  // 再同期後（resyncPending=true）: 要求しきれない古いバックログを回復不能ロスとして計上
+  const sRe = new Fifo.FifoLoopState();
+  sRe.resyncPending = true;
+  sRe.calcRequestRange(5000, 500, 200); // 500 蓄積・200要求 → 300 が回復不能
+  assert.equal(sRe.dropped, 300);
+  assert.ok(sRe.lossEvents.some((e) => e.reason === 'resync_backlog' && e.dropped === 300));
+  assert.equal(sRe.resyncPending, false); // 消費済み
 }
 
 // ── ループ状態: updateAfterResponse ──
@@ -189,6 +209,7 @@ function near(actual, expected, tol, label) {
   assert.deepEqual(s2.carryOver, []);
   assert.equal(s2.lastSerial, null);
   assert.equal(s2.dropped, 101);
+  assert.equal(s2.resyncPending, true); // 次ポーリングでバックログ超過を計上させる
   assert.ok(s2.lossEvents.some((e) => e.reason === 'carryover_overflow'));
 
   // 新規シリアルの no-data → 再同期（lastSerial リセット）
@@ -196,6 +217,7 @@ function near(actual, expected, tol, label) {
   s3.lastSerial = 500;
   s3.updateAfterResponse(new Set(), new Set([600]), 600, 10);
   assert.equal(s3.lastSerial, null);
+  assert.equal(s3.resyncPending, true);
   assert.deepEqual(s3.carryOver, []);
 }
 
