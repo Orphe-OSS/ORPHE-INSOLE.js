@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>通常モード vs FIFO収録 - ORPHE INSOLE</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+  <div class="container py-4" style="max-width: 1080px;">
+
+    <header class="mb-4">
+      <h1 class="h3"><i class="bi bi-arrow-left-right"></i> 通常モード vs FIFO収録</h1>
+      <p class="text-muted mb-0">
+        ORPHE INSOLE の2つのデータ取得方式の違いを、実機で計測しながら比較するページです。
+        同じ条件で両方のモードを動かし、<strong>データの届き方（レイテンシ）</strong>と<strong>欠損の有無</strong>の違いを体感できます。
+      </p>
+    </header>
+
+    <!-- ============ 説明 ============ -->
+    <section class="mb-4">
+      <h2 class="h5 border-bottom pb-2"><i class="bi bi-book"></i> 2つの方式の違い</h2>
+
+      <div class="row g-3 mt-1">
+        <!-- 通常モード -->
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-primary text-white">
+              <i class="bi bi-broadcast"></i> 通常モード（リアルタイム / プッシュ型）
+            </div>
+            <div class="card-body">
+              <svg viewBox="0 0 320 190" class="diagram" role="img" aria-label="通常モードのシーケンス図">
+                <line x1="60" y1="30" x2="60" y2="180" stroke="#adb5bd" stroke-width="2"/>
+                <line x1="260" y1="30" x2="260" y2="180" stroke="#adb5bd" stroke-width="2"/>
+                <text x="60" y="20" text-anchor="middle" font-size="12" font-weight="bold">INSOLE</text>
+                <text x="260" y="20" text-anchor="middle" font-size="12" font-weight="bold">ブラウザ</text>
+                <g font-size="10" fill="#495057">
+                  <line x1="65" y1="50" x2="252" y2="50" stroke="#0d6efd" stroke-width="1.5" marker-end="url(#arrowB)"/>
+                  <text x="160" y="45" text-anchor="middle">notify: serial 100</text>
+                  <line x1="65" y1="80" x2="252" y2="80" stroke="#0d6efd" stroke-width="1.5" marker-end="url(#arrowB)"/>
+                  <text x="160" y="75" text-anchor="middle">notify: serial 101</text>
+                  <line x1="65" y1="110" x2="252" y2="110" stroke="#dc3545" stroke-width="1.5" stroke-dasharray="4 3"/>
+                  <text x="160" y="105" text-anchor="middle" fill="#dc3545">notify: serial 102</text>
+                  <text x="160" y="124" text-anchor="middle" fill="#dc3545" font-weight="bold">✕ BLE取りこぼし → そのまま欠損</text>
+                  <line x1="65" y1="145" x2="252" y2="145" stroke="#0d6efd" stroke-width="1.5" marker-end="url(#arrowB)"/>
+                  <text x="160" y="140" text-anchor="middle">notify: serial 103</text>
+                </g>
+                <defs>
+                  <marker id="arrowB" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#0d6efd"/>
+                  </marker>
+                </defs>
+              </svg>
+              <p class="small mb-0 mt-2">
+                ファームウェアが計測と同時にデータを<strong>垂れ流し（push）</strong>ます。
+                遅延がほぼなく最も速い反面、BLE が取りこぼしたパケットは<strong>回収されずそのまま欠損</strong>します。
+                クォータニオン（姿勢）も取得できます。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- FIFO -->
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-warning text-dark">
+              <i class="bi bi-database-down"></i> FIFO収録（ロスレス / プル型）
+            </div>
+            <div class="card-body">
+              <svg viewBox="0 0 320 190" class="diagram" role="img" aria-label="FIFO収録のシーケンス図">
+                <line x1="60" y1="30" x2="60" y2="180" stroke="#adb5bd" stroke-width="2"/>
+                <line x1="260" y1="30" x2="260" y2="180" stroke="#adb5bd" stroke-width="2"/>
+                <text x="60" y="20" text-anchor="middle" font-size="12" font-weight="bold">INSOLE (FWバッファ)</text>
+                <text x="260" y="20" text-anchor="middle" font-size="12" font-weight="bold">ブラウザ</text>
+                <g font-size="10" fill="#495057">
+                  <line x1="255" y1="48" x2="68" y2="48" stroke="#fd7e14" stroke-width="1.5" marker-end="url(#arrowO)"/>
+                  <text x="160" y="43" text-anchor="middle">「serial 100〜129 をください」</text>
+                  <line x1="65" y1="72" x2="252" y2="72" stroke="#0d6efd" stroke-width="1.5" marker-end="url(#arrowB2)"/>
+                  <text x="160" y="67" text-anchor="middle">data: 100, 101, 103...129</text>
+                  <text x="160" y="90" text-anchor="middle" fill="#dc3545">✕ 102 が途中で落ちた</text>
+                  <line x1="255" y1="112" x2="68" y2="112" stroke="#fd7e14" stroke-width="1.5" marker-end="url(#arrowO)"/>
+                  <text x="160" y="107" text-anchor="middle">「102 を再送してください」</text>
+                  <line x1="65" y1="140" x2="252" y2="140" stroke="#198754" stroke-width="1.5" marker-end="url(#arrowG)"/>
+                  <text x="160" y="135" text-anchor="middle" fill="#198754">data: 102 ✓ 欠損なしで揃う</text>
+                </g>
+                <defs>
+                  <marker id="arrowO" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#fd7e14"/>
+                  </marker>
+                  <marker id="arrowB2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#0d6efd"/>
+                  </marker>
+                  <marker id="arrowG" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#198754"/>
+                  </marker>
+                </defs>
+              </svg>
+              <p class="small mb-0 mt-2">
+                ファームウェアのリングバッファに蓄積されたデータを、ブラウザが<strong>シリアル番号を指定して取り出し（pull）</strong>、
+                通信で落ちた分は<strong>自動で再要求</strong>します。数百ms〜のバースト遅延がありますが、<strong>欠損なく</strong>回収できます。
+                クォータニオンは含まれません（ジャイロ・加速度・6ch圧力のみ）。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 使い分け表 -->
+      <div class="table-responsive mt-3">
+        <table class="table table-bordered table-sm align-middle compare-table">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 20%;"></th>
+              <th style="width: 40%;"><i class="bi bi-broadcast"></i> 通常モード</th>
+              <th style="width: 40%;"><i class="bi bi-database-down"></i> FIFO収録</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>通信方式</th>
+              <td>プッシュ型（notify 垂れ流し）</td>
+              <td>プル型（シリアル番号指定の要求応答 + 再要求）</td>
+            </tr>
+            <tr>
+              <th>レイテンシ</th>
+              <td class="table-success">ほぼゼロ（サンプル毎に到着）</td>
+              <td>数百ms〜（ポーリング毎にバースト到着）</td>
+            </tr>
+            <tr>
+              <th>欠損</th>
+              <td>BLE 取りこぼし分はそのまま欠損</td>
+              <td class="table-success">自動再要求で欠損なし<br><span class="text-muted small">（回復不能な場合も必ず計上・通知される）</span></td>
+            </tr>
+            <tr>
+              <th>取得データ</th>
+              <td class="table-success">ジャイロ・加速度・圧力 + <strong>クォータニオン/オイラー角</strong>（モード1/4）</td>
+              <td>ジャイロ・加速度・6ch圧力のみ</td>
+            </tr>
+            <tr>
+              <th>向いている用途</th>
+              <td>リアルタイム可視化・インタラクション・ゲーム・楽器<br><span class="text-muted small">（多少の欠損が致命的でないもの）</span></td>
+              <td>研究・分析用のデータ収集、歩行ログの記録<br><span class="text-muted small">（後から解析するため完全性が重要なもの）</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 実験 ============ -->
+    <section class="mb-4">
+      <h2 class="h5 border-bottom pb-2"><i class="bi bi-speedometer2"></i> 実機で比較する</h2>
+      <p class="small text-muted">
+        INSOLE を接続し、同じ動作（足踏みなど）を両方のモードで計測して比べてください。
+        差を見やすくするには、<strong>デバイスとPCの距離を離す・体で遮る</strong>などして、意図的に電波状況を悪くするのがおすすめです。
+      </p>
+
+      <div class="row g-2 mb-3">
+        <div class="col-md-6"><div id="toolkit0" class="toolkit-box"></div></div>
+        <div class="col-md-6"><div id="toolkit1" class="toolkit-box"></div></div>
+      </div>
+      <div id="bt_unsupported" class="alert alert-danger d-none">
+        このブラウザは Web Bluetooth に対応していません。Chrome / Edge をご利用ください。
+      </div>
+
+      <!-- 計測コントロール -->
+      <div class="card mb-3">
+        <div class="card-body d-flex flex-wrap align-items-center gap-2">
+          <label class="small text-muted mb-0">計測時間</label>
+          <select id="duration_select" class="form-select form-select-sm" style="width: auto;">
+            <option value="10000">10秒</option>
+            <option value="30000" selected>30秒</option>
+            <option value="60000">60秒</option>
+          </select>
+          <button id="btn_normal" class="btn btn-primary btn-sm" disabled>
+            <i class="bi bi-broadcast"></i> 通常モードで計測
+          </button>
+          <button id="btn_fifo" class="btn btn-warning btn-sm" disabled>
+            <i class="bi bi-database-down"></i> FIFO収録で計測
+          </button>
+          <span id="run_status" class="small text-muted ms-2">INSOLE を接続してください</span>
+        </div>
+      </div>
+
+      <!-- ライブチャート -->
+      <div class="card mb-3">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+          <span class="small fw-bold"><i class="bi bi-activity"></i> データの届き方（圧力合計・直近12秒）</span>
+          <span class="small">
+            最後のサンプル到着から <span id="gap_badge" class="badge bg-secondary">- ms</span>
+            <span id="lag_wrap" class="d-none">/ FIFO追従遅れ <span id="lag_badge" class="badge bg-warning text-dark">0</span></span>
+          </span>
+        </div>
+        <div class="card-body p-2">
+          <canvas id="arrival_chart" height="220"></canvas>
+          <p class="small text-muted mb-0 mt-1">
+            上段=INSOLE 01 / 下段=INSOLE 02。
+            <span class="legend-dot" style="background:#0d6efd"></span> 通常モード：サンプルが連続的に届く（線が途切れない）
+            <span class="ms-3"><span class="legend-dot" style="background:#fd7e14"></span> FIFO収録：まとめて届く（バースト状の縦の束になり、束の間は空白）</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- 結果比較 -->
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header py-2 small fw-bold"><i class="bi bi-broadcast"></i> 通常モードの計測結果</div>
+            <div class="card-body pb-2">
+              <div class="small fw-bold text-muted">INSOLE 01</div>
+              <div id="result_normal_0"><p class="text-muted small mb-1">まだ計測していません</p></div>
+              <canvas id="map_normal_0" height="18" class="serial-map mb-3"></canvas>
+              <div class="small fw-bold text-muted">INSOLE 02</div>
+              <div id="result_normal_1"><p class="text-muted small mb-1">まだ計測していません</p></div>
+              <canvas id="map_normal_1" height="18" class="serial-map"></canvas>
+              <div class="small text-muted mt-2">シリアル連続性バー: 緑=受信 / 赤=欠損</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header py-2 small fw-bold d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-database-down"></i> FIFO収録の計測結果</span>
+              <button id="btn_csv" class="btn btn-outline-secondary btn-sm py-0" disabled>
+                <i class="bi bi-download"></i> CSV（各デバイス）
+              </button>
+            </div>
+            <div class="card-body pb-2">
+              <div class="small fw-bold text-muted">INSOLE 01</div>
+              <div id="result_fifo_0"><p class="text-muted small mb-1">まだ計測していません</p></div>
+              <canvas id="map_fifo_0" height="18" class="serial-map mb-3"></canvas>
+              <div class="small fw-bold text-muted">INSOLE 02</div>
+              <div id="result_fifo_1"><p class="text-muted small mb-1">まだ計測していません</p></div>
+              <canvas id="map_fifo_1" height="18" class="serial-map"></canvas>
+              <div class="small text-muted mt-2">シリアル連続性バー: 緑=受信 / 赤=欠損 ・ FIFOはクォータニオンなし（仕様）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 注意 ============ -->
+    <section class="mb-4">
+      <h2 class="h6 text-muted"><i class="bi bi-info-circle"></i> 補足</h2>
+      <ul class="small text-muted">
+        <li>電波状況が良いと通常モードでも欠損ゼロになることがあります。距離を取る・遮蔽すると差が出ます。</li>
+        <li>FIFO収録中はリアルタイム配信が一時停止します（FWの読み取りモードを切り替えるため）。収録を止めると自動で復帰します。</li>
+        <li>FIFO収録の「欠損」は、追従がFWバッファの上書きに間に合わなかった回復不能分のみです。BLE取りこぼしは再要求で自動回復するため欠損に数えません。</li>
+        <li>CSVは参照実装互換形式（serial_number, timestamp, gyro[dps], acc[G], press1..6[N]）です。</li>
+      </ul>
+    </section>
+
+    <footer class="text-muted small border-top pt-2">
+      <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js" target="_blank" rel="noopener">ORPHE-INSOLE.js</a> /
+      使い方の詳細は <code>CLAUDE.md</code> の「FIFO（ロスレス収録）」を参照
+    </footer>
+  </div>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>

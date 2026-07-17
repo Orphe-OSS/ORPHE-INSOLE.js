@@ -1,0 +1,48 @@
+body {
+  background: #fafbfc;
+}
+
+.diagram {
+  width: 100%;
+  height: auto;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+}
+
+.compare-table th {
+  white-space: nowrap;
+}
+
+#arrival_chart {
+  width: 100%;
+  display: block;
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+}
+
+.serial-map {
+  width: 100%;
+  display: block;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  background: #f1f3f5;
+}
+
+.toolkit-box {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 8px 12px;
+  height: 100%;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: baseline;
+  margin-right: 2px;
+}
