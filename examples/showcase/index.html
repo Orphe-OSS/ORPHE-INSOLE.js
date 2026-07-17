@@ -360,6 +360,29 @@ insole.gotEuler = function (euler) {
           <div id="csv_load_status" class="small text-muted mt-1"></div>
         </div>
       </div>
+
+      <!-- ロスレス収録（FIFO） -->
+      <div class="row g-4 mt-1">
+        <div class="col-12">
+          <div class="fifo-card p-3 rounded border border-secondary">
+            <h3 class="h6 mb-1"><i class="bi bi-hdd-stack"></i> <span data-i18n="fifoTitle">ロスレス収録（FIFO）</span></h3>
+            <p class="small text-muted mb-2" data-i18n-html="fifoDesc">
+              ファームウェアのバッファから<strong>欠損なく</strong>センサーデータを回収します（<code>read_sensor_data_by_tokoroten_loop</code> 相当）。
+              取りこぼしたパケットは自動で再要求されます。収録中はリアルタイム表示が一時停止し、収録データで可視化されます。
+              <strong>FIFOモードにクォータニオンは含まれません</strong>（ジャイロ・加速度・6ch圧力のみ）。
+            </p>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <button id="fifo_toggle" class="btn btn-primary" disabled><i class="bi bi-play-fill"></i> <span data-i18n="fifoStart">収録開始</span></button>
+              <button id="fifo_download" class="btn btn-outline-light" disabled><i class="bi bi-download"></i> <span data-i18n="fifoDownload">CSV保存</span></button>
+              <div class="form-check form-switch ms-1 mb-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="fifo_autostop" checked>
+                <label class="form-check-label small" for="fifo_autostop" data-i18n="fifoAutoStop">欠損したら自動停止</label>
+              </div>
+              <span id="fifo_status" class="small text-muted" data-i18n="fifoStatusIdle">実機を接続すると使用できます</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 8. 次のステップ -->
@@ -499,6 +522,7 @@ insole.gotEuler = function (euler) {
   <script src="../../src/ORPHE-INSOLE.js"></script>
   <script src="../../src/InsoleUtils.js"></script>
   <script src="../../src/InsoleToolkit.js"></script>
+  <script src="../../src/InsoleFifo.js"></script>
 
   <script src="./i18n.js"></script>
   <script src="./demo-data.js"></script>

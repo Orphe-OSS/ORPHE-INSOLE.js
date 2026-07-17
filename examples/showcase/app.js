@@ -312,6 +312,13 @@ let imuPanels = [];
 let pressureGauge = null;
 let statokinesigram = null;
 
+// FIFO（ロスレス収録）: デバイスごとの収集器
+const fifos = [null, null];
+let fifoRunning = false;
+let fifoStopping = false;
+let fifoActiveIds = [];
+let fifoStartedAt = 0;
+
 //--------------------------------------------------
 // フレーム配信: ライブ/デモ共通の入口
 //--------------------------------------------------
@@ -550,6 +557,31 @@ window.onload = function () {
         insole.onReconnectSuccess = function () {
             applyMountPositionWhenReady(this);
         };
+
+        // FIFO（ロスレス収録）: 収集したサンプルを通常のライブ経路に流し込む
+        if (typeof OrpheInsoleFifo !== 'undefined') {
+            fifos[id] = new OrpheInsoleFifo(insole, { startupDelayMs: 800 });
+            fifos[id].onSamples = function (deviceId, samples) {
+                for (const s of samples) {
+                    dispatchFrame(deviceId, {
+                        t: s.t,
+                        serial: s.serial_number,
+                        press: s.press.values.slice(0, 6),
+                        acc: { x: s.converted_acc.x, y: s.converted_acc.y, z: s.converted_acc.z },
+                        gyro: { x: s.converted_gyro.x, y: s.converted_gyro.y, z: s.converted_gyro.z },
+                        quat: null,
+                        euler: null,
+                    }, true);
+                }
+            };
+            fifos[id].onDataLoss = function (info) {
+                // 気づかない欠損を防ぐため、回復不能ロスは必ずコンソールにも残す
+                console.warn(`INSOLE${this.deviceId}: FIFO data loss (${info.reason}): +${info.dropped}, cumulative ${info.cumulative}`);
+            };
+            fifos[id].onError = function (error) {
+                console.warn(`INSOLE${this.deviceId}: FIFO error`, error);
+            };
+        }
     }
 
     // 初期のL/Rバッジ・並び（デモは device0=左足 / device1=右足）
@@ -599,6 +631,92 @@ window.onload = function () {
     });
     recordDownload.addEventListener('click', () => Recorder.download());
 
+    // --- FIFO（ロスレス収録）UI ---
+    const fifoToggle = document.getElementById('fifo_toggle');
+    const fifoDownload = document.getElementById('fifo_download');
+    const fifoStatus = document.getElementById('fifo_status');
+    const fifoAutoStop = document.getElementById('fifo_autostop');
+
+    function connectedInsoleIds() {
+        const ids = [];
+        for (let id = 0; id < 2; id++) {
+            if (fifos[id] && insoles[id] && insoles[id].isConnected && insoles[id].isConnected()) ids.push(id);
+        }
+        return ids;
+    }
+    function fifoCollectedTotal() {
+        return fifoActiveIds.reduce((n, id) => n + (fifos[id] ? fifos[id].collectedCount : 0), 0);
+    }
+    function fifoDroppedTotal() {
+        return fifoActiveIds.reduce((n, id) => n + (fifos[id] ? fifos[id].droppedCount : 0), 0);
+    }
+    function fifoLagMax() {
+        return fifoActiveIds.reduce((m, id) => Math.max(m, fifos[id] ? fifos[id].lag : 0), 0);
+    }
+    function setFifoStatusLoss(isLoss) {
+        fifoStatus.classList.toggle('text-danger', isLoss);
+        fifoStatus.classList.toggle('fw-bold', isLoss);
+        fifoStatus.classList.toggle('text-muted', !isLoss);
+    }
+    function updateFifoToggleLabel() {
+        fifoToggle.innerHTML = fifoRunning
+            ? i18nHtml('fifoStopHtml', undefined, '<i class="bi bi-stop-fill"></i> 収録停止')
+            : i18nHtml('fifoStartHtml', undefined, '<i class="bi bi-play-fill"></i> 収録開始');
+    }
+    async function startFifo() {
+        const ids = connectedInsoleIds();
+        if (ids.length === 0) return;
+        fifoToggle.disabled = true;
+        fifoDownload.disabled = true;
+        fifoStatus.textContent = i18nText('fifoStatusPreparing');
+        fifoActiveIds = [];
+        const results = await Promise.all(ids.map(id => fifos[id].start()));
+        results.forEach((ok, i) => { if (ok) fifoActiveIds.push(ids[i]); });
+        if (fifoActiveIds.length === 0) {
+            fifoStatus.textContent = i18nText('fifoFailed');
+            fifoToggle.disabled = false;
+            return;
+        }
+        fifoRunning = true;
+        fifoStartedAt = performance.now();
+        fifoToggle.disabled = false;
+        fifoToggle.classList.replace('btn-primary', 'btn-danger');
+        updateFifoToggleLabel();
+    }
+    async function stopFifo(auto = false) {
+        if (fifoStopping) return;
+        fifoStopping = true;
+        fifoToggle.disabled = true;
+        await Promise.all(fifoActiveIds.map(id => fifos[id].stop()));
+        fifoRunning = false;
+        fifoStopping = false;
+        fifoToggle.disabled = false;
+        fifoToggle.classList.replace('btn-danger', 'btn-primary');
+        updateFifoToggleLabel();
+        const total = fifoCollectedTotal();
+        const dropped = fifoDroppedTotal();
+        fifoDownload.disabled = total === 0;
+        if (auto && dropped > 0) {
+            fifoStatus.textContent = i18nText('fifoStatusStopped', { packets: total, dropped });
+        } else {
+            fifoStatus.textContent = dropped > 0
+                ? i18nText('fifoStatusDoneLoss', { packets: total, dropped })
+                : i18nText('fifoStatusDone', { packets: total });
+        }
+        setFifoStatusLoss(dropped > 0);
+    }
+    fifoToggle.addEventListener('click', () => { if (fifoRunning) stopFifo(); else startFifo(); });
+    fifoDownload.addEventListener('click', () => {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        for (const id of fifoActiveIds) {
+            if (fifos[id] && fifos[id].collectedCount > 0) {
+                fifos[id].download(`orphe-insole-fifo-${sides[id]}-${stamp}.csv`);
+            }
+        }
+    });
+
     // --- 収録CSVのデモ再生 ---
     const csvInput = document.getElementById('csv_input');
     const csvStatus = document.getElementById('csv_load_status');
@@ -639,6 +757,7 @@ window.onload = function () {
         updateChartLanguage();
         updateRecordToggleLabel();
         updateRecordStatus();
+        updateFifoToggleLabel();
         document.querySelectorAll('.copy-btn').forEach((btn) => {
             btn.textContent = i18nText('copyButton');
         });
@@ -733,6 +852,32 @@ window.onload = function () {
 
             // 記録ステータス
             updateRecordStatus();
+
+            // FIFO（ロスレス収録）ステータス / トグル有効化
+            if (fifoRunning) {
+                const sec = (performance.now() - fifoStartedAt) / 1000;
+                const dropped = fifoDroppedTotal();
+                // 欠損を検知したら自動停止（トグルON時）
+                if (dropped > 0 && fifoAutoStop.checked && !fifoStopping) {
+                    stopFifo(true);
+                }
+                const base = i18nText('fifoCollecting', {
+                    packets: fifoCollectedTotal(),
+                    seconds: sec.toFixed(1),
+                    lag: fifoLagMax(),
+                });
+                fifoStatus.textContent = dropped > 0
+                    ? `${base} ${i18nText('fifoLossWarning', { dropped })}`
+                    : base;
+                setFifoStatusLoss(dropped > 0);
+            } else {
+                const connected = connectedInsoleIds().length > 0;
+                fifoToggle.disabled = !connected;
+                if (fifoDownload.disabled) {
+                    setFifoStatusLoss(false);
+                    fifoStatus.textContent = connected ? i18nText('fifoStatusReady') : i18nText('fifoStatusIdle');
+                }
+            }
         }
         requestAnimationFrame(loop);
     }

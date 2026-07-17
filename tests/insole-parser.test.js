@@ -83,6 +83,22 @@ async function main() {
   }
 
   {
+    // header 54 (0x36) は FIFO データパケット。byte 配置は header 55 と同一。
+    const data = createPacket(54, 0x0010);
+    const offset = 24;
+    setVec3(data, 8 + offset * 3, [100, 200, 300]);
+    setVec3(data, 14 + offset * 3, [400, 500, 600]);
+    setPress(data, 20 + offset * 3, [7, 8, 9, 10, 11, 12]);
+
+    const parsed = parseInsoleSensorValues(data);
+    assert.equal(parsed.header, 54);
+    assert.equal(parsed.samples.length, 4);
+    assert.equal(parsed.samples[0].quat, undefined);
+    assert.deepEqual(parsed.samples[0].press.values, [7, 8, 9, 10, 11, 12]);
+    assert.ok(parsed.samples[0].gyro && parsed.samples[0].acc);
+  }
+
+  {
     const data = createPacket(50);
     data.setUint8(70, 5);
     data.setUint8(49, 7);
