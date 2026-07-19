@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORPHE INSOLE DEMO App | User Manual</title>
+  <meta name="description"
+    content="User manual for the ORPHE INSOLE DEMO App (iOS): setup, measurement, CSV/JSON output data reference, gait indicators, and the sensor coordinate system.">
+  <meta property="og:title" content="ORPHE INSOLE DEMO App | User Manual">
+  <meta property="og:description"
+    content="Measure with ORPHE INSOLE on iPhone and export raw IMU, pressure, and gait analysis data. Distributed via TestFlight.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="../assets/images/orphe.svg" type="image/svg+xml">
+  <style>
+    @font-face {
+      font-family: "Roboto";
+      font-weight: 300;
+      src: url("../assets/fonts/Roboto/Roboto-Light.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Roboto";
+      font-weight: 400;
+      src: url("../assets/fonts/Roboto/Roboto-Regular.ttf") format("truetype");
+    }
+
+    @font-face {
+      font-family: "Roboto";
+      font-weight: 700;
+      src: url("../assets/fonts/Roboto/Roboto-Bold.ttf") format("truetype");
+    }
+
+    :root {
+      color-scheme: light;
+      --ink: #151719;
+      --muted: #59636f;
+      --line: #dce2e8;
+      --paper: #ffffff;
+      --soft: #f4f7f9;
+      --charcoal: #101417;
+      --cyan: #45e6e6;
+      --orange: #ff6040;
+      --green: #70c46f;
+      --blue: #3b6ea8;
+      --max: 1160px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Roboto", Arial, sans-serif;
+      font-size: 16px;
+      font-weight: 300;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 1px 6px;
+      white-space: nowrap;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.94);
+      border-bottom: 1px solid rgba(16, 20, 23, 0.08);
+      backdrop-filter: blur(10px);
+    }
+
+    .nav {
+      width: min(100% - 32px, var(--max));
+      min-height: 72px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .brand img {
+      width: 94px;
+      height: auto;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      font-size: 14px;
+    }
+
+    .nav-links a:hover {
+      color: var(--blue);
+    }
+
+    .language-switch {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .language-switch button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+
+    .language-switch button.active {
+      background: var(--charcoal);
+      color: #fff;
+    }
+
+    .hero {
+      background: linear-gradient(180deg, var(--soft) 0%, var(--paper) 100%);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-inner {
+      width: min(100% - 32px, var(--max));
+      margin: 0 auto;
+      padding: 72px 0 56px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--blue);
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(30px, 5vw, 46px);
+      font-weight: 700;
+      line-height: 1.15;
+    }
+
+    .lead {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 17px;
+      margin: 0;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 11px 22px;
+      font-size: 14px;
+      font-weight: 400;
+      border: 1px solid var(--charcoal);
+    }
+
+    .button.primary {
+      background: var(--charcoal);
+      color: #fff;
+    }
+
+    .button.primary:hover {
+      background: #26313a;
+    }
+
+    .button.secondary:hover {
+      background: var(--soft);
+    }
+
+    .notice-card {
+      margin-top: 34px;
+      max-width: 860px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--orange);
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px 22px;
+    }
+
+    .notice-card strong {
+      font-weight: 700;
+    }
+
+    .notice-card p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .section {
+      padding: 64px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section.alt {
+      background: var(--soft);
+    }
+
+    .section.dark {
+      background: var(--charcoal);
+      color: #f2f6f8;
+    }
+
+    .section.dark .lead,
+    .section.dark p {
+      color: #b9c4cc;
+    }
+
+    .section-inner {
+      width: min(100% - 32px, var(--max));
+      margin: 0 auto;
+    }
+
+    .section-head {
+      max-width: 820px;
+      margin-bottom: 34px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: clamp(24px, 3.4vw, 32px);
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .tile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .tile {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 22px;
+    }
+
+    .section.dark .tile {
+      background: #1a2128;
+      border-color: #2a333c;
+    }
+
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14.5px;
+    }
+
+    .section.dark .tile p {
+      color: #b9c4cc;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 10px;
+    }
+
+    .step-list {
+      counter-reset: step;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    .step-list li {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      gap: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+    }
+
+    .step-list li > img {
+      width: 132px;
+      height: auto;
+      align-self: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    @media (max-width: 640px) {
+      .step-list li {
+        grid-template-columns: 44px 1fr;
+      }
+
+      .step-list li > img {
+        grid-column: 2;
+        justify-self: start;
+      }
+    }
+
+    .step-list li::before {
+      content: counter(step);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--charcoal);
+      color: #fff;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-list p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14.5px;
+    }
+
+    .hint {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--green);
+      border-radius: 10px;
+      background: #fff;
+      padding: 14px 18px;
+      font-size: 14.5px;
+      color: var(--muted);
+    }
+
+    .hint strong {
+      color: var(--ink);
+    }
+
+    .coords-grid {
+      display: grid;
+      grid-template-columns: minmax(300px, 1.2fr) 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .coords-figure {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .fact-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .fact-list li {
+      display: grid;
+      grid-template-columns: 84px 1fr;
+      gap: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 14.5px;
+    }
+
+    .fact-list strong {
+      font-weight: 700;
+    }
+
+    .fact-list span {
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      margin-top: 16px;
+    }
+
+    table.spec {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 560px;
+      font-size: 14px;
+    }
+
+    table.spec th,
+    table.spec td {
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    table.spec tr:last-child td {
+      border-bottom: 0;
+    }
+
+    table.spec th {
+      background: var(--soft);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    table.spec td:first-child {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    table.spec td:last-child {
+      white-space: nowrap;
+      color: var(--muted);
+    }
+
+    .file-block {
+      margin-top: 40px;
+    }
+
+    .file-block:first-of-type {
+      margin-top: 0;
+    }
+
+    .file-note {
+      margin: 10px 0 0;
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+
+    .part-names {
+      columns: 2;
+      column-gap: 28px;
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+
+    .part-names li {
+      break-inside: avoid;
+      padding: 3px 0;
+    }
+
+    .part-names code {
+      background: #fff;
+    }
+
+    footer {
+      padding: 40px 0 60px;
+    }
+
+    .footer-inner {
+      width: min(100% - 32px, var(--max));
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 13.5px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 18px;
+    }
+
+    .footer-links a:hover {
+      color: var(--blue);
+    }
+
+    @media (max-width: 860px) {
+      .coords-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .part-names {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Main navigation">
+      <a class="brand" href="../">
+        <img src="../assets/images/orphe_black.svg" alt="ORPHE">
+        <span>ORPHE-INSOLE.js</span>
+      </a>
+      <div class="nav-links">
+        <a href="#get" data-i18n="navGet">Get the app</a>
+        <a href="#setup" data-i18n="navSetup">Setup</a>
+        <a href="#measure" data-i18n="navMeasure">Measure</a>
+        <a href="#coords" data-i18n="navCoords">Sensors</a>
+        <a href="#files" data-i18n="navFiles">Output data</a>
+        <a href="#metrics" data-i18n="navMetrics">Gait indicators</a>
+        <a href="#support" data-i18n="navSupport">Support</a>
+        <div class="language-switch" aria-label="Language">
+          <button type="button" data-lang-button="en" aria-pressed="true">EN</button>
+          <button type="button" data-lang-button="ja" aria-pressed="false">日本語</button>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="eyebrow" data-i18n="heroEyebrow">Official iOS companion app</p>
+        <h1>ORPHE INSOLE DEMO App</h1>
+        <p class="lead" data-i18n="heroLead">
+          Connect ORPHE INSOLE to an iPhone, record raw IMU and pressure data together with derived gait
+          indicators, capture ARKit pose estimation at the same time, and export everything as CSV/JSON
+          for secondary analysis.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#get" data-i18n="heroGet">How to get the app</a>
+          <a class="button secondary" href="#files" data-i18n="heroFiles">Output data reference</a>
+          <a class="button secondary" href="../" data-i18n="heroLibrary">ORPHE-INSOLE.js (browser SDK)</a>
+        </div>
+        <div class="notice-card">
+          <strong data-i18n="noticeTitle">The DEMO App is distributed separately from this library.</strong>
+          <p data-i18n="noticeBody">
+            ORPHE-INSOLE.js is a JavaScript SDK for browsers. The DEMO App is a native iOS application
+            distributed via TestFlight to Evaluation Kit customers — it is not included in this repository.
+            See below for how to get access.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="featuresEyebrow">App features</p>
+          <h2 data-i18n="featuresTitle">Measure, visualize, and export — no Wi-Fi required.</h2>
+        </div>
+        <div class="tile-grid">
+          <div class="tile">
+            <span class="tag" data-i18n="feature1Tag">Easy measurement</span>
+            <h3 data-i18n="feature1Title">Connect and measure in one tap</h3>
+            <p data-i18n="feature1Body">Connect to ORPHE INSOLE with a single tap and start measuring immediately without complicated setup.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="feature2Tag">Pose estimation</span>
+            <h3 data-i18n="feature2Title">ARKit body tracking alongside insole data</h3>
+            <p data-i18n="feature2Body">Using the device's camera, pose estimation data from ARKit can be acquired and displayed simultaneously with the insole stream.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="feature3Tag">CSV export</span>
+            <h3 data-i18n="feature3Title">Research-ready data export</h3>
+            <p data-i18n="feature3Body">Export the acquired data in CSV/JSON format for secondary analysis on a PC and for research purposes.</p>
+          </div>
+        </div>
+        <div class="tile-grid" style="margin-top:16px;">
+          <div class="tile">
+            <span class="tag">iOS</span>
+            <p data-i18n="sysIos">Compatible with iPhone. The latest iOS version is recommended.</p>
+          </div>
+          <div class="tile">
+            <span class="tag">BLE</span>
+            <p data-i18n="sysBle">Connects to ORPHE INSOLE via Bluetooth Low Energy.</p>
+          </div>
+          <div class="tile">
+            <span class="tag" data-i18n="sysOfflineTag">Offline</span>
+            <p data-i18n="sysOffline">No Wi-Fi connection is required. Measurements can be taken in an offline environment.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt" id="get">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="getEyebrow">How to get the app</p>
+          <h2 data-i18n="getTitle">Distributed via TestFlight to Evaluation Kit customers.</h2>
+          <p class="lead" data-i18n="getLead">
+            The DEMO App is not on the public App Store. Access is provided through TestFlight after you
+            purchase the ORPHE INSOLE Evaluation Kit.
+          </p>
+        </div>
+        <ol class="step-list">
+          <li>
+            <div>
+              <h3 data-i18n="get1Title">Purchase the Evaluation Kit</h3>
+              <p data-i18n-html="get1Body">Purchase the <a href="https://shop.orphe.io/en/products/orphe-insole-%CE%B2-evaluation-kit" style="text-decoration:underline;">ORPHE INSOLE β Evaluation Kit</a> from the official ORPHE store.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="get2Title">Send your Apple ID email address to ORPHE</h3>
+              <p data-i18n="get2Body">Email the address linked to your Apple ID to your ORPHE representative. You will receive a TestFlight invitation. The app can be installed on up to 2 devices.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="get3Title">Install via TestFlight</h3>
+              <p data-i18n="get3Body">Install the TestFlight app, then tap "Get" on the link in the invitation email. On first launch, grant "All" permissions for Bluetooth and the camera.</p>
+            </div>
+          </li>
+        </ol>
+        <div class="hint">
+          <span data-i18n-html="getHint">Don't know your ORPHE representative? Contact us through the <a href="https://orphe.io/insole" style="text-decoration:underline;">inquiry form</a>.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="setup">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="setupEyebrow">ORPHE INSOLE setup</p>
+          <h2 data-i18n="setupTitle">Charge, pair, connect, and insert.</h2>
+        </div>
+        <ol class="step-list">
+          <li>
+            <div>
+              <h3 data-i18n="setup1Title">Charge</h3>
+              <p data-i18n="setup1Body">Open the terminal section of the insole, connect the cable, and charge for approximately one hour before use.</p>
+            </div>
+            <img src="../assets/images/manual/setup-1-charge.jpg" alt="Charging cable connected to the terminal section of the insole" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="setup2Title">Open the pairing screen</h3>
+              <p data-i18n="setup2Body">Tap the icon in the middle of the bottom of the app screen to open the pairing (Device) screen.</p>
+            </div>
+            <img src="../assets/images/manual/setup-2-pairing.png" alt="Users screen with the Device icon highlighted in the bottom tab bar" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="setup3Title">Connect</h3>
+              <p data-i18n="setup3Body">Enter the 8-digit device ID and press the "Not Connected" button to connect the insoles to the app.</p>
+            </div>
+            <img src="../assets/images/manual/setup-3-connect.png" alt="Device settings screen with 100Hz/200Hz selector and the Not Connected button" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="setup4Title">Insert</h3>
+              <p data-i18n="setup4Body">Insert the insole into any shoe.</p>
+            </div>
+            <img src="../assets/images/manual/setup-4-insert.jpg" alt="Insole being inserted into a shoe" loading="lazy">
+          </li>
+        </ol>
+        <div class="hint">
+          <strong>100 Hz:</strong>
+          <span data-i18n="setupHint">Gait analysis on the measurement data viewing screen is available only when 100Hz is selected on the connection screen.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt" id="measure">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="measureEyebrow">Measurement workflow</p>
+          <h2 data-i18n="measureTitle">Register a user, measure, review, and export.</h2>
+        </div>
+        <ol class="step-list">
+          <li>
+            <div>
+              <h3 data-i18n="measure1Title">Register a user</h3>
+              <p data-i18n="measure1Body">Tap "User" in the bottom left corner, then the "+" button in the upper right corner of the Users screen, and enter the information of the person being measured. Measurement is possible even if the information is not entirely accurate.</p>
+            </div>
+            <img src="../assets/images/manual/measure-1-register.png" alt="Users screen with the add-user button highlighted" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="measure2Title">Start measurement</h3>
+              <p data-i18n="measure2Body">Select the user and press the "+" button in the bottom right corner. To use 3D pose estimation, make sure the button in the upper right corner is set to "Camera ON". Press the button in the lower center to start.</p>
+            </div>
+            <img src="../assets/images/manual/measure-2-start.jpg" alt="Measurement screen with Camera ON and the Start measurement button highlighted" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="measure3Title">Mark and stop</h3>
+              <p data-i18n="measure3Body">During measurement, press the green Mark button to record a marker. To end the measurement, press the button in the lower center, then name and save the recording.</p>
+            </div>
+            <img src="../assets/images/manual/measure-3-mark-stop.jpg" alt="Measurement screen with the green Mark button and the Stop measurement button highlighted" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="measure4Title">Review the data</h3>
+              <p data-i18n="measure4Body">Select the user, choose a measurement from the history, and inspect it as a log or as graphs. Run gait analysis here for 100Hz measurements.</p>
+            </div>
+            <img src="../assets/images/manual/measure-4-review.png" alt="Measurement details screen showing measurement information and data items" loading="lazy">
+          </li>
+          <li>
+            <div>
+              <h3 data-i18n="measure5Title">Export</h3>
+              <p data-i18n="measure5Body">Open the measurement details, press the share button in the upper right corner, and select the output destination (AirDrop, Files, mail, etc.). A ZIP archive with the files described below is exported.</p>
+            </div>
+            <img src="../assets/images/manual/measure-5-export.png" alt="Measurement details screen with the share button in the upper right corner highlighted" loading="lazy">
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section" id="coords">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="coordsEyebrow">Sensor reference</p>
+          <h2 data-i18n="coordsTitle">Sensor coordinate system and pressure sensor placement.</h2>
+          <p class="lead" data-i18n="coordsLead">
+            This frame applies to the ORPHE INSOLE hardware itself — the same convention is used by the
+            DEMO App CSV output and by the raw values you receive through ORPHE-INSOLE.js.
+          </p>
+        </div>
+        <div class="coords-grid">
+          <div class="coords-figure">
+            <img src="../assets/images/manual/coordinate-system.jpg"
+              alt="ORPHE INSOLE with the sensor coordinate frame drawn on it: Y toward the toes, X to the right of the toe direction, Z upward out of the insole surface.">
+            <img src="../assets/images/manual/pressure-placement.jpg" style="margin-top:14px;"
+              alt="Top view of left and right ORPHE INSOLE with pressure sensors numbered 1 to 6.">
+            <p class="file-note" style="margin-top:10px;" data-i18n="coordsFigNote">Figures from the official ORPHE INSOLE DEMO App User Manual.</p>
+          </div>
+          <div>
+            <ul class="fact-list">
+              <li><strong data-i18n="coordsFrameLabel">Frame</strong><span data-i18n="coordsFrameBody">Right-handed coordinate system, Z-up.</span></li>
+              <li><strong>Y</strong><span data-i18n="coordsYBody">Toe direction (long axis of the insole).</span></li>
+              <li><strong>X</strong><span data-i18n="coordsXBody">To the right of the toe direction.</span></li>
+              <li><strong>Z</strong><span data-i18n="coordsZBody">Normal of the insole top surface (upward). At rest, accZ measures approximately +1 G.</span></li>
+              <li><strong data-i18n="coordsPressLabel">Pressure</strong><span data-i18n="coordsPressBody">6 points per foot: 1 toe (medial), 2 ball (medial), 3 toe (lateral), 4 ball (center), 5 midfoot (lateral), 6 heel.</span></li>
+            </ul>
+            <div class="hint" style="margin-top:16px;">
+              <span data-i18n-html="coordsSdkNote">In ORPHE-INSOLE.js, <code>press.values[i]</code> corresponds to pressure sensor <code>i + 1</code> in this figure, and <code>gotConvertedAcc</code> / <code>gotConvertedGyro</code> return values in this frame. Verify the channel mapping on your own device (e.g. stand on the toes, then on the heel) before relying on placement-specific logic.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt" id="files">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="filesEyebrow">Output data reference</p>
+          <h2 data-i18n="filesTitle">Files exported by the DEMO App.</h2>
+          <p class="lead" data-i18n="filesLead">
+            One measurement exports the raw sensor stream per foot, ARKit landmarks when the camera was on,
+            and — for 100Hz measurements with gait analysis — per-stride gait files.
+          </p>
+        </div>
+
+        <div class="file-block">
+          <h3><code>sensor-{left/right}.csv</code></h3>
+          <p class="file-note" data-i18n="fileSensorNote">Raw sensor stream per foot. Axes follow the sensor coordinate system above.</p>
+          <div class="table-wrap">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th data-i18n="thName">Field</th>
+                  <th data-i18n="thDef">Definition</th>
+                  <th data-i18n="thUnit">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>timestamp</td>
+                  <td data-i18n="scTimestamp">UNIX timestamp in seconds, including millisecond precision.</td>
+                  <td>s</td>
+                </tr>
+                <tr>
+                  <td>accX / accY / accZ</td>
+                  <td data-i18n="scAcc">Acceleration along the X / Y / Z axes.</td>
+                  <td>G</td>
+                </tr>
+                <tr>
+                  <td>gyroX / gyroY / gyroZ</td>
+                  <td data-i18n="scGyro">Angular velocity around the X / Y / Z axes.</td>
+                  <td>dps</td>
+                </tr>
+                <tr>
+                  <td>quatW / quatX / quatY / quatZ</td>
+                  <td data-i18n="scQuat">Components of the quaternion representing the posture.</td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>press1 … press6</td>
+                  <td data-i18n="scPress">Values from pressure sensors 1–6 (see placement figure above).</td>
+                  <td>N</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="file-block">
+          <h3><code>landmarks.json</code></h3>
+          <p class="file-note" data-i18n-html="fileLandmarksNote">ARKit pose estimation frames (when Camera ON). For joint definitions, see the <a href="https://developer.apple.com/documentation/arkit/arskeleton/jointname" style="text-decoration:underline;">ARSkeleton.JointName documentation</a>.</p>
+          <div class="table-wrap">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th data-i18n="thName">Field</th>
+                  <th data-i18n="thDef">Definition</th>
+                  <th data-i18n="thUnit">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>frames</td>
+                  <td data-i18n="lmFrames">Data set of all recorded frames.</td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>timestamp</td>
+                  <td data-i18n="lmTimestamp">Data acquisition time (elapsed time with millisecond precision).</td>
+                  <td>s</td>
+                </tr>
+                <tr>
+                  <td>frameNumber</td>
+                  <td data-i18n="lmFrameNumber">Sequential number for each frame (0, 1, 2, …).</td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>joints</td>
+                  <td data-i18n="lmJoints">Data set of detected body parts (joints, facial features, etc.).</td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>[part name]</td>
+                  <td data-i18n="lmPartName">Specific body part name (e.g. head_joint, right_hand_joint).</td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>x, y, z</td>
+                  <td data-i18n="lmXyz">Position in 3D space with the device's camera as the origin.</td>
+                  <td>m</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul class="part-names">
+            <li><code>root</code> — overall reference point / ルート（全体の基準点）</li>
+            <li><code>hips</code> — pelvis / 骨盤（腰）</li>
+            <li><code>spine</code> — spine / 脊椎（背骨）</li>
+            <li><code>neck</code> — neck / 首</li>
+            <li><code>head</code> — head / 頭</li>
+            <li><code>jaw</code>, <code>chin</code> — jaw, chin / 顎・顎先</li>
+            <li><code>eye</code> — eye / 目</li>
+            <li><code>nose</code>, <code>cheek</code> — nose, cheek / 鼻・頬</li>
+            <li><code>shoulder</code> — shoulder / 肩</li>
+            <li><code>arm</code> — upper arm / 上腕（二の腕）</li>
+            <li><code>forearm</code> — forearm / 前腕</li>
+            <li><code>hand</code> — wrist / 手首</li>
+            <li><code>handThumb</code> — thumb / 親指</li>
+            <li><code>handIndex</code> — index finger / 人差し指</li>
+            <li><code>handMid</code> — middle finger / 中指</li>
+            <li><code>handRing</code> — ring finger / 薬指</li>
+            <li><code>handPinky</code> — little finger / 小指</li>
+            <li><code>upLeg</code> — thigh / 太もも</li>
+            <li><code>leg</code> — shin / すね</li>
+            <li><code>foot</code> — ankle / 足首</li>
+            <li><code>toes</code> — toes / つま先</li>
+          </ul>
+        </div>
+
+        <div class="file-block">
+          <h3><code>gait_analysis_{left/right}.csv</code></h3>
+          <p class="file-note" data-i18n="fileGaitNote">Per-stride gait analysis. Output only when 100Hz is selected on the connection screen and gait analysis is performed on the measurement viewing screen.</p>
+          <div class="table-wrap">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th data-i18n="thName">Field</th>
+                  <th data-i18n="thDef">Definition</th>
+                  <th data-i18n="thUnit">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>leg</td><td data-i18n="gaLeg">0: left / 1: right.</td><td>-</td></tr>
+                <tr><td>position</td><td data-i18n="gaPosition">0: sole of the foot.</td><td>-</td></tr>
+                <tr><td>time</td><td data-i18n="gaTime">Time of data acquisition.</td><td>s</td></tr>
+                <tr><td>timestamp</td><td data-i18n="gaTimestamp">Timestamp at the time of data acquisition.</td><td>-</td></tr>
+                <tr><td>duration</td><td data-i18n="gaDuration">Time taken per stride.</td><td>s</td></tr>
+                <tr><td>stride</td><td data-i18n="gaStride">Distance covered in one stride.</td><td>m</td></tr>
+                <tr><td>speed</td><td data-i18n="gaSpeed">Foot movement speed.</td><td>m/s</td></tr>
+                <tr><td>footAngle</td><td data-i18n="gaFootAngle">Angle of the long axis of the foot relative to the direction of travel; an indicator of in-toeing / out-toeing.</td><td>degree</td></tr>
+                <tr><td>swingWidth</td><td data-i18n="gaSwingWidth">Range of lateral movement during the swing phase.</td><td>m</td></tr>
+                <tr><td>footStrike</td><td data-i18n="gaFootStrike">Angle between the shoe and the ground surface upon landing.</td><td>degree</td></tr>
+                <tr><td>pronation</td><td data-i18n="gaPronation">Angle at which the foot collapses inward upon landing.</td><td>degree</td></tr>
+                <tr><td>strideMaximumVerticalHeight</td><td data-i18n="gaMaxHeight">Maximum height the foot reaches during the swing phase.</td><td>m</td></tr>
+                <tr><td>strideMinimumVerticalHeight</td><td data-i18n="gaMinHeight">Minimum height the foot is raised during the swing phase.</td><td>m</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="file-block">
+          <h3><code>{left/right}-primary.csv</code></h3>
+          <p class="file-note" data-i18n="filePrimaryNote">Per-stride event metrics around InitialContact, FootFlat, and ToeOff.</p>
+          <div class="table-wrap">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th data-i18n="thName">Field</th>
+                  <th data-i18n="thDef">Definition</th>
+                  <th data-i18n="thUnit">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>cadence</td><td data-i18n="prCadence">Strides per second.</td><td>/s</td></tr>
+                <tr><td>stancePhaseDuration</td><td data-i18n="prStance">Time spent in the stance phase during the period from foot flat to foot flat.</td><td>s</td></tr>
+                <tr><td>continuousStancePhaseDuration</td><td data-i18n="prContStance">Time the foot is in contact with the ground during one stride.</td><td>s</td></tr>
+                <tr><td>landingForce</td><td data-i18n="prLandingForce">Magnitude of the impact received from the ground upon landing.</td><td>kgf</td></tr>
+                <tr><td>swingPhaseDuration</td><td data-i18n="prSwing">Duration of the swing phase within the period from one foot flat to the next.</td><td>s</td></tr>
+                <tr><td>toeOffAngle</td><td data-i18n="prToeOffAngle">Angle between the shoe and the ground when the foot leaves the ground.</td><td>degree</td></tr>
+                <tr><td>initialContactAcceleration{MIN/Max}.{x/y/z}</td><td data-i18n="prIcAcc">Maximum and minimum XYZ acceleration around the moment of landing (between InitialContact − 5 frames and FootFlat).</td><td>m/s²</td></tr>
+                <tr><td>initialContactAngularVelocity{MIN/Max}.{x/y/z}</td><td data-i18n="prIcGyro">Maximum and minimum XYZ angular velocity around the moment of landing (between InitialContact − 5 frames and FootFlat).</td><td>dps</td></tr>
+                <tr><td>toeOffAcceleration{MIN/Max}.{x/y/z}</td><td data-i18n="prToAcc">Maximum and minimum XYZ acceleration around the moment of liftoff (between FootFlat and ToeOff + 5 frames).</td><td>m/s²</td></tr>
+                <tr><td>toeOffAngularVelocity{MIN/Max}.{x/y/z}</td><td data-i18n="prToGyro">Maximum and minimum XYZ angular velocity around the moment of liftoff (between FootFlat and ToeOff + 5 frames).</td><td>dps</td></tr>
+                <tr><td>swingPhaseStrideVelocity{MIN/Max}.{x/y/z}</td><td data-i18n="prSwingVel">Maximum and minimum XYZ foot velocity during the swing phase, relative to the FootFlat posture coordinate system (between ToeOff and InitialContact).</td><td>m/s</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="metrics">
+      <div class="section-inner">
+        <div class="section-head">
+          <p class="eyebrow" data-i18n="metricsEyebrow">Gait indicators</p>
+          <h2 data-i18n="metricsTitle">Definitions and clinical references.</h2>
+          <p class="lead" data-i18n="metricsLead">
+            The DEMO App derives the following indicators from 100Hz measurements. Reference values and
+            citations come from the official manual.
+          </p>
+        </div>
+        <div class="table-wrap">
+          <table class="spec">
+            <thead>
+              <tr>
+                <th data-i18n="thIndicator">Indicator</th>
+                <th data-i18n="thDef">Definition</th>
+                <th data-i18n="thUnit">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-i18n="giSpeedName">Walking speed</td>
+                <td data-i18n="giSpeedDef">Average walking speed for a single measurement, calculated from the speed of each step. Walking speed is associated with various symptoms and is recommended in fall-prevention guidelines. Reported findings: an annual decrease of 0.01 m/s in people diagnosed with mild cognitive impairment [T Buraccui et al., 2010]; &lt;1.0 m/s is a diagnostic criterion for frailty and sarcopenia [Satake S &amp; Arai H, 2020]; &lt;0.7 m/s is associated with a high risk of falls [Shimada H, 2009].</td>
+                <td>m/s</td>
+              </tr>
+              <tr>
+                <td data-i18n="giStrideName">Stride length</td>
+                <td data-i18n="giStrideDef">Stride length from the moment one foot touches the ground until the other foot touches the ground. The average is approximately 70 cm [Kirsten Götz-Neumann, 2005].</td>
+                <td>m</td>
+              </tr>
+              <tr>
+                <td data-i18n="giHeightName">Foot height</td>
+                <td data-i18n="giHeightDef">Height the foot is raised during the swing phase.</td>
+                <td>m</td>
+              </tr>
+              <tr>
+                <td data-i18n="giSwingName">Swing width</td>
+                <td data-i18n="giSwingDef">Range of lateral movement of the foot during the swing phase. A positive value indicates outward movement. Increases with circumduction gait and scissor gait.</td>
+                <td>m</td>
+              </tr>
+              <tr>
+                <td data-i18n="giPhaseName">Stance phase (swing phase, double-leg support phase)</td>
+                <td data-i18n="giPhaseDef">Stance, swing, and double-leg support phases as percentages of one stride (single leg = 100%). In typical walking, stance is 60% (double-leg support 20%, single-leg support 40%) and swing is 40%. An increase of the double-leg support phase (to about 30%) has been reported in frailty [Schwenk M, 2014].</td>
+                <td>%</td>
+              </tr>
+              <tr>
+                <td data-i18n="giVarName">Variability of the gait cycle</td>
+                <td data-i18n="giVarDef">Coefficient of variation of stride time. Higher values indicate a more unstable gait. A value of 2.54% or higher during normal walking has been associated with a higher risk of falls [Arai et al., 2011].</td>
+                <td>%</td>
+              </tr>
+              <tr>
+                <td data-i18n="giLandName">Landing angle</td>
+                <td data-i18n="giLandDef">Angle between the sole of the foot and the ground surface upon landing.</td>
+                <td>°</td>
+              </tr>
+              <tr>
+                <td data-i18n="giToeOffName">Toe-off angle</td>
+                <td data-i18n="giToeOffDef">Angle between the sole of the foot and the ground surface when the foot leaves the ground.</td>
+                <td>°</td>
+              </tr>
+              <tr>
+                <td data-i18n="giPronName">Pronation</td>
+                <td data-i18n="giPronDef">Angle at which the foot collapses inward from landing to the point where the sole makes full contact with the ground.</td>
+                <td>°</td>
+              </tr>
+              <tr>
+                <td data-i18n="giFootAngleName">Foot angle</td>
+                <td data-i18n="giFootAngleDef">Angle of the toes relative to the direction of travel. A positive value indicates that the toes point outward.</td>
+                <td>°</td>
+              </tr>
+              <tr>
+                <td data-i18n="giImpactName">Landing impact</td>
+                <td data-i18n="giImpactDef">Peak acceleration (3-axis norm) applied to the foot upon landing.</td>
+                <td>m/s²</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section dark" id="support">
+      <div class="section-inner">
+        <div class="section-head" style="margin-bottom:0;">
+          <p class="eyebrow" data-i18n="supportEyebrow">Support</p>
+          <h2 data-i18n="supportTitle">Questions about the DEMO App or the Evaluation Kit?</h2>
+          <p class="lead" data-i18n="supportLead">
+            Contact us through the inquiry form on the official website. For questions about the browser
+            SDK, open an issue on the ORPHE-INSOLE.js GitHub repository.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" style="border-color:#fff;background:#fff;color:var(--charcoal);" href="https://orphe.io/insole" data-i18n="supportContact">Open inquiry form</a>
+            <a class="button secondary" style="border-color:#5a6771;color:#f2f6f8;" href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js" data-i18n="supportGithub">GitHub repository</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <span>Copyright (C) 2025, ORPHE.inc.</span>
+      <div class="footer-links">
+        <a href="../">ORPHE-INSOLE.js</a>
+        <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js">GitHub</a>
+        <a href="https://orphe.io/">orphe.io</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const translations = {
+      en: {
+        metaTitle: "ORPHE INSOLE DEMO App | User Manual",
+        metaDescription: "User manual for the ORPHE INSOLE DEMO App (iOS): setup, measurement, CSV/JSON output data reference, gait indicators, and the sensor coordinate system."
+      },
+      ja: {
+        metaTitle: "ORPHE INSOLE DEMO App | 利用マニュアル",
+        metaDescription: "ORPHE INSOLE DEMO App（iOS）の利用マニュアル。セットアップ、計測手順、CSV/JSON出力データ仕様、歩容指標、センサー座標系をまとめています。",
+        navGet: "入手方法",
+        navSetup: "セットアップ",
+        navMeasure: "計測",
+        navCoords: "センサー",
+        navFiles: "出力データ",
+        navMetrics: "歩容指標",
+        navSupport: "サポート",
+        heroEyebrow: "公式iOS連携アプリ",
+        heroLead: "ORPHE INSOLEとiPhoneを接続し、IMU・圧力センサの生データと歩容指標を記録。ARKitによる姿勢推定を同時取得し、CSV/JSON形式で出力して二次解析や研究に活用できます。",
+        heroGet: "アプリの入手方法",
+        heroFiles: "出力データ仕様",
+        heroLibrary: "ORPHE-INSOLE.js（ブラウザSDK）",
+        noticeTitle: "DEMO App は本ライブラリとは別の配布物です。",
+        noticeBody: "ORPHE-INSOLE.js はブラウザ向けのJavaScript SDKです。DEMO App は評価キット購入者向けに TestFlight で配信されるネイティブiOSアプリで、このリポジトリには含まれません。入手方法は以下をご覧ください。",
+        featuresEyebrow: "アプリの特徴",
+        featuresTitle: "計測・可視化・エクスポート。Wi-Fi不要で使えます。",
+        feature1Tag: "簡単計測",
+        feature1Title: "ワンタップで接続して計測",
+        feature1Body: "ワンタップでORPHE INSOLEと接続し、複雑な設定なしですぐに計測を開始できます。",
+        feature2Tag: "姿勢推定",
+        feature2Title: "ARKit姿勢推定との同時取得",
+        feature2Body: "端末のカメラを使用し、ARKitによる姿勢推定データをインソールのデータと同時に取得・表示できます。",
+        feature3Tag: "CSVエクスポート",
+        feature3Title: "研究に使えるデータ出力",
+        feature3Body: "取得データをCSV/JSON形式で出力し、PC等での二次解析や研究用途に活用できます。",
+        sysIos: "iPhoneに対応。最新のiOSバージョンを推奨します。",
+        sysBle: "ORPHE INSOLEとはBluetooth Low Energy（BLE）で接続します。",
+        sysOfflineTag: "オフライン",
+        sysOffline: "Wi-Fi環境は不要です。オフライン環境でも計測可能です。",
+        getEyebrow: "アプリの入手方法",
+        getTitle: "評価キット購入者向けにTestFlightで配信しています。",
+        getLead: "DEMO App は一般のApp Storeでは配信していません。ORPHE INSOLE評価キットをご購入のうえ、TestFlight経由でご利用いただけます。",
+        get1Title: "評価キットを購入する",
+        get1Body: "ORPHE公式ストアで <a href=\"https://shop.orphe.io/products/orphe-insole-%CE%B2-evaluation-kit\" style=\"text-decoration:underline;\">ORPHE INSOLE β 評価キット</a> を購入します。",
+        get2Title: "Apple IDのメールアドレスをORPHEに連絡する",
+        get2Body: "Apple IDに紐づくメールアドレスを、ORPHE社の担当者宛にメールでご連絡ください。TestFlightの招待が届きます。アプリは2つのデバイスまでインストール可能です。",
+        get3Title: "TestFlightでインストールする",
+        get3Body: "TestFlightアプリをインストールし、招待メールのリンクから「入手」をタップしてください。初回起動時、Bluetoothとカメラの権限は「すべて許可」してください。",
+        getHint: "担当者がわからない場合は、<a href=\"https://orphe.io/insole\" style=\"text-decoration:underline;\">お問い合わせフォーム</a>からご連絡ください。",
+        setupEyebrow: "ORPHE INSOLE のセットアップ",
+        setupTitle: "充電、ペアリング、接続、装着。",
+        setup1Title: "充電",
+        setup1Body: "インソールの端子部分を開けてケーブルを繋ぎ、使用前に約1時間充電してください。",
+        setup2Title: "ペアリング画面を開く",
+        setup2Body: "アプリ画面下の真ん中にあるアイコンをタップすると、ペアリング（Device）画面に遷移します。",
+        setup3Title: "接続",
+        setup3Body: "8桁のデバイスIDを指定し「未接続」のボタンを押すと、インソールがアプリと接続されます。",
+        setup4Title: "装着",
+        setup4Body: "任意のシューズにインソールを挿入します。",
+        setupHint: "接続画面で100Hzを選択した場合のみ、測定データ閲覧画面で歩行解析を行うことができます。",
+        measureEyebrow: "計測ワークフロー",
+        measureTitle: "ユーザ登録、計測、閲覧、エクスポート。",
+        measure1Title: "ユーザを登録する",
+        measure1Body: "左下のUserを押し、Users画面右上の「＋」ボタンからUser（計測対象者）の情報を入力します。正しい情報でなくても測定は可能です。",
+        measure2Title: "計測を開始する",
+        measure2Body: "測定するUserを選択し、右下の「＋」ボタンを押します。3D姿勢推定を使う場合は、右上のボタンがCamera ONであることを確認してください。下部中央のボタンを押すと測定が開始されます。",
+        measure3Title: "マーカーと停止",
+        measure3Body: "測定中に緑のMarkボタンを押すとマーカーを記録できます。測定を終えるには下部中央のボタンを押し、名前を付けて記録します。",
+        measure4Title: "データを閲覧する",
+        measure4Body: "Userを選択し、測定履歴から見たいデータを選ぶと、ログやグラフとして表示されます。100Hzで計測したデータは、この画面で歩行解析を実行できます。",
+        measure5Title: "エクスポート",
+        measure5Body: "測定詳細画面の右上のボタンを押し、出力先（AirDrop、ファイル、メールなど）を選択します。以下で説明するファイルを含むZIPアーカイブが出力されます。",
+        coordsEyebrow: "センサーリファレンス",
+        coordsTitle: "センサー座標系と圧力センサーの配置",
+        coordsLead: "この座標系はORPHE INSOLEハードウェア自体の仕様です。DEMO AppのCSV出力も、ORPHE-INSOLE.jsで受け取る生データも、同じ規約に従います。",
+        coordsFrameLabel: "座標系",
+        coordsFrameBody: "右手座標系（Z-up）です。",
+        coordsYBody: "つま先方向（インソールの長軸方向）。",
+        coordsXBody: "つま先方向に向かって右。",
+        coordsZBody: "インソール上面の法線方向（上向き）。静止時は accZ が約 +1 G になります。",
+        coordsFigNote: "図は公式「ORPHE INSOLE DEMO App 利用マニュアル」からの引用です。",
+        coordsPressLabel: "圧力",
+        coordsPressBody: "左右各6点：1 つま先（内側）、2 母趾球（内側）、3 つま先（外側）、4 中足部（中央）、5 中足部（外側）、6 踵。",
+        coordsSdkNote: "ORPHE-INSOLE.js では <code>press.values[i]</code> が本図の圧力センサー <code>i + 1</code> に対応し、<code>gotConvertedAcc</code> / <code>gotConvertedGyro</code> はこの座標系の値を返します。配置に依存するロジックを組む前に、つま先立ち・踵立ちなどで実機のチャネル対応を確認してください。",
+        filesEyebrow: "出力データ仕様",
+        filesTitle: "DEMO App が出力するファイル",
+        filesLead: "1回の計測で、左右それぞれの生センサデータ、カメラON時のARKitランドマーク、100Hz計測で歩行解析を実行した場合はストライドごとの歩行解析ファイルが出力されます。",
+        thName: "項目名",
+        thDef: "定義",
+        thUnit: "単位",
+        thIndicator: "指標",
+        fileSensorNote: "左右それぞれの生センサデータです。軸は上記のセンサー座標系に従います。",
+        scTimestamp: "ミリ秒精度を含む秒単位のUNIXタイムスタンプ。",
+        scAcc: "X / Y / Z 軸方向の加速度。",
+        scGyro: "X / Y / Z 軸周りの角速度。",
+        scQuat: "姿勢を表すクォータニオンの各成分。",
+        scPress: "圧力センサー1〜6の値（配置は上図参照）。",
+        fileLandmarksNote: "ARKitによる姿勢推定フレーム（Camera ON時）。関節の定義は <a href=\"https://developer.apple.com/documentation/arkit/arskeleton/jointname\" style=\"text-decoration:underline;\">ARSkeleton.JointName のドキュメント</a>をご参照ください。",
+        lmFrames: "記録された全フレーム（コマ）のデータ群。",
+        lmTimestamp: "データの取得時刻（ミリ秒精度の経過時間）。",
+        lmFrameNumber: "フレームごとの通し番号（0, 1, 2, …と増加）。",
+        lmJoints: "検出された全身の部位（関節や顔のパーツなど）のデータ群。",
+        lmPartName: "特定の部位名（例：head_joint、right_hand_joint など）。",
+        lmXyz: "端末のカメラを原点とした3D空間上の位置座標。",
+        fileGaitNote: "ストライドごとの歩行解析データです。接続画面で100Hzを選択した計測において、測定結果閲覧画面で歩行解析を実施した場合のみ出力されます。",
+        gaLeg: "0:左 / 1:右。",
+        gaPosition: "0:足底。",
+        gaTime: "データ取得時点の時刻。",
+        gaTimestamp: "データ取得時点のタイムスタンプ。",
+        gaDuration: "1ストライドにかかる時間。",
+        gaStride: "一歩にかかる距離。",
+        gaSpeed: "足部の移動スピード。",
+        gaFootAngle: "進行方向に対する足部長軸の角度。内股／外股の指標です。",
+        gaSwingWidth: "遊脚期に側方へぶれる幅。",
+        gaFootStrike: "着地時のシューズと路面の角度。",
+        gaPronation: "着地時に足部が内側に倒れ込む角度。",
+        gaMaxHeight: "遊脚期に足が上がっている最大の高さ。",
+        gaMinHeight: "遊脚期に足が上がっている最小の高さ。",
+        filePrimaryNote: "InitialContact・FootFlat・ToeOff前後のストライドごとのイベント指標です。",
+        prCadence: "1秒あたりのストライド数。",
+        prStance: "FootFlatからFootFlatまでの期間のうち、立脚期に費やした時間。",
+        prContStance: "1ストライド中に足が接地している時間。",
+        prLandingForce: "着地時に地面から受ける衝撃の大きさ。",
+        prSwing: "FootFlatから次のFootFlatまでの期間のうち、遊脚期の時間。",
+        prToeOffAngle: "足が地面から離れるときのシューズと路面の角度。",
+        prIcAcc: "着地の瞬間前後（InitialContact − 5フレームからFootFlatまで）のXYZ加速度の最大値・最小値。",
+        prIcGyro: "着地の瞬間前後（InitialContact − 5フレームからFootFlatまで）のXYZ角速度の最大値・最小値。",
+        prToAcc: "離地の瞬間前後（FootFlatからToeOff + 5フレームまで）のXYZ加速度の最大値・最小値。",
+        prToGyro: "離地の瞬間前後（FootFlatからToeOff + 5フレームまで）のXYZ角速度の最大値・最小値。",
+        prSwingVel: "遊脚期（ToeOffからInitialContactまで）における足部速度XYZの最大値・最小値（FootFlat姿勢座標系基準）。",
+        metricsEyebrow: "歩容指標",
+        metricsTitle: "定義と臨床リファレンス",
+        metricsLead: "DEMO App は100Hz計測から以下の指標を算出します。参考値と文献は公式マニュアルに基づきます。",
+        giSpeedName: "歩行速度",
+        giSpeedDef: "一歩ごとの移動速度から、1回の計測における平均歩行速度を算出します。歩行速度は様々な症候との関連が報告されているほか、転倒ガイドラインでも推奨されるパラメータです。軽度認知障害と診断された人は毎年0.01m/s遅くなることが報告されています[T Buraccui et al., 2010]。通常歩行速度<1.0m/sはフレイル・サルコペニアの診断基準の一つです[Satake S & Arai H, 2020]。通常歩行速度<0.7m/sは転倒リスクの高さと関連が報告されています[Shimada H, 2009]。",
+        giStrideName: "歩幅",
+        giStrideDef: "一方の足が接地してから逆足が接地するまでの歩幅です。一般に平均的な歩幅は約70cmです[Kirsten Götz-Neumann, 2005]。",
+        giHeightName: "足の高さ",
+        giHeightDef: "遊脚期に足が上がっている高さです。",
+        giSwingName: "スイング幅",
+        giSwingDef: "遊脚期に足が側方にぶれる幅です。プラスの値は外側へのブレを示します。ぶん回し歩行や鋏脚歩行などで増加します。",
+        giPhaseName: "立脚期（遊脚期・両脚支持期）",
+        giPhaseDef: "片足1ストライドを100％としたときの、立脚期・遊脚期・両脚支持期をパーセント表示した指標です。一般的な歩行では立脚期は60％（両脚支持期20%、単脚支持期40%）、遊脚期は40％です。フレイル症例では両脚支持期の増加（約30％）が報告されています[Schwenk M, 2014]。",
+        giVarName: "歩行周期の変動性",
+        giVarDef: "ストライド時間の変動係数です。値が大きいほど不安定な歩行であることを示します。通常歩行において2.54%以上は転倒リスクの高さと関連したことが報告されています[新井ら, 2011]。",
+        giLandName: "着地角度",
+        giLandDef: "着地時の足底と路面のなす角度です。",
+        giToeOffName: "離地角度",
+        giToeOffDef: "足部が路面から離れる時の足底と路面のなす角度です。",
+        giPronName: "プロネーション",
+        giPronDef: "着地から足底接地にかけて足部が内側に倒れ込む角度です。",
+        giFootAngleName: "足向角",
+        giFootAngleDef: "進行方向に対するつま先の角度です。プラスの値はつま先が外側に開いていることを示します。",
+        giImpactName: "着地衝撃",
+        giImpactDef: "着地時に足部にかかる加速度のピーク値（3軸ノルム）です。",
+        supportEyebrow: "サポート",
+        supportTitle: "DEMO App・評価キットに関するお問い合わせ",
+        supportLead: "公式サイトのお問い合わせフォームからご連絡ください。ブラウザSDK（ORPHE-INSOLE.js）に関する質問はGitHubリポジトリのIssueへどうぞ。",
+        supportContact: "お問い合わせフォーム",
+        supportGithub: "GitHubリポジトリ"
+      }
+    };
+
+    // Capture the inline English markup as the "en" dictionary so both
+    // languages stay in sync with a single source of truth in the HTML.
+    document.querySelectorAll("[data-i18n]").forEach((element) => {
+      const key = element.dataset.i18n;
+      if (!(key in translations.en)) translations.en[key] = element.textContent.trim();
+    });
+    document.querySelectorAll("[data-i18n-html]").forEach((element) => {
+      const key = element.dataset.i18nHtml;
+      if (!(key in translations.en)) translations.en[key] = element.innerHTML.trim();
+    });
+
+    let lang = "ja";
+
+    function setLanguage(language) {
+      const nextLanguage = translations[language] ? language : "en";
+      lang = nextLanguage;
+      const strings = translations[nextLanguage];
+      document.documentElement.lang = nextLanguage;
+      document.title = strings.metaTitle;
+
+      const description = document.querySelector('meta[name="description"]');
+      const ogDescription = document.querySelector('meta[property="og:description"]');
+      if (description) description.setAttribute("content", strings.metaDescription);
+      if (ogDescription) ogDescription.setAttribute("content", strings.metaDescription);
+
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        const key = element.dataset.i18n;
+        if (strings[key]) element.textContent = strings[key];
+      });
+
+      document.querySelectorAll("[data-i18n-html]").forEach((element) => {
+        const key = element.dataset.i18nHtml;
+        if (strings[key]) element.innerHTML = strings[key];
+      });
+
+      document.querySelectorAll("[data-lang-button]").forEach((button) => {
+        const isActive = button.dataset.langButton === nextLanguage;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", String(isActive));
+      });
+    }
+
+    document.querySelectorAll("[data-lang-button]").forEach((button) => {
+      button.addEventListener("click", () => setLanguage(button.dataset.langButton));
+    });
+
+    const requestedLanguage = new URLSearchParams(window.location.search).get("lang");
+    setLanguage(translations[requestedLanguage] ? requestedLanguage : lang);
+  </script>
+</body>
+
+</html>

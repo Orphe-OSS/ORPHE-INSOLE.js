@@ -78,6 +78,41 @@ insole.begin({ preset: 'walk', streamingMode: 4 });
 ### API Document
   * https://orphe-oss.github.io/ORPHE-INSOLE.js/docs/
 
+## センサ座標系と圧力センサ配置 / Sensor coordinate system and pressure sensor placement
+
+<p>
+<img src="assets/images/manual/coordinate-system.jpg" alt="ORPHE INSOLE sensor coordinate system (right-handed, Z-up)" width="380">
+<img src="assets/images/manual/pressure-placement.jpg" alt="ORPHE INSOLE pressure sensor placement (6 sensors per foot)" width="300">
+</p>
+
+（図は公式「ORPHE INSOLE DEMO App 利用マニュアル」より / Figures from the official ORPHE INSOLE DEMO App User Manual）
+
+センサ座標系は**右手系（Z-up）**です。
+
+* **Y**: つま先方向（インソールの長軸方向）
+* **X**: つま先方向に向かって右
+* **Z**: インソール上面の法線方向（上向き）。静止時の加速度Zは約 +1G になります。
+
+圧力センサは左右各6点で、番号は上図のとおりです（1 つま先内側 / 2 母趾球内側 / 3 つま先外側 / 4 中足部中央 / 5 中足部外側 / 6 踵）。
+`gotPress` で受け取る `press.values[i]` はセンサ番号 `i + 1` に対応します。配置に依存するロジックを組む前に、つま先立ち・踵立ちなどで実機のチャネル対応を確認することを推奨します。
+
+The sensor frame is **right-handed, Z-up**: **Y** points toward the toes (long axis of the insole), **X** to the right of the toe direction, and **Z** upward out of the insole top surface (accZ reads about +1G at rest).
+Each foot has six pressure sensors numbered as in the figure (1 toe-medial / 2 ball-medial / 3 toe-lateral / 4 ball-center / 5 midfoot-lateral / 6 heel). `press.values[i]` corresponds to sensor `i + 1`. Verify the channel mapping on your own device (e.g. stand on the toes, then on the heel) before relying on placement-specific logic.
+
+この仕様は公式の「ORPHE INSOLE DEMO App User Manual」に基づき、[DEMO Appマニュアルページ](https://orphe-oss.github.io/ORPHE-INSOLE.js/demo-app/)にも掲載しています。
+
+## ORPHE INSOLE DEMO App（iOS）
+
+ブラウザを使わず iPhone 単体で計測・CSVエクスポートしたい場合は、公式 iOS アプリ「ORPHE INSOLE DEMO App」があります。IMU・圧力センサの生データと歩容指標の記録、ARKit による姿勢推定との同時計測、CSV/JSON エクスポートに対応しています。
+
+> [!NOTE]
+> DEMO App は本ライブラリ（ORPHE-INSOLE.js）とは**別の配布物**で、TestFlight 経由で提供しています。
+> 利用を希望される方は、[ORPHE INSOLE β 評価キット](https://shop.orphe.io/products/orphe-insole-%CE%B2-evaluation-kit)をご購入のうえ、ORPHE社の担当者宛に **Apple ID に紐づくメールアドレス**をメールでご連絡ください（2つのデバイスまでインストール可能）。担当者がわからない場合は[お問い合わせフォーム](https://orphe.io/insole)からご連絡ください。
+
+使い方・出力データ仕様（`sensor-{left/right}.csv`、`landmarks.json`、`gait_analysis_{left/right}.csv`、`{left/right}-primary.csv`）・歩容指標の定義は [DEMO App マニュアル](https://orphe-oss.github.io/ORPHE-INSOLE.js/demo-app/) を参照してください。
+
+If you prefer measuring on an iPhone without a browser, the official iOS "ORPHE INSOLE DEMO App" records raw IMU / pressure data with derived gait indicators and ARKit pose estimation, and exports CSV/JSON. It is distributed **separately from this library** via TestFlight: purchase the [ORPHE INSOLE β Evaluation Kit](https://shop.orphe.io/en/products/orphe-insole-%CE%B2-evaluation-kit), then email the address linked to your Apple ID to your ORPHE representative (installable on up to 2 devices). See the [DEMO App manual](https://orphe-oss.github.io/ORPHE-INSOLE.js/demo-app/) for usage and the output data reference.
+
 ## Usage policy and commercial use
 
 ORPHE-INSOLE.js is developed as a JavaScript library for people using ORPHE INSOLE.
