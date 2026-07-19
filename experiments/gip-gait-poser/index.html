@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gait Inertial Poser (GIP) for ORPHE INSOLE — 実験</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+  <style>
+    body { background: #0b0f13; color: #cdd6df; }
+    .card { background: #141b22; border: 1px solid #212b34; }
+    .metric { font-variant-numeric: tabular-nums; }
+    .metric .value { font-size: 1.35rem; font-weight: 600; color: #eaf2f8; }
+    .metric .label { font-size: 0.72rem; color: #8a97a6; text-transform: uppercase; letter-spacing: .04em; }
+    .phase-badge { display: inline-block; padding: .2rem .5rem; border-radius: .3rem; font-size: .8rem; font-weight: 600; }
+    #skeleton { width: 100%; min-height: 320px; border-radius: .5rem; overflow: hidden; }
+    canvas.plot { width: 100%; background: #12181e; border-radius: .5rem; }
+    .mode-btn.active { background: #0d6efd; color: #fff; }
+    .exp-badge { background: #7a3cff; color: #fff; font-size: .7rem; padding: .15rem .5rem; border-radius: .3rem; vertical-align: middle; }
+    a { color: #6fb3ff; }
+    .form-range { accent-color: #0d6efd; }
+    input.form-control, select.form-select { background: #0f151b; color: #eaf2f8; border-color: #2a3742; }
+    input.form-control:focus, select.form-select:focus { background: #0f151b; color: #eaf2f8; }
+  </style>
+</head>
+<body>
+  <div class="container-fluid py-4" style="max-width: 1400px;">
+    <header class="mb-3">
+      <h3 class="mb-1">Gait Inertial Poser (GIP) for ORPHE INSOLE <span class="exp-badge">PRIVATE / EXPERIMENTAL</span></h3>
+      <p class="text-secondary mb-1" style="max-width: 90ch;">
+        論文 <a href="https://ieeexplore.ieee.org/document/11214366" target="_blank" rel="noopener">Hori et al., “Gait Inertial Poser (GIP)” (IEEE Access 2025)</a>
+        の手法（2つの靴内IMUだけで直進歩行の全身姿勢を推定）を ORPHE INSOLE で試す実験ページ。
+        学習済みモデル未公開のため、<b>Body / Gait / Smoothing の各モジュールを測定駆動で再現</b>しています（対応は下部「論文との対応」を参照）。
+        INSOLE では圧力6chも使えるため、CORE を用いた原論文より接地・歩行相の検出が安定します。
+      </p>
+    </header>
+
+    <!-- mode toggle -->
+    <div class="btn-group mb-3" role="group">
+      <button id="btn-mode-sim" type="button" class="btn btn-outline-primary mode-btn"><i class="bi bi-cpu"></i> シミュレーション（Ground Truth付き）</button>
+      <button id="btn-mode-real" type="button" class="btn btn-outline-primary mode-btn"><i class="bi bi-bluetooth"></i> 実機（ORPHE INSOLE 2台）</button>
+    </div>
+
+    <div class="row g-3">
+      <!-- left column: controls -->
+      <div class="col-lg-4">
+        <div class="card mb-3">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-person-arms-up"></i> Body Module — 身体属性</h6>
+            <div class="row g-2">
+              <div class="col-6"><label class="label small text-secondary">身長 (cm)</label><input id="attr-height" type="number" class="form-control form-control-sm" value="170"></div>
+              <div class="col-6"><label class="label small text-secondary">体重 (kg)</label><input id="attr-weight" type="number" class="form-control form-control-sm" value="62"></div>
+              <div class="col-6"><label class="label small text-secondary">年齢</label><input id="attr-age" type="number" class="form-control form-control-sm" value="35"></div>
+              <div class="col-6"><label class="label small text-secondary">性別</label>
+                <select id="attr-gender" class="form-select form-select-sm">
+                  <option value="neutral">neutral</option>
+                  <option value="male">male</option>
+                  <option value="female">female</option>
+                </select>
+              </div>
+            </div>
+            <div class="small text-secondary mt-2">推定快適ストライド: <span id="m-preferred">—</span></div>
+          </div>
+        </div>
+
+        <!-- simulation panel -->
+        <div id="sim-panel" class="card mb-3">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-sliders"></i> シミュレーション設定</h6>
+            <label class="label small text-secondary d-flex justify-content-between">ケイデンス <span id="sim-cadence-val"></span></label>
+            <input id="sim-cadence" type="range" class="form-range" min="60" max="140" step="1" value="108">
+            <label class="label small text-secondary d-flex justify-content-between">ストライド倍率 <span id="sim-stride-val"></span></label>
+            <input id="sim-stride" type="range" class="form-range" min="0.6" max="1.4" step="0.02" value="1.0">
+            <label class="label small text-secondary d-flex justify-content-between">IMUノイズ <span id="sim-noise-val"></span></label>
+            <input id="sim-noise" type="range" class="form-range" min="0" max="0.1" step="0.005" value="0.02">
+            <p class="small text-secondary mb-0 mt-2">既知の正解歩行から合成IMUを生成し、推定結果と重ね合わせて誤差を表示します（実機不要）。</p>
+          </div>
+        </div>
+
+        <!-- real-device panel -->
+        <div id="real-panel" class="card mb-3" style="display:none;">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-bluetooth"></i> 実機設定</h6>
+            <div class="row g-2 align-items-center mb-2">
+              <div class="col-7"><label class="label small text-secondary">ストリーミングモード</label>
+                <select id="real-mode" class="form-select form-select-sm">
+                  <option value="4" selected>4 (100Hz, quat込み・推奨)</option>
+                  <option value="3">3 (200Hz, 圧力込み・quatなし)</option>
+                </select>
+              </div>
+              <div class="col-5 form-check mt-4">
+                <input id="real-simulator" class="form-check-input" type="checkbox">
+                <label class="form-check-label small" for="real-simulator">シミュレータで動かす</label>
+              </div>
+            </div>
+            <div id="toolkit-left" class="mb-2"></div>
+            <div id="toolkit-right" class="mb-2"></div>
+            <p class="small text-secondary mb-0">各パネルの Connect で接続 → 下の Start。実機は左右各1台（id0=左, id1=右）。</p>
+          </div>
+        </div>
+
+        <!-- run controls -->
+        <div class="d-flex gap-2 mb-3">
+          <button id="btn-start" class="btn btn-success flex-fill"><i class="bi bi-play-fill"></i> Start</button>
+          <button id="btn-stop" class="btn btn-outline-light flex-fill"><i class="bi bi-stop-fill"></i> Stop</button>
+        </div>
+      </div>
+
+      <!-- middle column: avatar -->
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-person-walking"></i> 全身姿勢（<span style="color:#50c8ff">推定</span> / <span style="color:#96a5b4">正解ghost</span>）</h6>
+            <div id="skeleton"></div>
+            <p class="small text-secondary mb-0 mt-2">ドラッグで視点回転。青=GIP推定、灰=シミュレーションの正解。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- right column: metrics + plots -->
+      <div class="col-lg-4">
+        <div class="card mb-3">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-speedometer2"></i> 歩行パラメータ</h6>
+            <div class="row g-3">
+              <div class="col-4 metric"><div class="value" id="m-cadence">—</div><div class="label">cadence</div></div>
+              <div class="col-4 metric"><div class="value" id="m-stride">—</div><div class="label">stride</div></div>
+              <div class="col-4 metric"><div class="value" id="m-speed">—</div><div class="label">speed</div></div>
+              <div class="col-4 metric"><div class="value" id="m-symmetry">—</div><div class="label">L/R symmetry</div></div>
+              <div class="col-8">
+                <div class="label mb-1">gait phase (L / R)</div>
+                <span id="m-phaseL" class="phase-badge">—</span>
+                <span id="m-phaseR" class="phase-badge">—</span>
+              </div>
+            </div>
+            <div class="mt-3"><span id="m-gate" class="badge bg-secondary">—</span></div>
+            <div id="sim-metrics" class="row g-3 mt-1 pt-2" style="border-top:1px solid #212b34;">
+              <div class="col-4 metric"><div class="value" id="m-error">—</div><div class="label">joint err (vs GT)</div></div>
+              <div class="col-4 metric"><div class="value" id="m-stride-gt">—</div><div class="label">GT stride</div></div>
+              <div class="col-4 metric"><div class="value" id="m-stride-err">—</div><div class="label">stride err</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-bounding-box"></i> 足先軌跡 (ZUPT)</h6>
+            <canvas id="plot-traj" class="plot" width="360" height="300"></canvas>
+            <div class="small text-secondary mt-1"><span style="color:#ffd166">■</span> Left <span style="color:#06d6a0">■</span> Right</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <h6 class="card-title"><i class="bi bi-bar-chart-steps"></i> 歩行相タイムライン (L上 / R下)</h6>
+            <canvas id="plot-phase" class="plot" width="360" height="80"></canvas>
+            <div id="phase-legend" class="small text-secondary mt-1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- paper mapping -->
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title"><i class="bi bi-journal-text"></i> 論文との対応と限界</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-dark align-middle mb-2">
+            <thead><tr><th>論文モジュール</th><th>本実験の実装</th></tr></thead>
+            <tbody>
+              <tr><td>Body Module（属性→SMPL β）</td><td>属性→人体計測比（Winter）で個別スケルトンを生成（<code>body-model.js</code>）</td></tr>
+              <tr><td>Gait Module（Transformer→歩行相・関節角）</td><td>圧力6ch/IMUで4相・接地検出＋ZUPT足先軌跡、ストライド・ケイデンス・速度を実測（<code>gait-module.js</code>）</td></tr>
+              <tr><td>Smoothing Module（VAE＋ZUPT損失）</td><td>4次Butterworth(10Hz)＋C²平滑＋接地時の足速度/高さ拘束（同じ目的を解析的に実装, <code>smoothing.js</code>）</td></tr>
+              <tr><td>関節角回帰＋FK→全身姿勢</td><td>実測歩行相・ストライドで正規歩行テンプレ（Winter標準関節角）を駆動しFK再構成（<code>pose.js</code>）</td></tr>
+              <tr><td>合成IMU（SMPLメッシュから）</td><td>正解歩行から足の並進・回転を微分して合成IMU＋圧力を生成（<code>synthetic.js</code>）</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small text-secondary mb-0">
+          <b>限界:</b> 学習済みTransformer/VAEの重みは未公開のため、関節角は正規歩行テンプレの測定駆動近似（個々の病的歩行の細部までは再現しません）。
+          対象は原論文と同じく<b>平地・直進歩行</b>。旋回・ジョギングは範囲外（旋回検出インジケータあり）。圧力チャネル配置はモデル依存のため
+          heel/forefoot グループは要確認。SMPL実装への差し替えや UnderPressure(16ch/足) との圧力リマップは今後の拡張余地です。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- p5.js for the 3D avatar -->
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+  <!-- ORPHE INSOLE SDK -->
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="../../src/InsoleSimulator.js"></script>
+  <script src="../../src/InsoleUtils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- GIP modules (order matters: pose before synthetic; app last) -->
+  <script src="gip/body-model.js"></script>
+  <script src="gip/pose.js"></script>
+  <script src="gip/smoothing.js"></script>
+  <script src="gip/gait-module.js"></script>
+  <script src="gip/synthetic.js"></script>
+  <script src="gip/viz.js"></script>
+  <script src="gip/app.js"></script>
+</body>
+</html>
