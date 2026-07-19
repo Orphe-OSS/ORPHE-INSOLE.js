@@ -183,6 +183,31 @@ CSV は timestamp 昇順・1パケット4行（フレーム5ms間隔）で、参
 実機（device 00000161/right）で欠損0のロスレス収録を確認済み。
 showcase の「ロスレス収録（FIFO）」パネルが利用例（収録データで各可視化がライブ更新）。
 
+## センサ座標系と圧力センサ配置（公式仕様）
+
+出典: ORPHE INSOLE DEMO App User Manual（ORPHE公式）。図解（マニュアルからのキャプチャ）は `assets/images/manual/coordinate-system.jpg`（座標系）と `assets/images/manual/pressure-placement.jpg`（圧力センサ配置）、および https://orphe-oss.github.io/ORPHE-INSOLE.js/demo-app/#coords 。
+
+**座標系は右手系（Z-up）**:
+
+| 軸 | 向き |
+|---|---|
+| Y | つま先方向（インソールの長軸方向） |
+| X | つま先方向に向かって右 |
+| Z | インソール上面の法線方向（上向き）。静止時 `gotConvertedAcc` のzは約+1G |
+
+**圧力センサは左右各6点**（公式番号）:
+
+| 番号 | 位置 | `press.values` |
+|---|---|---|
+| 1 | つま先（内側） | `values[0]` |
+| 2 | 母趾球（内側） | `values[1]` |
+| 3 | つま先（外側） | `values[2]` |
+| 4 | 中足部（中央） | `values[3]` |
+| 5 | 中足部（外側） | `values[4]` |
+| 6 | 踵 | `values[5]` |
+
+`press.values[i]` は公式番号 `i + 1` に対応します。ただし個体差・装着差があるため、配置依存のロジック（CoP計算・接地部位判定など）を組む前に、つま先立ち／踵立ちで実機のチャネル反応を確認してください。
+
 ## API Reference
 
 ### OrpheInsole Class

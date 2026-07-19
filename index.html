@@ -886,6 +886,7 @@
         <a href="#quick-start" data-i18n="navQuickStart">Quick Start</a>
         <a href="#examples" data-i18n="navExamples">Examples</a>
         <a href="#terms" data-i18n="navTerms">Terms</a>
+        <a href="demo-app/" data-i18n="navDemoApp">Demo App</a>
         <a href="docs/">API</a>
         <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js">GitHub</a>
         <div class="language-switch" aria-label="Language" data-i18n-aria-label="languageLabel">
@@ -1058,6 +1059,20 @@
             <span class="tag">gotQuat</span>
             <h3 data-i18n="dataQuatTitle">Quaternion</h3>
             <p data-i18n="dataQuatBody">In default mode 4, receive orientation values together with pressure and motion data.</p>
+          </div>
+        </div>
+        <div class="tile" style="margin-top:16px; display:flex; flex-wrap:wrap; gap:28px; align-items:center;">
+          <div style="flex:1 1 340px; min-width:280px; max-width:560px; display:grid; grid-template-columns:1.15fr 1fr; gap:14px; align-items:center;">
+            <img src="assets/images/manual/coordinate-system.jpg"
+              alt="ORPHE INSOLE with the sensor coordinate frame drawn on it: Y toward the toes, X to the right of the toe direction, Z upward out of the insole surface.">
+            <img src="assets/images/manual/pressure-placement.jpg"
+              alt="Top view of left and right ORPHE INSOLE with pressure sensors numbered 1 to 6.">
+          </div>
+          <div style="flex:1 1 300px;">
+            <span class="tag" data-i18n="dataCoordsTag">Sensor spec</span>
+            <h3 data-i18n="dataCoordsTitle">Coordinate system and pressure sensor placement</h3>
+            <p data-i18n="dataCoordsBody">The sensor frame is right-handed and Z-up: Y points toward the toes, X to the right of the toe direction, and Z upward out of the insole top surface (accZ reads about +1 G at rest). Six pressure sensors per foot are numbered 1–6 as shown; press.values[i] corresponds to sensor i + 1.</p>
+            <p style="margin-top:10px;"><a href="demo-app/#coords" style="text-decoration:underline;" data-i18n="dataCoordsLink">More details in the DEMO App manual (sensor reference and CSV output spec)</a></p>
           </div>
         </div>
       </div>
@@ -1246,6 +1261,17 @@
               <strong data-i18n="exampleTerminalCta">Open terminal</strong>
             </div>
           </a>
+          <a class="example-link" href="demo-app/">
+            <img class="example-thumb" src="assets/images/thumbs/demo-app.jpg" alt="DEMO App manual screenshot" loading="lazy" width="640" height="400">
+            <div class="example-body">
+              <span data-i18n="exampleDemoAppTag">iOS app</span>
+              <div>
+                <h3>DEMO App</h3>
+                <p data-i18n="exampleDemoAppBody">Measure on iPhone, capture ARKit pose estimation, and export raw IMU + pressure CSV with gait indicators. Distributed via TestFlight to Evaluation Kit customers.</p>
+              </div>
+              <strong data-i18n="exampleDemoAppCta">Read the manual</strong>
+            </div>
+          </a>
           <a class="example-link" href="docs/">
             <img class="example-thumb" src="assets/images/thumbs/docs.jpg" alt="API Documentation screenshot" loading="lazy" width="640" height="400">
             <div class="example-body">
@@ -1368,6 +1394,7 @@
         navQuickStart: "Quick Start",
         navExamples: "Examples",
         navTerms: "Terms",
+        navDemoApp: "Demo App",
         heroEyebrow: "Web Bluetooth SDK for ORPHE INSOLE",
         heroCopy1: "Build browser prototypes with ORPHE INSOLE pressure, motion, and orientation data.",
         heroCopy2: "Connect from JavaScript through Web Bluetooth and create apps with foot pressure and motion.",
@@ -1423,6 +1450,10 @@
         dataGyroBody: "Track rotational motion from the foot-mounted sensor without writing your own BLE parser.",
         dataQuatTitle: "Quaternion",
         dataQuatBody: "In default mode 4, receive orientation values together with pressure and motion data.",
+        dataCoordsTag: "Sensor spec",
+        dataCoordsTitle: "Coordinate system and pressure sensor placement",
+        dataCoordsBody: "The sensor frame is right-handed and Z-up: Y points toward the toes, X to the right of the toe direction, and Z upward out of the insole top surface (accZ reads about +1 G at rest). Six pressure sensors per foot are numbered 1–6 as shown; press.values[i] corresponds to sensor i + 1.",
+        dataCoordsLink: "More details in the DEMO App manual (sensor reference and CSV output spec)",
         awardMark: "CES 2026 Best of Innovation",
         awardMarkBody: "Sports & Fitness category announcement via PR TIMES",
         awardEyebrow: "Recognition and use cases",
@@ -1467,6 +1498,9 @@
         exampleTerminalTag: "Raw stream",
         exampleTerminalBody: "Read and write BLE characteristics, watch raw SENSOR_VALUES bytes, and export captured values.",
         exampleTerminalCta: "Open terminal",
+        exampleDemoAppTag: "iOS app",
+        exampleDemoAppBody: "Measure on iPhone, capture ARKit pose estimation, and export raw IMU + pressure CSV with gait indicators. Distributed via TestFlight to Evaluation Kit customers.",
+        exampleDemoAppCta: "Read the manual",
         exampleDocsTag: "Reference",
         exampleDocsTitle: "API Documentation",
         exampleDocsBody: "Browse generated JSDoc for the ORPHE INSOLE class, callbacks, BLE methods, and parser helpers.",
@@ -1518,6 +1552,7 @@
         navQuickStart: "クイックスタート",
         navExamples: "サンプル",
         navTerms: "利用規約",
+        navDemoApp: "デモアプリ",
         heroEyebrow: "ORPHE INSOLE向けWeb Bluetooth SDK",
         heroCopy1: "ORPHE INSOLEの足裏圧、モーション、姿勢データでブラウザプロトタイプを作れます。",
         heroCopy2: "JavaScriptからWeb Bluetooth経由で接続し、計測、可視化、ゲーム、リハビリ用途の実験をすぐ始められます。",
@@ -1573,6 +1608,10 @@
         dataGyroBody: "BLE parserを自作せず、足部に装着したセンサーの回転運動を扱えます。",
         dataQuatTitle: "クォータニオン",
         dataQuatBody: "デフォルトのmode 4では、足裏圧とモーションに加えて姿勢値も受け取れます。",
+        dataCoordsTag: "センサー仕様",
+        dataCoordsTitle: "センサー座標系と圧力センサーの配置",
+        dataCoordsBody: "センサー座標系は右手系（Z-up）です。Yはつま先方向、Xはつま先方向に向かって右、Zはインソール上面の法線方向（上向き。静止時のaccZは約+1G）。圧力センサーは左右各6点で、図の番号1〜6に対応します（press.values[i] = センサー i + 1）。",
+        dataCoordsLink: "詳細はDEMO Appマニュアルへ（センサーリファレンス・CSV出力仕様）",
         awardMark: "CES 2026 Best of Innovation",
         awardMarkBody: "PR TIMESで発表されたSports & Fitness部門の受賞情報",
         awardEyebrow: "受賞とユースケース",
@@ -1617,6 +1656,9 @@
         exampleTerminalTag: "Raw stream",
         exampleTerminalBody: "BLE characteristicのread/write、raw SENSOR_VALUES byteの監視、取得値のエクスポートができます。",
         exampleTerminalCta: "Terminalを開く",
+        exampleDemoAppTag: "iOSアプリ",
+        exampleDemoAppBody: "iPhoneで計測し、ARKit姿勢推定を同時取得。IMU＋圧力の生データと歩容指標をCSV出力できます。評価キット購入者向けにTestFlightで配信中。",
+        exampleDemoAppCta: "マニュアルを読む",
         exampleDocsTag: "リファレンス",
         exampleDocsTitle: "APIドキュメント",
         exampleDocsBody: "ORPHE INSOLE class、callback、BLE method、parser helperの生成済みJSDocを確認できます。",

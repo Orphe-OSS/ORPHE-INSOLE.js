@@ -11,6 +11,25 @@ v0.9.0 ベータ版
 @author Tetsuaki BABA
 @version 1.2.1
 
+@description
+## センサ座標系と圧力センサ配置 / Sensor frame and pressure sensor placement
+
+ORPHE INSOLE のセンサ座標系は右手系（Z-up）です。
+The sensor frame of ORPHE INSOLE is right-handed, Z-up.
+
+- Y: つま先方向（インソール長軸方向） / toe direction (long axis of the insole)
+- X: つま先方向に向かって右 / to the right of the toe direction
+- Z: インソール上面の法線方向（上向き）。静止時の変換済み加速度zは約+1G /
+  normal of the insole top surface (upward); converted accZ reads about +1G at rest
+
+圧力センサは左右各6点（公式番号: 1 つま先内側, 2 母趾球内側, 3 つま先外側,
+4 中足部中央, 5 中足部外側, 6 踵）。gotPress の press.values[i] は番号 i+1 に対応します。
+Six pressure sensors per foot (official numbering: 1 toe-medial, 2 ball-medial,
+3 toe-lateral, 4 ball-center, 5 midfoot-lateral, 6 heel);
+press.values[i] corresponds to sensor i+1.
+
+図解 / figure: https://orphe-oss.github.io/ORPHE-INSOLE.js/demo-app/#coords
+
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
 
@@ -1645,7 +1664,9 @@ class OrpheInsole {
   gotStatus(status) {
   }
   /**
-   * コアモジュールの圧力情報を取得する
+   * コアモジュールの圧力情報を取得する。
+   * values[i] は公式センサ番号 i+1 に対応する（1 つま先内側, 2 母趾球内側, 3 つま先外側,
+   * 4 中足部中央, 5 中足部外側, 6 踵）。配置図: https://orphe-oss.github.io/ORPHE-INSOLE.js/demo-app/#coords
    * @param {Object} press {values[],timestamp,packet_number} 圧力の取得
    */
   gotPress(press) { }
@@ -1673,6 +1694,7 @@ class OrpheInsole {
   gotConvertedGyro(gyro) { }
   /**
    * コアモジュールで設定されている加速度レンジに応じて変換された値を取得する。
+   * 座標系は右手系（Z-up）: Y=つま先方向, X=つま先方向に向かって右, Z=上（静止時 z≈+1G）。
    * @param {Object} acc {x,y,z} 加速度レンジに応じて変換した加速度の取得
    */
   gotConvertedAcc(acc) { }
