@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `OrpheInsoleFifo`: recovery phase (**drain**) on `stop()` — after a manual stop, new-range requests are cut off and only outstanding re-requests (`carryOver`) continue until the FW ring buffer is drained or `options.drainTimeoutMs` elapses (default `3000`, `0` disables = legacy behavior). Recovers the tail losses that otherwise remain even in a normal 1 m / two-device environment (#46). Returns immediately when nothing is outstanding, so `stop()` latency is effectively unchanged when there is no loss. Reports recovered count via `onStopped(info).drainRecovered` and marks in-drain progress with `onProgress(info).draining === true`. Only runs on manual `stop()`; skipped on `stopOnLoss` auto-stop, disconnect, or exception.
+- `OrpheInsoleFifo`: recovery phase (**drain**) on `stop()` — after a manual stop, new-range requests are cut off and only outstanding re-requests (`carryOver`) continue until the FW ring buffer is drained or `options.drainTimeoutMs` elapses (default `3000`, `0` disables = legacy behavior). Recovers the tail losses that otherwise remain even in a normal 1 m / two-device environment (#46). Returns immediately when nothing is outstanding, so `stop()` latency is effectively unchanged when there is no loss. Reports recovered count via `onStopped(info).drainRecovered` and marks in-drain progress with `onProgress(info).draining === true`. Only runs on manual `stop()`; skipped on `stopOnLoss` auto-stop, disconnect, or exception. The `showcase` and `fifo-vs-realtime` examples surface the recovered count and a "recovering after stop" status.
 
 ### Fixed
 

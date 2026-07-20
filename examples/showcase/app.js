@@ -318,6 +318,7 @@ let fifoRunning = false;
 let fifoStopping = false;
 let fifoActiveIds = [];
 let fifoStartedAt = 0;
+let fifoDrainRecovered = 0;   // stop() 後の回収フェーズ（drain）で救えたシリアル数（全デバイス合計）
 
 //--------------------------------------------------
 // フレーム配信: ライブ/デモ共通の入口
@@ -578,6 +579,17 @@ window.onload = function () {
                 // 気づかない欠損を防ぐため、回復不能ロスは必ずコンソールにも残す
                 console.warn(`INSOLE${this.deviceId}: FIFO data loss (${info.reason}): +${info.dropped}, cumulative ${info.cumulative}`);
             };
+            fifos[id].onProgress = function (info) {
+                // stop() 後の回収フェーズ（drain）中はステータスに回収状況を出す
+                if (info.draining) {
+                    fifoStatus.textContent = i18nText('fifoDraining', { recovered: fifoDrainRecovered });
+                    setFifoStatusLoss(false);
+                }
+            };
+            fifos[id].onStopped = function (info) {
+                // drain で救えたシリアル数を集計（stopFifo の完了ステータスに反映）
+                fifoDrainRecovered += info.drainRecovered || 0;
+            };
             fifos[id].onError = function (error) {
                 console.warn(`INSOLE${this.deviceId}: FIFO error`, error);
             };
@@ -670,6 +682,7 @@ window.onload = function () {
         fifoDownload.disabled = true;
         fifoStatus.textContent = i18nText('fifoStatusPreparing');
         fifoActiveIds = [];
+        fifoDrainRecovered = 0;
         const results = await Promise.all(ids.map(id => fifos[id].start()));
         results.forEach((ok, i) => { if (ok) fifoActiveIds.push(ids[i]); });
         if (fifoActiveIds.length === 0) {
@@ -696,12 +709,13 @@ window.onload = function () {
         const total = fifoCollectedTotal();
         const dropped = fifoDroppedTotal();
         fifoDownload.disabled = total === 0;
+        const drainNote = fifoDrainRecovered > 0 ? i18nText('fifoDrainNote', { recovered: fifoDrainRecovered }) : '';
         if (auto && dropped > 0) {
-            fifoStatus.textContent = i18nText('fifoStatusStopped', { packets: total, dropped });
+            fifoStatus.textContent = i18nText('fifoStatusStopped', { packets: total, dropped }) + drainNote;
         } else {
-            fifoStatus.textContent = dropped > 0
+            fifoStatus.textContent = (dropped > 0
                 ? i18nText('fifoStatusDoneLoss', { packets: total, dropped })
-                : i18nText('fifoStatusDone', { packets: total });
+                : i18nText('fifoStatusDone', { packets: total })) + drainNote;
         }
         setFifoStatusLoss(dropped > 0);
     }
@@ -861,15 +875,18 @@ window.onload = function () {
                 if (dropped > 0 && fifoAutoStop.checked && !fifoStopping) {
                     stopFifo(true);
                 }
-                const base = i18nText('fifoCollecting', {
-                    packets: fifoCollectedTotal(),
-                    seconds: sec.toFixed(1),
-                    lag: fifoLagMax(),
-                });
-                fifoStatus.textContent = dropped > 0
-                    ? `${base} ${i18nText('fifoLossWarning', { dropped })}`
-                    : base;
-                setFifoStatusLoss(dropped > 0);
+                // 収録中の表示（drain 中は onProgress の「回収中」ステータスを上書きしない）
+                if (!fifoStopping) {
+                    const base = i18nText('fifoCollecting', {
+                        packets: fifoCollectedTotal(),
+                        seconds: sec.toFixed(1),
+                        lag: fifoLagMax(),
+                    });
+                    fifoStatus.textContent = dropped > 0
+                        ? `${base} ${i18nText('fifoLossWarning', { dropped })}`
+                        : base;
+                    setFifoStatusLoss(dropped > 0);
+                }
             } else {
                 const connected = connectedInsoleIds().length > 0;
                 fifoToggle.disabled = !connected;
