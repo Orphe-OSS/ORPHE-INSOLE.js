@@ -219,6 +219,16 @@ function near(actual, expected, tol, label) {
   assert.equal(s3.lastSerial, null);
   assert.equal(s3.resyncPending, true);
   assert.deepEqual(s3.carryOver, []);
+
+  // 新規 no-data の resync でも carryOver（既知の再要求）は破棄しない（#46 収束修正）
+  const s3b = new Fifo.FifoLoopState();
+  s3b.lastSerial = 500;
+  s3b.carryOver = [[400, 3]];
+  s3b.updateAfterResponse(new Set([450, 451]), new Set([600]), 600, 10);
+  assert.equal(s3b.lastSerial, null);
+  assert.equal(s3b.resyncPending, true);
+  // bleLoss(450,451) が追加され、既存 [400,3] も保持される（＝再要求され続ける）
+  assert.deepEqual(s3b.carryOver, [[400, 3], [450, 2]]);
 }
 
 // ── NotifyQueue ──
@@ -327,6 +337,24 @@ function near(actual, expected, tol, label) {
     // 何も格納していなければ計上しない
     const s4 = new Fifo.FifoLoopState();
     assert.equal(s4.finalizePendingLoss(), 0);
+
+    // 先頭シリアルが初回に落ち、後の再要求で回収されてもスパンが爆発しない（#44 の潜在バグ修正）
+    // 旧実装では起点(101)より小さい 100 で serialDistance が ~65535 になり幻の 65336 欠損を計上していた
+    const s5 = new Fifo.FifoLoopState();
+    for (let sn = 101; sn <= 299; sn++) { s5.rawStore.set(sn, null); s5.noteStored(sn); } // 先に 101..299
+    s5.rawStore.set(100, null); s5.noteStored(100);                                        // 後から最小 100 を回収
+    assert.equal(s5.firstStoredSerial, 100, 'スパン起点が最小へ巻き戻る');
+    assert.equal(s5.storedSpanMax, 199, 'スパンは 100..299 の 200 シリアル');
+    assert.equal(s5.finalizePendingLoss(), 0, '幻の欠損を計上しない');
+    assert.equal(s5.dropped, 0);
+
+    // wraparound をまたいで手前のシリアルが回収されるケースでも爆発しない
+    const s6 = new Fifo.FifoLoopState();
+    for (let i = 1; i <= 5; i++) { const sn = (65534 + i) % 65536; s6.rawStore.set(sn, null); s6.noteStored(sn); } // 65535,0,1,2,3
+    s6.rawStore.set(65534, null); s6.noteStored(65534);                                    // 手前の 65534 を回収
+    assert.equal(s6.firstStoredSerial, 65534);
+    assert.equal(s6.storedSpanMax, 5); // 65534..3 = 6 シリアル
+    assert.equal(s6.finalizePendingLoss(), 0);
   }
 
   // ── ループ終了時に stopped_pending が onDataLoss / onStopped.dropped へ反映される ──
@@ -338,7 +366,7 @@ function near(actual, expected, tol, label) {
       isConnected: () => true,
       async write() { /* teardown コマンドは応答不要（catch 済み） */ },
     };
-    const fifo = new Fifo(mock, { startupDelayMs: 0 });
+    const fifo = new Fifo(mock, { startupDelayMs: 0, drainTimeoutMs: 0 }); // drain 無効で stopped_pending 単体を検証
     // 収録スパン 91..105 のうち 95 が carryOver に残ったまま停止した状況を再現
     for (let sn = 91; sn <= 105; sn++) {
       if (sn === 95) continue;
@@ -358,6 +386,143 @@ function near(actual, expected, tol, label) {
     assert.equal(lossInfo.cumulative, 1);
     assert.ok(stoppedInfo && stoppedInfo.dropped === 1, 'onStopped.dropped に反映');
     assert.equal(fifo.droppedCount, 1);
+  }
+
+  // ── _receiveResponses: 受信開始後の無音は idleTimeout で早期に抜ける（丸ごと5秒失速しない、#46） ──
+  {
+    const fifo = new Fifo({ id: 0, streaming_mode: 4, isConnected: () => true, write: async () => {} }, {});
+    fifo._queue.push(makeDataPacket({ serial: 200 })); // 1件だけ用意（201 は来ない）
+    const started = Date.now();
+    const { received } = await fifo._receiveResponses(new Set([200, 201]), 5000, 30);
+    const elapsed = Date.now() - started;
+    assert.equal(received.size, 1, '届いた分だけ返す');
+    assert.ok(received.has(200));
+    assert.ok(elapsed < 1000, `idleTimeout(30ms) で早期に抜ける（${elapsed}ms < 1000ms、5000ms 待たない）`);
+  }
+
+  // ── drain（回収フェーズ）: stop 後に carryOver を再要求して回収し droppedCount 0 で確定 ──
+  {
+    const mock = {
+      id: 0, streaming_mode: 4, _fifoNotifySink: null,
+      isConnected: () => true,
+      async write(_uuid, bytes) {
+        const b = Array.from(bytes);
+        const push = (d) => { if (this._fifoNotifySink) this._fifoNotifySink(d); };
+        if (b[0] !== 0x0B || b[1] !== 0x02) return;
+        for (let i = 2; i + 3 < b.length; i += 4) {
+          const start = (b[i] << 8) | b[i + 1];
+          const cnt = (b[i + 2] << 8) | b[i + 3];
+          for (let k = 0; k < cnt; k++) push(makeDataPacket({ serial: (start + k) % 65536 }));
+        }
+      },
+    };
+    const fifo = new Fifo(mock, { drainTimeoutMs: 3000 });
+    mock._fifoNotifySink = (dv) => fifo._queue.push(dv);
+    // 収録スパン 50..60、うち 55 が carryOver に未回収で残った状態
+    for (let sn = 50; sn <= 60; sn++) {
+      if (sn === 55) continue;
+      fifo.state.rawStore.set(sn, makeDataPacket({ serial: sn }));
+      fifo.state.noteStored(sn);
+    }
+    fifo.state.carryOver = [[55, 1]];
+    fifo._lastCurrentSerial = 60;
+
+    let recoveredSamples = 0;
+    fifo.onSamples = (_id, samples) => { recoveredSamples += samples.length; };
+
+    const recovered = await fifo._drainLoop(Date.now() + 3000);
+    assert.equal(recovered, 1, 'drain が 55 を回収');
+    assert.ok(fifo.state.rawStore.has(55), 'rawStore に 55 が入る');
+    assert.equal(recoveredSamples, 4, '回収パケットが onSamples でライブ反映される（4フレーム）');
+    assert.equal(fifo.state.carryOver.length, 0, 'carryOver が空になる');
+    assert.equal(fifo.state.finalizePendingLoss(), 0, 'drain 後は未回収なし');
+    assert.equal(fifo.droppedCount, 0, 'droppedCount 0（ロスレス）');
+  }
+
+  // ── drain: FW から消えた分は fw_nodata として計上し carryOver から抜けて終了（無限ループしない） ──
+  {
+    const mock = {
+      id: 0, streaming_mode: 4, _fifoNotifySink: null,
+      isConnected: () => true,
+      async write(_uuid, bytes) {
+        const b = Array.from(bytes);
+        const push = (d) => { if (this._fifoNotifySink) this._fifoNotifySink(d); };
+        if (b[0] !== 0x0B || b[1] !== 0x02) return;
+        for (let i = 2; i + 3 < b.length; i += 4) {   // 要求レンジを全部 no-data で返す
+          const start = (b[i] << 8) | b[i + 1];
+          const cnt = (b[i + 2] << 8) | b[i + 3];
+          if (cnt === 0) continue;
+          const nd = new DataView(new ArrayBuffer(6));
+          nd.setUint8(0, 0x35); nd.setUint8(1, 0x02);
+          nd.setUint16(2, start); nd.setUint16(4, cnt);
+          push(nd);
+        }
+      },
+    };
+    const fifo = new Fifo(mock, { drainTimeoutMs: 3000 });
+    mock._fifoNotifySink = (dv) => fifo._queue.push(dv);
+    for (let sn = 50; sn <= 60; sn++) {
+      if (sn === 55) continue;
+      fifo.state.rawStore.set(sn, makeDataPacket({ serial: sn }));
+      fifo.state.noteStored(sn);
+    }
+    fifo.state.carryOver = [[55, 1]];
+    fifo._lastCurrentSerial = 60;
+
+    let lossReason = null;
+    fifo.onDataLoss = (info) => { lossReason = info.reason; };
+    const recovered = await fifo._drainLoop(Date.now() + 3000);
+    assert.equal(recovered, 0, '回収できない');
+    assert.equal(fifo.droppedCount, 1, 'fw_nodata として計上');
+    assert.equal(lossReason, 'fw_nodata');
+    assert.equal(fifo.state.carryOver.length, 0, 'no-data 分は carryOver から抜ける（無限ループしない）');
+  }
+
+  // ── stop 時に drain が走り onStopped.drainRecovered に反映される（配線テスト） ──
+  {
+    const mock = {
+      id: 0, streaming_mode: 4, _fifoNotifySink: null,
+      isConnected: () => true,
+      async write(_uuid, bytes) {
+        const b = Array.from(bytes);
+        const push = (d) => { if (this._fifoNotifySink) this._fifoNotifySink(d); };
+        if (b[0] === 0x0B && b[1] === 0x02) {
+          for (let i = 2; i + 3 < b.length; i += 4) {
+            const start = (b[i] << 8) | b[i + 1];
+            const cnt = (b[i + 2] << 8) | b[i + 3];
+            for (let k = 0; k < cnt; k++) push(makeDataPacket({ serial: (start + k) % 65536 }));
+          }
+          return;
+        }
+        if (b[0] === 0x0B) {                          // STOP_MONITOR 等は ACK（teardown を速やかに）
+          const ack = new DataView(new ArrayBuffer(2));
+          ack.setUint8(0, 0x35); ack.setUint8(1, b[1]);
+          push(ack);
+        }
+      },
+    };
+    const fifo = new Fifo(mock, { startupDelayMs: 0, drainTimeoutMs: 3000 });
+    mock._fifoNotifySink = (dv) => fifo._queue.push(dv);
+    for (let sn = 91; sn <= 105; sn++) {
+      if (sn === 95) continue;
+      fifo.state.rawStore.set(sn, makeDataPacket({ serial: sn })); fifo.state.noteStored(sn);
+    }
+    fifo.state.carryOver = [[95, 1]];
+    fifo._lastCurrentSerial = 105;
+    fifo._running = false; // _runLoop は即終了 → drain → finalize が走る
+
+    let stoppedInfo = null;
+    let lossFired = false;
+    fifo.onStopped = (info) => { stoppedInfo = info; };
+    fifo.onDataLoss = () => { lossFired = true; };
+    await fifo._runLoopWrapped();
+
+    assert.ok(stoppedInfo, 'onStopped 発火');
+    assert.equal(stoppedInfo.drainRecovered, 1, 'drain で 95 を回収');
+    assert.equal(stoppedInfo.dropped, 0, '欠損なしで確定');
+    assert.equal(fifo.droppedCount, 0);
+    assert.equal(lossFired, false, '全回収済みなので stopped_pending は発火しない');
+    assert.equal(mock._fifoNotifySink, undefined, 'teardown で sink 解除');
   }
 
   console.log('insole-fifo.test.js passed');

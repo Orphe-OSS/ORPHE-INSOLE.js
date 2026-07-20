@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `OrpheInsoleFifo`: recovery phase (**drain**) on `stop()` — after a manual stop, new-range requests are cut off and only outstanding re-requests (`carryOver`) continue until the FW ring buffer is drained or `options.drainTimeoutMs` elapses (default `3000`, `0` disables = legacy behavior). Recovers the tail losses that otherwise remain even in a normal 1 m / two-device environment (#46). Returns immediately when nothing is outstanding, so `stop()` latency is effectively unchanged when there is no loss. Reports recovered count via `onStopped(info).drainRecovered` and marks in-drain progress with `onProgress(info).draining === true`. Only runs on manual `stop()`; skipped on `stopOnLoss` auto-stop, disconnect, or exception.
+
+### Fixed
+
+- `OrpheInsoleFifo`: fix a latent span-tracking bug in `FifoLoopState.noteStored()` (introduced with #44's invariant check) where recovering a serial **earlier** than the first-stored one (e.g. the recording's first serial dropped on the initial request and re-fetched later — common on a lossy link) made `serialDistance()` wrap to ~65535, exploding the recording span and causing `finalizePendingLoss()` to report a phantom loss of ~65,336 serials. The span origin now rolls back (wrap-aware min/max) so early-serial recovery no longer inflates `droppedCount`.
+- `OrpheInsoleFifo`: re-requests no longer converge-fail mid-recording. Two fixes: (1) `_receiveResponses` now returns after a short quiet period (`ONE_SHOT_IDLE_TIMEOUT_MS`) once a burst has started, instead of blocking the full 5 s `ONE_SHOT_TIMEOUT_MS` on every cycle that has a single dropped packet (which inflated lag and starved re-requests); (2) a `newNoData` resync no longer wipes the `carryOver` queue, so scattered single-serial drops keep being re-requested instead of being silently abandoned and scattered across the whole recording (#43/#46). The final polling cycle's received packets are no longer discarded on `stop()`.
+
 ## [1.2.1] - 2026-07-15
 
 ### Added

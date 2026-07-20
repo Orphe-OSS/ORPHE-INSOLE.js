@@ -52,6 +52,7 @@ function newDevRun() {
         lastSerial: null,
         serials: new Set(),
         dropped: 0,
+        drainRecovered: 0,
         maxArrivalGapMs: 0,
         lastArrivalAt: null,
     };
@@ -202,6 +203,7 @@ function finalizeRun() {
             effectiveHz: durationSec > 0 ? (d.sampleCount / durationSec) : 0,
             maxArrivalGapMs: d.maxArrivalGapMs,
             dropped: d.dropped,
+            drainRecovered: d.drainRecovered,
             firstSerial: d.firstSerial,
             serials: d.serials,
         };
@@ -231,6 +233,9 @@ function renderResult(result) {
         ['最大到着間隔', `${Math.round(result.maxArrivalGapMs)} ms <span class="text-muted">(${isFifo ? 'バーストの間隔' : '取りこぼし/揺らぎ'})</span>`],
     ];
     if (isFifo) {
+        if (result.drainRecovered > 0) {
+            rows.push(['停止後の回収 (drain)', `<span class="badge bg-info text-dark">${result.drainRecovered} シリアル</span> <span class="text-muted">停止時点で未回収だった分をFWバッファから回収</span>`]);
+        }
         rows.push(['回復不能ロス計上', result.dropped === 0
             ? '<span class="badge bg-success">0（onDataLoss 通知なし）</span>'
             : `<span class="badge bg-danger">${result.dropped}（onDataLoss で通知済み）</span>`]);
@@ -312,10 +317,12 @@ async function finishCurrentRun() {
             for (const id of ids) run.dev[id].dropped = fifos[id].droppedCount;
         }
         runState = 'idle';
+        const drainTotal = ids.reduce((sum, id) => sum + (run && run.dev[id] ? run.dev[id].drainRecovered : 0), 0);
         const total = finalizeRun();
         const droppedTotal = ids.reduce((sum, id) => sum + fifos[id].droppedCount, 0);
         el.btnCsv.disabled = ids.every((id) => fifos[id].collectedCount === 0);
-        el.status.textContent = `FIFO収録が完了（計 ${total.toLocaleString()} サンプル、回復不能ロス ${droppedTotal}）`;
+        const drainNote = drainTotal > 0 ? `、停止後の回収 ${drainTotal}` : '';
+        el.status.textContent = `FIFO収録が完了（計 ${total.toLocaleString()} サンプル${drainNote}、回復不能ロス ${droppedTotal}）`;
         setButtons();
     }
 }
@@ -375,6 +382,12 @@ window.onload = function () {
             console.warn(`${DEVICE_LABEL(this.deviceId)}: FIFO data loss (${info.reason}): +${info.dropped}, cumulative ${info.cumulative}`);
             if (run && run.mode === 'fifo' && run.dev[this.deviceId]) {
                 run.dev[this.deviceId].dropped = info.cumulative;
+            }
+        };
+        fifo.onStopped = function (info) {
+            // stop() 後の回収フェーズ（drain）で救えたシリアル数を結果カードに反映
+            if (run && run.dev[this.deviceId]) {
+                run.dev[this.deviceId].drainRecovered = info.drainRecovered || 0;
             }
         };
         fifo.onError = function (error) {

@@ -156,9 +156,18 @@ fifo.onSamples = function (deviceId, samples) {
 fifo.onProgress = (info) => console.log(info.collected, info.lag);   // 収集済み数・追従遅れ
 await fifo.start();       // 読み取りモードをFIFOへ切替→バッファ回収ループ開始
 // ... 収録 ...
-await fifo.stop();        // 停止し、直前のリアルタイムモードへ復帰
+await fifo.stop();        // 停止→回収フェーズ(drain)→直前のリアルタイムモードへ復帰
 fifo.download('capture.csv');  // 参照実装互換CSV（serial,timestamp,gyro[dps],acc[G],press1..6[N]）
 ```
+
+**回収フェーズ（drain）**: `stop()` は即座に終わらず、新規レンジ要求を打ち切って
+**未回収シリアルの再要求だけを続ける回収フェーズ**に入る（`options.drainTimeoutMs`、既定 `3000`、
+`0` で無効＝従来動作）。FW リングバッファに残っている取りこぼしをまとめて回収してから終了するため、
+通常環境の2台同時でも収録末尾の欠損を大きく減らせる。未回収が無ければ即座に抜けるので、
+欠損のない正常系では `stop()` の遅延は実質ゼロ。手動 `stop()` 時のみ発動し、`stopOnLoss` 自動停止・
+切断・例外では発動しない。回収数は `onStopped(info).drainRecovered`、回収中の進捗は
+`onProgress` の `info.draining === true` で判別できる。timeout で回収しきれなかった分は
+`stopped_pending` として計上され（#44 の不変条件保証）、`droppedCount === 0` なら CSV は完全。
 
 **欠損の可視化（重要）**: 追従（ポーリング）がFWバッファの上書きに間に合わない場合、
 回収前のデータは**回復不能に失われる**。この場合でも収録は自動終了せず飛ばして継続するため、
