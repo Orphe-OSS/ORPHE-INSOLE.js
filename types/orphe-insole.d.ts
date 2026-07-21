@@ -431,16 +431,26 @@ export interface InsoleFifoOptions {
     startupDelayMs?: number;
     /** 回復不能な欠損が発生した時点で収録を自動停止する（既定 false） */
     stopOnLoss?: boolean;
+    /**
+     * stop()（手動停止）後、未回収シリアルの再要求だけを続けて FW リングバッファから
+     * 回収する「回収フェーズ（drain）」のタイムアウト[ms]（既定 3000、0 で無効＝従来動作）。
+     * 未回収が無ければ即座に抜けるため、欠損のない正常系では stop() の遅延は実質ゼロ。
+     * stopOnLoss 自動停止・切断・例外では発動しない。
+     */
+    drainTimeoutMs?: number;
 }
 
 export interface InsoleFifoProgress {
     collected: number;
     lastReceived: number;
-    currentSerial: number;
+    /** ポーリング前に停止した回収フェーズ中は null になりうる */
+    currentSerial: number | null;
     /** 追従遅れ（未取得シリアル数）。大きいほど欠損の危険が高い */
     lag: number;
     /** 回復不能に失われた累計シリアル数 */
     dropped: number;
+    /** stop() 後の回収フェーズ（drain）中の進捗なら true */
+    draining?: boolean;
 }
 
 export interface InsoleFifoDataLoss {
@@ -486,8 +496,11 @@ export declare class OrpheInsoleFifo {
     onAnomaly: ((info: InsoleFifoAnomaly) => void) | null;
     /** 回復不能な欠損が起きたとき呼ばれる（気づかない欠損を防ぐ） */
     onDataLoss: ((info: InsoleFifoDataLoss) => void) | null;
-    /** 収集終了時に呼ばれる（stopOnLoss による自動停止の検知に使う） */
-    onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number }) => void) | null;
+    /**
+     * 収集終了時に呼ばれる（stopOnLoss による自動停止の検知に使う）。
+     * drainRecovered は stop() 後の回収フェーズ（drain）で救えたシリアル数。
+     */
+    onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void) | null;
     onError: ((error: unknown) => void) | null;
     /** FIFO 収集を開始（SENSOR_VALUES 通知は begin() 済みであること） */
     start(): Promise<boolean>;

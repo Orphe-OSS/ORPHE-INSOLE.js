@@ -48,6 +48,8 @@
   const RING_BUFFER_CAPACITY = 1500;                 // FW リングバッファ余裕上限
   const POLLING_INTERVAL_MS = 200;
   const CURRENT_SERIAL_TIMEOUT_MS = 50;
+  const ONE_SHOT_IDLE_TIMEOUT_MS = 400;              // バースト受信中に許容する無音（超えたら「このバーストは終わり」と判断）
+  const DEFAULT_DRAIN_TIMEOUT_MS = 3000;             // stop() 後の回収フェーズ（drain）の既定タイムアウト（0 で無効＝従来動作）
   const NOTIFY_DATA_NUM = 4;                         // 1パケット内のフレーム数
   const NOTIFY_DATA_SIZE = 24;                       // 1フレームのバイト数
   const DATA_PACKET_BYTE_LENGTH = 104;
@@ -302,15 +304,26 @@
       this.storedSpanMax = 0;        // firstStoredSerial からの最大距離（収録スパン-1）
     }
 
-    // rawStore へ格納したシリアルの収録スパンを記録する（wraparound は serialDistance で吸収）
+    // rawStore へ格納したシリアルの収録スパン [firstStoredSerial .. +storedSpanMax] を記録する。
+    // firstStoredSerial は「最初に格納したシリアル」ではなく「スパンの起点（＝これまでで最小）」であり、
+    // より手前のシリアル（初回に落ちて後の再要求で回収された先頭など）が来たら起点を巻き戻す。
+    // これをしないと serialDistance(起点, 手前) が ~65536 になり storedSpanMax が爆発し、
+    // finalizePendingLoss が幻の巨大欠損を計上する（収録アークは半周 < 32768 前提）。
     noteStored(serial) {
       if (this.firstStoredSerial === null) {
         this.firstStoredSerial = serial;
         this.storedSpanMax = 0;
         return;
       }
-      const d = serialDistance(this.firstStoredSerial, serial);
-      if (d > this.storedSpanMax) this.storedSpanMax = d;
+      const fwd = serialDistance(this.firstStoredSerial, serial); // 起点より前方（新しい）
+      const bwd = serialDistance(serial, this.firstStoredSerial); // 起点より後方（古い）
+      if (bwd < fwd) {
+        // serial は起点より手前（古い）→ 起点を巻き戻し、既存スパンをその分だけ延ばす
+        this.firstStoredSerial = serial;
+        this.storedSpanMax += bwd;
+      } else if (fwd > this.storedSpanMax) {
+        this.storedSpanMax = fwd;
+      }
     }
 
     // 収集終了時の最終計上。収録スパン内で「格納も回復不能計上もされていない」
@@ -382,8 +395,11 @@
         }
       }
       if (newNoData.size > 0) {
+        // 新規レンジの no-data → lastSerial を現在シリアルへ再アンカー（resync）。
+        // ただし carryOver（既知の再要求キュー）は破棄しない。破棄すると走行中に散発欠損が
+        // 恒久ロス化して収束せず、収録全域に単発欠損が散る（#43/#46）。FW から消えた分は
+        // 次サイクルで no-data → fw_nodata として自然に carryOver から抜けるので溜まり続けない。
         this.lastSerial = null;
-        this.carryOver = [];
         this.resyncPending = true;     // 次ポーリングでバックログ超過分を計上する
       } else if (requestSize > 0) {
         this.lastSerial = (startSerial + requestSize - 1) % UINT16_MAX;
@@ -540,14 +556,23 @@
     }
 
     async _runLoopWrapped() {
+      let drainRecovered = 0;
       try {
         await this._runLoop();
+        // 手動 stop() で終了した場合のみ、未回収（carryOver）の再要求を続ける回収フェーズ（drain）を
+        // 走らせる。carryOver が空なら即抜けるので、欠損のない正常系では stop() の遅延は実質ゼロ。
+        // stopOnLoss 自動停止・例外・切断時は行わない（それらは _autoStopped / 切断で弾く）。
+        const drainTimeoutMs = this.options.drainTimeoutMs != null ? this.options.drainTimeoutMs : DEFAULT_DRAIN_TIMEOUT_MS;
+        if (!this._autoStopped && drainTimeoutMs > 0 &&
+            this.insole && this.insole.isConnected && this.insole.isConnected()) {
+          drainRecovered = await this._drainLoop(Date.now() + drainTimeoutMs);
+        }
       } catch (e) {
         this._reportError(e);
       } finally {
-        // 停止時の最終計上: 再要求（carryOver）が成功しないままループを抜けた分は
+        // 停止時（drain 後）の最終計上: 再要求（carryOver）が成功しないままループを抜けた分は
         // どの経路でも計上されずに消えるため、収録スパンとの差分をここで必ず dropped に反映する。
-        // （「droppedCount === 0 なら CSV は完全」の保証を停止時にも成立させる）
+        // （「droppedCount === 0 なら CSV は完全」の保証を停止時にも成立させる。drain のセーフティネット）
         const pending = this.state.finalizePendingLoss();
         if (pending > 0 && typeof this.onDataLoss === 'function') {
           this._safe(() => this.onDataLoss({
@@ -564,9 +589,76 @@
             reason: this._autoStopped ? 'loss' : 'manual',
             dropped: this.state.dropped,
             collected: this.state.rawStore.size,
+            drainRecovered,
           }));
         }
       }
+    }
+
+    // ── 回収フェーズ（drain） ─────────────────────────────────────────
+    // stop() 後、新規レンジ要求は打ち切り、未回収（carryOver）の再要求だけを deadline まで
+    // 続けて、FW リングバッファに残っているシリアルを回収する。FW から消えた分は no-data →
+    // fw_nodata として確定計上し carryOver から抜く。回収できたシリアル数を返す。
+    // 通常ループと同じ分類・通知（onSamples/onDataLoss/onProgress）を使うが、onProgress には
+    // draining:true を付ける。
+    async _drainLoop(deadline) {
+      const state = this.state;
+      let recovered = 0;
+      while (state.carryOver.length > 0 && Date.now() < deadline) {
+        const carryOverToSend = state.carryOver.slice(0, RE_REQUEST_DATA_NUM);
+        state.carryOver = state.carryOver.slice(carryOverToSend.length);
+        const expectedSerials = new Set(expandRequestsToList(carryOverToSend));
+        if (expectedSerials.size === 0) continue;
+
+        this._queue.drain();
+        await this._write(createGetSensorDataRequest(carryOverToSend));
+
+        const shotTimeout = Math.min(ONE_SHOT_TIMEOUT_MS, Math.max(0, deadline - Date.now()));
+        const { received, noDataSerials } =
+          await this._receiveResponses(expectedSerials, shotTimeout, ONE_SHOT_IDLE_TIMEOUT_MS);
+
+        const allMissed = [...expectedSerials].filter((sn) => !received.has(sn));
+        const bleLoss = new Set(allMissed.filter((sn) => !noDataSerials.has(sn)));      // まだ届かない → 再要求へ戻す
+        const confirmedLost = allMissed.filter((sn) => noDataSerials.has(sn));           // FWから消失 → 回復不能
+
+        if (confirmedLost.length > 0) {
+          state.dropped += confirmedLost.length;
+          state.lossEvents.push({ reason: 'fw_nodata', dropped: confirmedLost.length });
+        }
+        if (bleLoss.size > 0) state.carryOver.push(...buildRequestsFromSerials(bleLoss));
+
+        const decodedSamples = [];
+        for (const [sn, dv] of received) {
+          if (state.rawStore.has(sn)) continue;
+          state.rawStore.set(sn, dv);
+          state.noteStored(sn);
+          recovered += 1;
+          const decoded = decodePacket(dv);
+          for (const s of decoded.samples) decodedSamples.push(s);
+        }
+        if (decodedSamples.length && typeof this.onSamples === 'function') {
+          this._safe(() => this.onSamples(this.deviceId, decodedSamples));
+        }
+        if (state.lossEvents.length > 0) {
+          const events = state.lossEvents.splice(0);
+          if (typeof this.onDataLoss === 'function') {
+            for (const ev of events) {
+              this._safe(() => this.onDataLoss({ ...ev, cumulative: state.dropped, currentSerial: this._lastCurrentSerial }));
+            }
+          }
+        }
+        if (typeof this.onProgress === 'function') {
+          this._safe(() => this.onProgress({
+            collected: state.rawStore.size,
+            lastReceived: received.size,
+            currentSerial: this._lastCurrentSerial,
+            lag: state.carryOver.reduce((sum, [, c]) => sum + c, 0),
+            dropped: state.dropped,
+            draining: true,
+          }));
+        }
+      }
+      return recovered;
     }
 
     async _prepare() {
@@ -623,8 +715,9 @@
         this._queue.drain();
         await this._write(createGetSensorDataRequest(requests));
 
-        const { received, noDataSerials } = await this._receiveResponses(expectedSerials, ONE_SHOT_TIMEOUT_MS);
-        if (!this._running) break;
+        const { received, noDataSerials } = await this._receiveResponses(expectedSerials, ONE_SHOT_TIMEOUT_MS, ONE_SHOT_IDLE_TIMEOUT_MS);
+        // stop() で _running が落ちても、このサイクルで受信済みの分は捨てずに格納・計上する
+        // （捨てると末尾サイクルが黙って欠損する）。未受信分は carryOver に積まれ drain が回収する。
 
         const allMissed = [...expectedSerials].filter((sn) => !received.has(sn));
         const bleLoss = new Set(allMissed.filter((sn) => !noDataSerials.has(sn)));            // 通信ロス→再要求で回復
@@ -683,18 +776,28 @@
       }
     }
 
-    // deadline まで notify を受信し、センサーデータと no-data を分類
-    async _receiveResponses(expectedSerials, timeoutMs) {
+    // deadline まで notify を受信し、センサーデータと no-data を分類。
+    // idleTimeoutMs: 受信開始後に許容する無音。1件でも真の BLE ドロップがあると
+    // 全部揃うまで（＝丸ごと timeoutMs＝5秒）失速していたのを、受信が途切れたら
+    // idleTimeoutMs で「このバーストは終わり」と判断して早期に抜けるよう緩和する（#46）。
+    // 未受信分は carryOver で再要求されるので取りこぼしにはならない。
+    async _receiveResponses(expectedSerials, timeoutMs, idleTimeoutMs) {
       const received = new Map();
       const noDataSerials = new Set();
       const totalExpected = expectedSerials.size;
       const deadline = Date.now() + timeoutMs;
+      const idleMs = idleTimeoutMs != null ? idleTimeoutMs : timeoutMs;
+      let gotAny = false;
 
       while (received.size + noDataSerials.size < totalExpected) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
-        const dv = await this._queue.wait(remaining);
+        // 最初の応答までは全 budget を待つ（応答開始の遅延を早期打ち切りしない）。
+        // 受信し始めたら短い無音（idleMs）でバーストの終わりと判断する。
+        const waitMs = gotAny ? Math.min(remaining, idleMs) : remaining;
+        const dv = await this._queue.wait(waitMs);
         if (dv === null) break;
+        gotAny = true;
 
         const noData = parseNoDataResponse(dv);
         if (noData !== null) {
@@ -756,11 +859,23 @@
     download(filename) {
       const csv = this.toCSV();
       const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       a.download = filename || 'orphe-insole-fifo.csv';
+      a.style.display = 'none';
+      // アンカーを DOM に追加してから click する（DOM 外アンカーの合成 click は
+      // 一部ブラウザで無視されることがある）。
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      // click 直後に同期で revoke すると、ブラウザが blob を読み終える前に URL が
+      // 無効化され、ダウンロードが始まらないことがある（Chromium の既知の競合。
+      // CSV が大きいほど発生しやすく、間欠的な「DLできない」の原因になる）。
+      // 次tick以降でクリーンアップする。
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1000);
     }
 
     // ── 内部ユーティリティ ────────────────────────────────────────────
