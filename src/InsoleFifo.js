@@ -859,11 +859,23 @@
     download(filename) {
       const csv = this.toCSV();
       const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       a.download = filename || 'orphe-insole-fifo.csv';
+      a.style.display = 'none';
+      // アンカーを DOM に追加してから click する（DOM 外アンカーの合成 click は
+      // 一部ブラウザで無視されることがある）。
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      // click 直後に同期で revoke すると、ブラウザが blob を読み終える前に URL が
+      // 無効化され、ダウンロードが始まらないことがある（Chromium の既知の競合。
+      // CSV が大きいほど発生しやすく、間欠的な「DLできない」の原因になる）。
+      // 次tick以降でクリーンアップする。
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1000);
     }
 
     // ── 内部ユーティリティ ────────────────────────────────────────────
