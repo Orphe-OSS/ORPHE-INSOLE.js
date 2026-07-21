@@ -319,6 +319,7 @@ let fifoStopping = false;
 let fifoActiveIds = [];
 let fifoStartedAt = 0;
 let fifoDrainRecovered = 0;   // stop() 後の回収フェーズ（drain）で救えたシリアル数（全デバイス合計）
+let fifoStopStartedAt = 0;    // stop() を呼んだ時刻（drain 中の経過秒表示用）
 
 //--------------------------------------------------
 // フレーム配信: ライブ/デモ共通の入口
@@ -579,13 +580,6 @@ window.onload = function () {
                 // 気づかない欠損を防ぐため、回復不能ロスは必ずコンソールにも残す
                 console.warn(`INSOLE${this.deviceId}: FIFO data loss (${info.reason}): +${info.dropped}, cumulative ${info.cumulative}`);
             };
-            fifos[id].onProgress = function (info) {
-                // stop() 後の回収フェーズ（drain）中はステータスに回収状況を出す
-                if (info.draining) {
-                    fifoStatus.textContent = i18nText('fifoDraining', { recovered: fifoDrainRecovered });
-                    setFifoStatusLoss(false);
-                }
-            };
             fifos[id].onStopped = function (info) {
                 // drain で救えたシリアル数を集計（stopFifo の完了ステータスに反映）
                 fifoDrainRecovered += info.drainRecovered || 0;
@@ -699,7 +693,12 @@ window.onload = function () {
     async function stopFifo(auto = false) {
         if (fifoStopping) return;
         fifoStopping = true;
+        fifoStopStartedAt = performance.now();
         fifoToggle.disabled = true;
+        // 停止直後に即フィードバック（drain の間 UI が固まって見えないように）。
+        // 以降の経過秒つき「回収中」表示は描画ループが継続更新する。
+        setFifoStatusLoss(false);
+        fifoStatus.textContent = i18nText('fifoDraining', { seconds: '0.0' });
         await Promise.all(fifoActiveIds.map(id => fifos[id].stop()));
         fifoRunning = false;
         fifoStopping = false;
@@ -868,25 +867,28 @@ window.onload = function () {
             updateRecordStatus();
 
             // FIFO（ロスレス収録）ステータス / トグル有効化
-            if (fifoRunning) {
+            if (fifoStopping) {
+                // 停止→回収フェーズ（drain）中: 経過秒つきの「回収中」を継続表示（固まって見えないように）
+                fifoStatus.textContent = i18nText('fifoDraining', {
+                    seconds: ((performance.now() - fifoStopStartedAt) / 1000).toFixed(1),
+                });
+                setFifoStatusLoss(false);
+            } else if (fifoRunning) {
                 const sec = (performance.now() - fifoStartedAt) / 1000;
                 const dropped = fifoDroppedTotal();
                 // 欠損を検知したら自動停止（トグルON時）
-                if (dropped > 0 && fifoAutoStop.checked && !fifoStopping) {
+                if (dropped > 0 && fifoAutoStop.checked) {
                     stopFifo(true);
                 }
-                // 収録中の表示（drain 中は onProgress の「回収中」ステータスを上書きしない）
-                if (!fifoStopping) {
-                    const base = i18nText('fifoCollecting', {
-                        packets: fifoCollectedTotal(),
-                        seconds: sec.toFixed(1),
-                        lag: fifoLagMax(),
-                    });
-                    fifoStatus.textContent = dropped > 0
-                        ? `${base} ${i18nText('fifoLossWarning', { dropped })}`
-                        : base;
-                    setFifoStatusLoss(dropped > 0);
-                }
+                const base = i18nText('fifoCollecting', {
+                    packets: fifoCollectedTotal(),
+                    seconds: sec.toFixed(1),
+                    lag: fifoLagMax(),
+                });
+                fifoStatus.textContent = dropped > 0
+                    ? `${base} ${i18nText('fifoLossWarning', { dropped })}`
+                    : base;
+                setFifoStatusLoss(dropped > 0);
             } else {
                 const connected = connectedInsoleIds().length > 0;
                 fifoToggle.disabled = !connected;
