@@ -321,6 +321,13 @@ let fifoStartedAt = 0;
 let fifoDrainRecovered = 0;   // stop() 後の回収フェーズ（drain）で救えたシリアル数（全デバイス合計）
 let fifoStopStartedAt = 0;    // stop() を呼んだ時刻（drain 中の経過秒表示用）
 
+// 歩容解析（Gait Analysis）: デバイスごとの取得器
+const gaits = [null, null];
+const gaitLatest = [null, null];   // 各デバイスの最新の歩容パラメーター(row)
+let gaitRunning = false;
+let gaitActiveIds = [];
+let gaitDisplayDirty = false;
+
 //--------------------------------------------------
 // フレーム配信: ライブ/デモ共通の入口
 //--------------------------------------------------
@@ -588,6 +595,18 @@ window.onload = function () {
                 console.warn(`INSOLE${this.deviceId}: FIFO error`, error);
             };
         }
+
+        // 歩容解析（Gait Analysis）: 1歩ごとの歩容パラメーターを受け取り、最新値を表示に反映
+        if (typeof OrpheInsoleGait !== 'undefined') {
+            gaits[id] = new OrpheInsoleGait(insole);
+            gaits[id].onGait = function (deviceId, row) {
+                gaitLatest[deviceId] = row;
+                gaitDisplayDirty = true;
+            };
+            gaits[id].onError = function (error) {
+                console.warn(`INSOLE${this.deviceId}: Gait error`, error);
+            };
+        }
     }
 
     // 初期のL/Rバッジ・並び（デモは device0=左足 / device1=右足）
@@ -726,6 +745,101 @@ window.onload = function () {
         for (const id of fifoActiveIds) {
             if (fifos[id] && fifos[id].collectedCount > 0) {
                 fifos[id].download(`orphe-insole-fifo-${sides[id]}-${stamp}.csv`);
+            }
+        }
+    });
+
+    // --- 歩容解析（Gait Analysis）UI ---
+    const gaitToggle = document.getElementById('gait_toggle');
+    const gaitDownload = document.getElementById('gait_download');
+    const gaitStatus = document.getElementById('gait_status');
+    const gaitDisplay = document.getElementById('gait_display');
+
+    function gaitStepsTotal() {
+        return gaitActiveIds.reduce((n, id) => n + (gaits[id] ? gaits[id].stepCount : 0), 0);
+    }
+    function updateGaitToggleLabel() {
+        gaitToggle.innerHTML = gaitRunning
+            ? i18nHtml('gaitStopHtml', undefined, '<i class="bi bi-stop-fill"></i> 計測停止')
+            : i18nHtml('gaitStartHtml', undefined, '<i class="bi bi-play-fill"></i> 計測開始');
+    }
+    const gaitFmt = (v, d = 2) => (v === null || v === undefined) ? '-' : v.toFixed(d);
+    function renderGaitDisplay() {
+        if (!gaitRunning || gaitActiveIds.length === 0) { gaitDisplay.innerHTML = ''; return; }
+        gaitDisplay.innerHTML = gaitActiveIds.map((id) => {
+            const badge = `<span class="badge ${sides[id] === 'L' ? 'bg-success' : 'bg-primary'}">${sides[id]}</span>`;
+            const row = gaitLatest[id];
+            if (!row) {
+                return `<div class="col-12 col-md-6"><div class="p-2 rounded border border-secondary small">${badge} <span class="text-muted">${i18nText('gaitWaiting')}</span></div></div>`;
+            }
+            const cells = [
+                [i18nText('gaitColGait'), `${row.gait_type} / ${row.stride_direction}`],
+                [i18nText('gaitColStride'), `${gaitFmt(row.stride_norm_m)} m <span class="text-muted">(h ${gaitFmt(row.stride_z_m)} m)</span>`],
+                [i18nText('gaitColCadence'), `${gaitFmt(row.cadence_hz)} Hz`],
+                [i18nText('gaitColSpeed'), `${gaitFmt(row.speed_mps)} m/s`],
+                [i18nText('gaitColStrike'), `${gaitFmt(row.strike_angle_deg, 1)}° <strong>${row.foot_strike}</strong>`],
+                [i18nText('gaitColPronation'), `${gaitFmt(row.pronation_deg, 1)}° <strong>${row.pronation_type}</strong>`],
+                [i18nText('gaitColDistance'), `${gaitFmt(row.distance_m)} m`],
+                [i18nText('gaitColSteps'), `${gaits[id] ? gaits[id].stepCount : 0}`],
+            ];
+            const tbody = cells.map(([k, v]) => `<tr><th class="fw-normal text-muted" style="width:42%">${k}</th><td>${v}</td></tr>`).join('');
+            return `<div class="col-12 col-md-6"><div class="p-2 rounded border border-secondary">`
+                + `<div class="mb-1">${badge} <span class="text-muted small">step ${row.step_number}</span></div>`
+                + `<table class="table table-sm small mb-0"><tbody>${tbody}</tbody></table></div></div>`;
+        }).join('');
+    }
+    async function startGait() {
+        const ids = connectedInsoleIds().filter((id) => gaits[id]);
+        if (ids.length === 0) return;
+        gaitToggle.disabled = true;
+        gaitDownload.disabled = true;
+        gaitActiveIds = [];
+        for (const id of ids) gaitLatest[id] = null;
+        const results = await Promise.all(ids.map((id) => gaits[id].start()));
+        results.forEach((ok, i) => { if (ok) gaitActiveIds.push(ids[i]); });
+        if (gaitActiveIds.length === 0) {
+            gaitStatus.textContent = i18nText('gaitStatusIdle');
+            gaitToggle.disabled = false;
+            return;
+        }
+        gaitRunning = true;
+        gaitDisplayDirty = true;
+        gaitToggle.disabled = false;
+        gaitToggle.classList.replace('btn-primary', 'btn-danger');
+        updateGaitToggleLabel();
+        renderGaitDisplay();
+    }
+    async function stopGait() {
+        gaitToggle.disabled = true;
+        await Promise.all(gaitActiveIds.map((id) => gaits[id] ? gaits[id].stop() : null));
+        gaitRunning = false;
+        gaitToggle.disabled = false;
+        gaitToggle.classList.replace('btn-danger', 'btn-primary');
+        updateGaitToggleLabel();
+        const steps = gaitStepsTotal();
+        gaitDownload.disabled = steps === 0;
+        gaitStatus.textContent = i18nText('gaitStatusStopped', { steps });
+    }
+    function updateGaitUI() {
+        if (gaitRunning) {
+            gaitStatus.textContent = i18nText('gaitStatusRunning', { steps: gaitStepsTotal() });
+            if (gaitDisplayDirty) { renderGaitDisplay(); gaitDisplayDirty = false; }
+        } else {
+            const connected = connectedInsoleIds().length > 0;
+            gaitToggle.disabled = !connected;
+            if (gaitDownload.disabled) {
+                gaitStatus.textContent = connected ? i18nText('gaitStatusReady') : i18nText('gaitStatusIdle');
+            }
+        }
+    }
+    gaitToggle.addEventListener('click', () => { if (gaitRunning) stopGait(); else startGait(); });
+    gaitDownload.addEventListener('click', () => {
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        for (const id of gaitActiveIds) {
+            if (gaits[id] && gaits[id].stepCount > 0) {
+                gaits[id].download(`orphe-insole-gait-${sides[id]}-${stamp}.csv`);
             }
         }
     });
@@ -897,6 +1011,9 @@ window.onload = function () {
                     fifoStatus.textContent = connected ? i18nText('fifoStatusReady') : i18nText('fifoStatusIdle');
                 }
             }
+
+            // 歩容解析（Gait Analysis）ステータス / トグル有効化 / 表示更新
+            updateGaitUI();
         }
         requestAnimationFrame(loop);
     }

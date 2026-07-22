@@ -10,14 +10,14 @@ ORPHE-INSOLE.js は [ORPHE-CORE.js](https://github.com/Orphe-OSS/ORPHE-CORE.js) 
 |---|---|---|
 | クラス名 | `Orphe` | `OrpheInsole`（`Orphe` エイリアスあり※） |
 | 圧力センサ | なし | **6ch (`gotPress`)** |
-| STEP_ANALYSIS (gait/stride/pronation) | あり | **なし（FW対応待ち）** |
+| STEP_ANALYSIS (gait/stride/pronation) | `gotGait` 等 | **`OrpheInsoleGait`（別characteristicで取得）** |
 | LED制御 | `setLED()` | なし |
 | データ設定 | `begin(type, {range})` | `setDataStreamingMode(1/3/4)` |
-| Notification | STEP_ANALYSIS / SENSOR_VALUES / 両方 | SENSOR_VALUES のみ |
+| Notification | STEP_ANALYSIS / SENSOR_VALUES / 両方 | SENSOR_VALUES ＋ 歩容解析(別char) |
 
 ※ 同一ページに ORPHE-CORE.js が読み込まれていない場合のみ `Orphe` が INSOLE を指します。CORE と併用するページでは必ず `OrpheInsole` を使ってください。
 
-**重要: `gait.direction` や `gotStride` 等を使うコードはINSOLEでは動きません。** 歩行イベントが必要な場合は圧力センサから自前で導出します（後述のパターン参照）。
+**重要: CORE 互換の `gait.direction` / `gotStride` / `gotGait` 等（SENSOR_VALUES 経由の got* ディスパッチ）は INSOLE では呼ばれません。** 歩容解析は **`OrpheInsoleGait`（`src/InsoleGait.js`、後述）** で別 characteristic から取得します（FW が対応済み）。圧力からの自前導出（後述の Pattern 1）も引き続き有効です。
 
 ## Project Overview
 
@@ -28,7 +28,8 @@ ORPHE-INSOLE.js/
 │   ├── InsoleToolkit.js       # Connection UI toolkit
 │   ├── InsoleSimulator.js     # 実機なし開発用シミュレータ（OrpheInsoleSimulator）
 │   ├── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
-│   └── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
+│   ├── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
+│   └── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
 │   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
@@ -191,6 +192,44 @@ CSV は timestamp 昇順・1パケット4行（フレーム5ms間隔）で、参
 `tools/check_tokoroten_data.py`（4行/serial・欠損なしを検証）と互換。
 実機（device 00000161/right）で欠損0のロスレス収録を確認済み。
 showcase の「ロスレス収録（FIFO）」パネルが利用例（収録データで各可視化がライブ更新）。
+
+## 歩容解析（Gait Analysis） - `src/InsoleGait.js`
+
+ORPHE INSOLE の FW（GaitAnalysisCore / StrideAnalyzer）は、歩行中の歩容パラメーター
+（ストライド・立脚期/遊脚期・接地パターン・プロネーション等）をリアルタイムに計算し、
+**Gait Analysis サービスの Step Analysis characteristic**（`4EB776DC-...`、コアSDKの
+`ORPHE_STEP_ANALYSIS`）で公開している。接続してアクティブ状態になると FW が **50Hz で
+自動 notify** するので、subscribe するだけでよい（read モード変更は不要。characteristic は
+`ORPHE_OTHER_SERVICE` 配下で optionalServices に既に含まれる）。
+
+- クラス: `OrpheInsoleGait`（`src/InsoleGait.js`。コアSDKとは疎結合、純粋関数は Node でもテスト可）
+- Python 参照実装 `insole_client` の `read_gait_analysis` の移植
+- **`begin()` 済み（SENSOR_VALUES 通知が開始しアクティブ状態）**の OrpheInsole を渡す
+
+```javascript
+const gait = new OrpheInsoleGait(insole);           // begin() 済みであること
+gait.onGait = function (deviceId, row) {
+  // 1歩ごとに overview+stride+pronation を集約した歩容パラメーター:
+  // row: { step_number, gait_type, stride_direction, stride_norm_m, stride_z_m(接地高さ),
+  //        duration_s, cadence_hz, speed_mps, foot_angle_deg, strike_angle_deg, foot_strike,
+  //        pronation_deg, pronation_type, landing_force, distance_m, calorie, ... }
+  console.log(row.step_number, row.gait_type, row.stride_norm_m, row.foot_strike, row.pronation_type);
+};
+gait.onMotion = function (deviceId, m) { /* quat/delta/歩行サイクル 〜50Hz（任意） */ };
+await gait.start();     // STEP_ANALYSIS characteristic を subscribe
+// ... 歩行 ...
+await gait.stop();
+gait.download('gait.csv');   // 参照実装互換CSV（1歩1行）
+```
+
+- パケット（20byte, big-endian）: `byte[0]=51`, `byte[1]=`サブヘッダー（0=概要 / 1=ストライド /
+  2=プロネーション / 4=motion）, `byte[2..3]=step_number`。overview/stride/pronation は取りこぼし
+  対策で **2回ずつ**送られるため `GaitAggregator` が step 単位で集約・重複除去する（3種揃った歩だけ `onGait`）。
+- 接地パターン `foot_strike`（heelStrike/midfoot/forefoot）と `pronation_type`
+  （neutral/over/severeOver/under/severeUnder）は `orphe_core_sdk` と同じしきい値で分類。
+- 派生指標: `duration_s=stance+swing`, `stride_norm_m=|stride|`, `cadence_hz=1/duration`, `speed_mps=norm/duration`。
+- 半精度(float16)フィールド（calorie / quat / delta）は内蔵の `f16be` でデコード（外部依存なし）。
+- showcase の「歩容解析（Gait Analysis）」パネルが利用例。
 
 ## センサ座標系と圧力センサ配置（公式仕様）
 
@@ -460,12 +499,16 @@ insole.gotPress = function(press) { console.log(this.id); };  // 0 or 1
 ### 3. CORE専用APIを呼ぶ
 
 ```javascript
-// WRONG - INSOLEに存在しない
+// WRONG - INSOLEに存在しない / 呼ばれない
 insole.setLED(1, 0);
 insole.begin('STEP_ANALYSIS');         // SENSOR_VALUESに強制される
-insole.gotGait = function(gait) {};    // 呼び出されない（FW対応待ち）
+insole.gotGait = function(gait) {};    // SENSOR_VALUES経由の got* では呼ばれない
 
-// CORRECT - 歩行イベントは圧力から導出する（Pattern 1）
+// CORRECT - 歩容解析は OrpheInsoleGait で別characteristicから取得する（後述）
+const gait = new OrpheInsoleGait(insole);
+gait.onGait = function(deviceId, row) { /* row.stride_norm_m, row.foot_strike, ... */ };
+await gait.start();
+// もしくは 歩行イベントを圧力から導出する（Pattern 1）
 ```
 
 ### 4. 圧力生値を体重等の物理量として扱う

@@ -383,6 +383,26 @@ insole.gotEuler = function (euler) {
           </div>
         </div>
       </div>
+
+      <!-- 歩容解析（Gait Analysis） -->
+      <div class="row g-4 mt-1">
+        <div class="col-12">
+          <div class="fifo-card p-3 rounded border border-secondary">
+            <h3 class="h6 mb-1"><i class="bi bi-person-walking"></i> <span data-i18n="gaitTitle">歩容解析（Gait Analysis）</span></h3>
+            <p class="small text-muted mb-2" data-i18n-html="gaitDesc">
+              ファームウェアが歩行中にリアルタイム計算する<strong>歩容パラメーター</strong>（ストライド・立脚期/遊脚期・接地パターン・プロネーション等）を取得します。
+              専用の characteristic を 50Hz で subscribe するだけで、1歩ごとに集約された値が届きます（<code>read_gait_analysis</code> 相当）。
+              歩いて（その場足踏みでも可）ください。
+            </p>
+            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+              <button id="gait_toggle" class="btn btn-primary" disabled><i class="bi bi-play-fill"></i> <span data-i18n="gaitStart">計測開始</span></button>
+              <button id="gait_download" class="btn btn-outline-light" disabled><i class="bi bi-download"></i> <span data-i18n="gaitDownload">CSV保存</span></button>
+              <span id="gait_status" class="small text-muted" data-i18n="gaitStatusIdle">実機を接続すると使用できます</span>
+            </div>
+            <div id="gait_display" class="row g-2"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 8. 次のステップ -->
@@ -523,6 +543,7 @@ insole.gotEuler = function (euler) {
   <script src="../../src/InsoleUtils.js"></script>
   <script src="../../src/InsoleToolkit.js"></script>
   <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
 
   <script src="./i18n.js"></script>
   <script src="./demo-data.js"></script>

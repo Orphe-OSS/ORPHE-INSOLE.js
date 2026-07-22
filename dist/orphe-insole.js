@@ -362,6 +362,10 @@ class OrpheInsole {
     this.dataCharacteristic = null;// 最後に操作した characteristic（後方互換のために残す参照）
     this._characteristics = {}; // uuid名 -> characteristic。read/write/notify は必ずこちらを参照する
     this.dataChangedEventHandlerMap = {}; // イベントハンドラを保持するマップ
+    // 自動再接続の成功後に呼ぶ内部フック（ユーザ向け on* callback とは別系統）。
+    // SENSOR_VALUES 以外の characteristic（例: STEP_ANALYSIS/OrpheInsoleGait）を
+    // 再購読するのに使う。onReconnectSuccess を上書きせずに再購読できるようにするため。
+    this._afterReconnectSuccess = [];
     this.hashUUID = {}; // UUIDを保持するハッシュ
     this.hashUUID_lastConnected; // 最後に接続したUUIDを保持する
     this.id = id;
@@ -782,6 +786,11 @@ class OrpheInsole {
             elapsedMs: Date.now() - startedAt,
             result,
           });
+          // SENSOR_VALUES 以外の characteristic を再購読する内部フック（例: OrpheInsoleGait）。
+          // ユーザの onReconnectSuccess を壊さないよう別系統で呼ぶ。
+          for (const hook of this._afterReconnectSuccess.slice()) {
+            try { hook(); } catch (hookError) { this._reportError(hookError); }
+          }
           return;
         }
 
@@ -1459,6 +1468,13 @@ class OrpheInsole {
     // directly, bypassing the realtime got* dispatch. See src/InsoleFifo.js.
     if (uuid === 'SENSOR_VALUES' && typeof this._fifoNotifySink === 'function') {
       this._fifoNotifySink(data);
+      return;
+    }
+
+    // 歩容解析(STEP_ANALYSIS characteristic)の notify は OrpheInsoleGait のデコーダが
+    // 直接消費する（got* のリアルタイムディスパッチはバイパス）。See src/InsoleGait.js.
+    if (uuid === 'STEP_ANALYSIS' && typeof this._gaitNotifySink === 'function') {
+      this._gaitNotifySink(data);
       return;
     }
 

@@ -526,6 +526,128 @@ export declare class OrpheInsoleFifo {
 
 type OrpheInsoleFifoConstructor = typeof OrpheInsoleFifo;
 
+// ── InsoleGait (src/InsoleGait.js) — 歩容解析(StrideAnalyzer)のリアルタイム取得 ──
+
+export type GaitType = 'none' | 'walk' | 'run' | 'stance' | 'unknown';
+export type StrideDirection = 'none' | 'forward' | 'backward' | 'inside' | 'outside' | 'unknown';
+export type FootStrike = 'none' | 'heelStrike' | 'midfoot' | 'forefoot';
+export type PronationType = 'none' | 'neutral' | 'over' | 'severeOver' | 'under' | 'severeUnder';
+
+export interface InsoleGaitOverview {
+    type: 'overview';
+    subheader: 0;
+    step_number: number;
+    gait_type: GaitType;
+    stride_direction: StrideDirection;
+    calorie: number | null;
+    distance_m: number | null;
+    stance_phase_s: number | null;
+    swing_phase_s: number | null;
+}
+export interface InsoleGaitStride {
+    type: 'stride';
+    subheader: 1;
+    step_number: number;
+    foot_angle: number | null;
+    stride_x: number | null;
+    stride_y: number | null;
+    stride_z: number | null;
+}
+export interface InsoleGaitPronation {
+    type: 'pronation';
+    subheader: 2;
+    step_number: number;
+    landing_force: number | null;
+    pronation_x: number | null;
+    pronation_y: number | null;
+    pronation_z: number | null;
+}
+export interface InsoleGaitMotion {
+    type: 'motion';
+    subheader: 4;
+    step_number: number;
+    gait_cycle_phase: number;
+    gait_cycle_period: number;
+    gait_cycle_event: number;
+    quat_w: number | null;
+    quat_x: number | null;
+    quat_y: number | null;
+    quat_z: number | null;
+    delta_x: number | null;
+    delta_y: number | null;
+    delta_z: number | null;
+}
+export type InsoleGaitPacket = InsoleGaitOverview | InsoleGaitStride | InsoleGaitPronation | InsoleGaitMotion;
+
+/** 1歩ぶんに集約した歩容パラメーター（overview + stride + pronation + 派生指標） */
+export interface InsoleGaitRow {
+    step_number: number;
+    gait_type: GaitType;
+    stride_direction: StrideDirection;
+    distance_m: number | null;
+    stance_phase_s: number | null;
+    swing_phase_s: number | null;
+    duration_s: number | null;
+    cadence_hz: number | null;
+    speed_mps: number | null;
+    foot_angle_deg: number | null;
+    stride_x_m: number | null;
+    stride_y_m: number | null;
+    stride_z_m: number | null;
+    stride_norm_m: number | null;
+    landing_force: number | null;
+    strike_angle_deg: number | null;
+    foot_strike: FootStrike;
+    pronation_deg: number | null;
+    pronation_type: PronationType;
+    pronation_z_deg: number | null;
+    calorie: number | null;
+}
+
+export interface InsoleGaitOptions {
+    /** STEP_ANALYSIS の service UUID（既定は insole.ORPHE_OTHER_SERVICE） */
+    serviceUUID?: string;
+    /** STEP_ANALYSIS の characteristic UUID（既定は insole.ORPHE_STEP_ANALYSIS） */
+    characteristicUUID?: string;
+}
+
+export declare class OrpheInsoleGait {
+    constructor(insole: OrpheInsole, options?: InsoleGaitOptions);
+    readonly deviceId: number;
+    readonly stepCount: number;
+    readonly isRunning: boolean;
+    rows: InsoleGaitRow[];
+    /** 1歩ごとの歩容パラメーター（overview+stride+pronation 集約後） */
+    onGait: ((deviceId: number, row: InsoleGaitRow) => void) | null;
+    /** motion（クォータニオン・微小変位・歩行サイクル、〜50Hz） */
+    onMotion: ((deviceId: number, motion: InsoleGaitMotion) => void) | null;
+    /** デコード済みの全パケット */
+    onRaw: ((deviceId: number, packet: InsoleGaitPacket) => void) | null;
+    onError: ((error: unknown) => void) | null;
+    /** 歩容解析の notify を開始（SENSOR_VALUES は begin() 済みであること） */
+    start(): Promise<boolean>;
+    /** 歩容解析の notify を停止 */
+    stop(): Promise<void>;
+    /** 集めた歩容パラメーターを CSV 文字列にする */
+    toCSV(): string;
+    /** ブラウザで CSV をダウンロードする */
+    download(filename?: string): void;
+
+    static readonly STEP_ANALYSIS_CHAR_UUID: string;
+    static readonly CSV_HEADER: string;
+    static decodeAnalysisPacket(dv: DataView): InsoleGaitPacket | null;
+    static buildGaitRow(stepNumber: number, parts: { overview: unknown; stride: unknown; pronation: unknown }): InsoleGaitRow;
+    static strideNorm(stride: { stride_x: number | null; stride_y: number | null; stride_z: number | null }): number | null;
+    static footStrikeToStr(strikeAngle: number | null): FootStrike;
+    static pronationToStr(pronationY: number | null): PronationType;
+    static gaitTypeToStr(value: number): GaitType;
+    static strideDirectionToStr(value: number): StrideDirection;
+    static f16be(dv: DataView, offset: number): number;
+    static gaitRowToCsv(row: InsoleGaitRow): string;
+}
+
+type OrpheInsoleGaitConstructor = typeof OrpheInsoleGait;
+
 export interface BuildInsoleToolkitOptions extends InsoleBeginOptions {
     /** true にすると実機の代わりに OrpheInsoleSimulator を使う（要 InsoleSimulator.js） */
     simulator?: boolean;
@@ -548,6 +670,7 @@ declare global {
     var Orphe: OrpheInsoleConstructor;
     var OrpheInsoleSimulator: OrpheInsoleSimulatorConstructor;
     var OrpheInsoleFifo: OrpheInsoleFifoConstructor;
+    var OrpheInsoleGait: OrpheInsoleGaitConstructor;
     var insoles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var bles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var cores: Array<OrpheInsole | OrpheInsoleSimulator>;
