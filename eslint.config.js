@@ -26,6 +26,7 @@ module.exports = [
                 OrpheInsole: 'writable',
                 OrpheInsoleSimulator: 'readonly',
                 OrpheInsoleFifo: 'readonly',
+                OrpheInsoleGait: 'readonly',
                 OrpheInsoleUtils: 'readonly',
                 Orphe: 'writable',
                 insoles: 'writable',
