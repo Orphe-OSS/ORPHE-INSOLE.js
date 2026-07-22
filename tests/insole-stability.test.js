@@ -1,6 +1,7 @@
 // v1.1.0 で追加した接続安定化まわりのユニットテスト。
 // BLE 実機を使わずに検証できる純粋ロジックのみを対象とする。
 const assert = require('node:assert/strict');
+const { waitFor } = require('./async-test-utils.js');
 
 // ブラウザ専用グローバルの最小モック（require 時の参照エラー回避）
 globalThis.performance = globalThis.performance || { now: () => Date.now() };
@@ -151,7 +152,8 @@ async function main() {
     target.onError = (error) => { errors.push(error.message); };
 
     const reconnecting = target._startAutoReconnect();
-    while (!resolveAttemptCallback || !resolveBegin) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => resolveAttemptCallback && resolveBegin,
+      'auto-reconnect callback and begin gates');
     resolveAttemptCallback();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(target._lastAutoReconnectError, null, 'callback error is not stored as transport error');
@@ -325,9 +327,8 @@ async function main() {
     sensorChar.holdNextStartNotifications();
     const notifyPromise = target.startNotify('SENSOR_VALUES');
     // startNotifications() の待機点までチェーンを進める
-    while (!sensorChar.releaseStartNotifications) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+    await waitFor(() => sensorChar.releaseStartNotifications,
+      'SENSOR_VALUES startNotifications gate');
     await target.read('DEVICE_INFORMATION'); // 通知確立中に割り込む read
     sensorChar.releaseStartNotifications();
     await notifyPromise;
@@ -399,7 +400,7 @@ async function main() {
     target.onError = () => { };
 
     const oldStart = target.startNotify('STEP_ANALYSIS');
-    while (!oldChar.releaseStart) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => oldChar.releaseStart, 'old GATT startNotifications gate');
     target._invalidateNotifyOperations(); // 物理切断相当
     selected = currentChar;
     await target.startNotify('STEP_ANALYSIS');
@@ -411,7 +412,7 @@ async function main() {
     assert.equal(currentChar.listeners.length, 1, '現listenerを維持');
 
     const oldStop = target.stopNotify('STEP_ANALYSIS');
-    while (!currentChar.releaseStop) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => currentChar.releaseStop, 'current GATT stopNotifications gate');
     target._invalidateNotifyOperations(); // さらに再接続
     selected = newestChar;
     await target.startNotify('STEP_ANALYSIS');
@@ -486,7 +487,7 @@ async function main() {
       const stopGate = deferred();
       characteristic.stopGate = stopGate;
       const stopping = target.stopNotify('STEP_ANALYSIS');
-      while (characteristic.stopCalls === 0) await new Promise((resolve) => setImmediate(resolve));
+      await waitFor(() => characteristic.stopCalls > 0, 'issued stopNotifications call');
 
       const starting = target.startNotify('STEP_ANALYSIS');
       await new Promise((resolve) => setImmediate(resolve));
@@ -507,7 +508,7 @@ async function main() {
       const startGate = deferred();
       characteristic.startGate = startGate;
       const starting = target.startNotify('STEP_ANALYSIS');
-      while (characteristic.startCalls === 0) await new Promise((resolve) => setImmediate(resolve));
+      await waitFor(() => characteristic.startCalls > 0, 'issued startNotifications call');
 
       const stopping = target.stopNotify('STEP_ANALYSIS');
       await new Promise((resolve) => setImmediate(resolve));

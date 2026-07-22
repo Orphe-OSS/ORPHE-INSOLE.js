@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const Gait = require('../src/InsoleGait.js');
+const { waitFor } = require('./async-test-utils.js');
 
 function near(actual, expected, tol, label) {
   assert.ok(actual !== null && Math.abs(actual - expected) <= tol, `${label}: ${actual} !~= ${expected}`);
@@ -451,7 +452,7 @@ function makeMockInsole() {
     const oldStart = gait.start();
     await gait.stop();
     startGate.resolve();
-    while (mock.calls.stopNotify === 0) await nextTurn();
+    await waitFor(() => mock.calls.stopNotify > 0, 'late start compensation to call stopNotify');
 
     assert.equal(await gait.start(), false, '補償stop中のrestartは曖昧な成功にしない');
     assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
@@ -490,7 +491,7 @@ function makeMockInsole() {
     assert.equal(mock.calls.startNotify, 1, '同一characteristicへstartNotifyを重ねない');
 
     startGate.resolve();
-    while (mock.calls.stopNotify < 1) await nextTurn();
+    await waitFor(() => mock.calls.stopNotify >= 1, 'first owner cleanup to call stopNotify');
     transitionError = null;
     assert.equal(await g2.start(), false, '補償stop完了までは次のownerを開始しない');
     assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
@@ -572,7 +573,7 @@ function makeMockInsole() {
     const oldStart = g1.start();
     await g1.stop();
     startGates[0].resolve();
-    while (mock.calls.stopNotify < 1) await nextTurn();
+    await waitFor(() => mock.calls.stopNotify >= 1, 'old generation cleanup to call stopNotify');
     const oldCleanupSet = mock._gaitNotifyCleanupPromises;
     assert.equal(oldCleanupSet.size, 1);
 
@@ -587,7 +588,7 @@ function makeMockInsole() {
     const currentStart = g2.start();
     await g2.stop();
     startGates[1].resolve();
-    while (mock.calls.stopNotify < 2) await nextTurn();
+    await waitFor(() => mock.calls.stopNotify >= 2, 'current generation cleanup to call stopNotify');
     const currentCleanupSet = mock._gaitNotifyCleanupPromises;
     assert.ok(currentCleanupSet instanceof Set);
     assert.notEqual(currentCleanupSet, oldCleanupSet);
@@ -777,7 +778,10 @@ function makeMockInsole() {
   }
 
   console.log('insole-gait.test.js passed');
-})().catch((error) => { console.error(error); process.exit(1); });
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 // step 300 の overview/stride/pronation 3種を sink(DataView) 経由で流し込む
 function completeStepViaSink(sink) {
