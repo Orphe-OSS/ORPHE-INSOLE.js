@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>ORPHE INSOLE PR #50 歩容解析 実機バリデーション</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <p class="eyebrow">ORPHE-INSOLE.js / PR #50</p>
+    <h1>歩容解析 実機バリデーション</h1>
+    <p class="lead">
+      生の20 byte通知、SDKデコード、1歩単位の集約、左右の歩容値を同時に記録し、
+      「実装の整合性」と「工学的な妥当性」を分けて判定します。
+    </p>
+    <div class="hero-badges">
+      <span>codex/pr50-gait-lifecycle-fix</span><span>Mac Chrome / Edge</span><span>ORPHE INSOLE 1足</span><span>mode 4</span><span>ローカル実行</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="environment-warning" class="banner fail" hidden></div>
+    <aside class="notice">
+      <strong>評価の境界:</strong>
+      このページはバイト解釈・集約・内部計算と、通常歩行として極端に不自然でないかを確認する開発用ツールです。
+      医療機器としての性能、診断能力、プロネーション等の臨床的正確性を示すものではありません。
+      外部基準との妥当性評価には動画、モーションキャプチャ、計測歩行路等が別途必要です。
+    </aside>
+
+    <section id="self-test-section" class="panel">
+      <div class="section-heading">
+        <div><span class="step">0</span><h2>BLE不要の実装セルフテスト</h2></div>
+        <button id="self-test-run" class="secondary">再実行</button>
+      </div>
+      <p>
+        PRの実コードを合成パケットと遅延モックで検査します。ここでのFAILは実機や電波環境ではなく、
+        実装側の修正候補です。
+      </p>
+      <div id="self-test-summary" class="banner neutral">実行待ち</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>テスト</th><th>結果</th><th>観測値</th><th>期待値</th></tr></thead>
+          <tbody id="self-test-results"><tr><td colspan="4">読み込み中…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div><span class="step">1</span><h2>左右2台を接続</h2></div>
+      </div>
+      <p>
+        それぞれの「接続」ボタンでBluetooth chooserが開きます。同じデバイスを2回選ばず、左右を1台ずつ選択してください。
+        mount_positionからL/Rを自動判定します。
+      </p>
+      <div class="device-grid">
+        <article class="device-card">
+          <div class="device-title"><h3>INSOLE 1</h3><span id="device-state-0" class="pill neutral">disconnected</span></div>
+          <div class="device-actions"><button id="connect-0" class="primary">接続してmode 4開始</button><button id="disconnect-0" class="ghost" disabled>切断</button></div>
+          <dl class="metrics">
+            <div><dt>mount</dt><dd id="device-side-0">?</dd></div><div><dt>battery</dt><dd id="device-battery-0">-</dd></div>
+            <div><dt>press</dt><dd id="device-press-0">0 Hz</dd></div><div><dt>gait notify</dt><dd id="device-gait-rate-0">-</dd></div>
+            <div><dt>raw packets</dt><dd id="device-raw-0">0</dd></div><div><dt>gait rows</dt><dd id="device-rows-0">0</dd></div>
+            <div><dt>latest step</dt><dd id="device-step-0">-</dd></div><div><dt>stride</dt><dd id="device-stride-0">-</dd></div>
+            <div><dt>cadence</dt><dd id="device-cadence-0">-</dd></div><div><dt>speed</dt><dd id="device-speed-0">-</dd></div>
+            <div class="wide"><dt>strike / pronation</dt><dd id="device-class-0">-</dd></div>
+          </dl>
+        </article>
+        <article class="device-card">
+          <div class="device-title"><h3>INSOLE 2</h3><span id="device-state-1" class="pill neutral">disconnected</span></div>
+          <div class="device-actions"><button id="connect-1" class="primary">接続してmode 4開始</button><button id="disconnect-1" class="ghost" disabled>切断</button></div>
+          <dl class="metrics">
+            <div><dt>mount</dt><dd id="device-side-1">?</dd></div><div><dt>battery</dt><dd id="device-battery-1">-</dd></div>
+            <div><dt>press</dt><dd id="device-press-1">0 Hz</dd></div><div><dt>gait notify</dt><dd id="device-gait-rate-1">-</dd></div>
+            <div><dt>raw packets</dt><dd id="device-raw-1">0</dd></div><div><dt>gait rows</dt><dd id="device-rows-1">0</dd></div>
+            <div><dt>latest step</dt><dd id="device-step-1">-</dd></div><div><dt>stride</dt><dd id="device-stride-1">-</dd></div>
+            <div><dt>cadence</dt><dd id="device-cadence-1">-</dd></div><div><dt>speed</dt><dd id="device-speed-1">-</dd></div>
+            <div class="wide"><dt>strike / pronation</dt><dd id="device-class-1">-</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div><span class="step">2</span><h2>通信スモークテスト</h2></div>
+        <button id="smoke-run" class="primary" disabled>2 cycles × 3秒を実行</button>
+      </div>
+      <p>
+        STEP_ANALYSISを開始→停止→再開始し、通知レート、SENSOR_VALUESの継続、停止後コールバック、
+        リスナー二重化を短時間で確認します。INSOLEを履き、静止したままで実行できます。
+      </p>
+      <p id="smoke-status" class="inline-status">未実行</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>デバイス</th><th>cycle</th><th>結果</th><th>観測値</th></tr></thead>
+          <tbody id="smoke-results"><tr><td colspan="4">未実行</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div><span class="step">3</span><h2>時限式・直線歩行テスト</h2></div>
+      </div>
+      <p>
+        開始音の後、あらかじめ測った直線コースを自然な速度で歩いてください。Macはスタート地点に置いたままで構いません。
+        設定時間後に自動停止音が鳴ります。停止時に生じやすい最終歩は、記録には残しつつ妥当性集計から既定で1行除外します。
+      </p>
+      <div class="settings-grid">
+        <label>開始カウントダウン [s]<input id="countdown-seconds" type="number" min="0" max="30" step="1" value="5"></label>
+        <label>計測時間 [s]<input id="capture-seconds" type="number" min="5" max="300" step="1" value="60"></label>
+        <label>実測コース距離 [m]<input id="course-distance" type="number" min="0" max="1000" step="0.1" value="10"></label>
+        <label>末尾除外 [rows/足]<input id="exclude-last" type="number" min="0" max="5" step="1" value="1"></label>
+        <label>手動で数えた総歩数（任意）<input id="manual-steps" type="number" min="1" step="1" placeholder="例: 16"></label>
+      </div>
+      <div class="button-row">
+        <button id="walk-start" class="primary" disabled>カウントダウンして開始</button>
+        <button id="walk-stop" class="danger" disabled>今すぐ停止・判定</button>
+        <button id="reanalyze" class="secondary">入力値で再判定</button>
+        <span id="walk-status" class="inline-status">接続後に開始できます</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div><span class="step">4</span><h2>判定結果</h2></div>
+      </div>
+      <div id="report-summary" class="banner neutral">歩行計測後に表示されます</div>
+      <div id="report-device-summaries" class="summary-grid"></div>
+      <p class="privacy-note">
+        segment distanceは、最初と最後の解析対象rowに含まれるFW累積距離の差です。開始・終了端の歩幅は含まれないため、
+        短い試行では実測コースより小さく出ることがあります。
+      </p>
+      <div class="table-wrap tall">
+        <table>
+          <thead><tr><th>対象</th><th>チェック</th><th>結果</th><th>観測値</th><th>期待値</th></tr></thead>
+          <tbody id="report-checks"><tr><td colspan="5">未計測</td></tr></tbody>
+        </table>
+      </div>
+      <div class="button-row exports">
+        <button id="export-json" class="secondary" disabled>JSON証跡</button>
+        <button id="export-rows" class="secondary" disabled>歩容rows CSV</button>
+        <button id="export-raw" class="secondary" disabled>raw 20-byte CSV</button>
+        <button id="copy-markdown" class="secondary" disabled>PR用Markdownをコピー</button>
+      </div>
+      <p class="privacy-note">
+        エクスポートにはBluetooth device IDとdevice nameを含めません。公開PRに添付する前にも内容を確認してください。
+      </p>
+    </section>
+
+    <section class="panel optional">
+      <div class="section-heading">
+        <div><span class="step">5</span><h2>60秒・切断再接続テスト</h2></div>
+        <button id="reconnect-start" class="primary" disabled>60秒テストを開始</button>
+      </div>
+      <ol>
+        <li>INSOLEを履いて「60秒テストを開始」を押し、開始音の後にMacから離れます。</li>
+        <li>少なくとも1回 <code>disconnected / reconnect attempt</code> が出る距離まで離れ、10秒ほど待ちます。</li>
+        <li>INSOLEを動かして起こしながらMacへ戻り、<code>reconnected</code> を確認します。</li>
+        <li>戻った後に数歩歩きます。press、gait raw、完成したgait rowのすべてが再開すればPASSです。</li>
+      </ol>
+      <p id="reconnect-status" class="inline-status">未実行</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>デバイス</th><th>切断 / 再接続</th><th>復旧後データ</th><th>結果</th></tr></thead>
+          <tbody id="reconnect-results"><tr><td colspan="4">未実行</td></tr></tbody>
+        </table>
+      </div>
+      <p class="privacy-note">
+        テストページでは1回8秒待ち＋2秒間隔で最大10回まで再試行し、2回目以降のログに直前の接続エラーを表示します。
+        計測停止がBLE処理に5秒以上ブロックされた場合も、証跡を失わず判定処理を継続します。
+      </p>
+      <p>
+        この経路はPR #50のライフサイクル上の重要なレビュー項目です。セルフテストの
+        「explicit restart after reconnect」と合わせて判定してください。
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><h2>イベントログ</h2></div></div>
+      <div id="event-log" class="event-log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORPHE INSOLE gait-analysis engineering validation — local data stays in this browser until you export it.</p>
+  </footer>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
+  <script src="metrics.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
