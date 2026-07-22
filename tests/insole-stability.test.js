@@ -69,6 +69,98 @@ async function main() {
   insole._disableAutoReconnect();
   assert.equal(insole._autoReconnectEnabled, false);
 
+  // ── 自動再接続の内部復旧をユーザ callback の例外から隔離する ──
+  {
+    const target = new OrpheInsole(0);
+    const order = [];
+    const errors = [];
+    let failedCalls = 0;
+    target._autoReconnectEnabled = true;
+    target._autoReconnectOptions = { reconnectMaxAttempts: 1, reconnectIntervalMs: 1 };
+    target._restoreAutoReconnectDevice = async () => true;
+    target.begin = async () => 'reconnected';
+    target._afterReconnectSuccess.push(() => { order.push('internal-hook'); });
+    target.onReconnectAttempt = () => {
+      order.push('attempt');
+      throw new Error('attempt callback failed');
+    };
+    target.onReconnectSuccess = () => {
+      order.push('public-success');
+      throw new Error('success callback failed');
+    };
+    target.onReconnectFailed = () => { failedCalls++; };
+    target.onError = (error) => { errors.push(error.message); };
+
+    await target._startAutoReconnect();
+    assert.deepEqual(order, ['attempt', 'internal-hook', 'public-success'],
+      '内部再購読を公開 success callback より先に起動');
+    assert.equal(target._autoReconnectInProgress, false);
+    assert.equal(failedCalls, 0, 'callback throw で接続成功を失敗扱いにしない');
+    assert.deepEqual(errors, ['attempt callback failed', 'success callback failed']);
+  }
+
+  {
+    const target = new OrpheInsole(0);
+    const errors = [];
+    target._autoReconnectEnabled = true;
+    target._autoReconnectOptions = { reconnectMaxAttempts: 1, reconnectIntervalMs: 1 };
+    target._restoreAutoReconnectDevice = async () => true;
+    target.begin = async () => { throw new Error('transport failed'); };
+    target.onReconnectAttempt = () => { };
+    target.onReconnectFailed = () => { throw new Error('failed callback failed'); };
+    target.onError = (error) => { errors.push(error.message); };
+
+    await target._startAutoReconnect();
+    assert.equal(target._autoReconnectInProgress, false);
+    assert.deepEqual(errors, ['failed callback failed', 'transport failed'],
+      'failed callback の例外も transport 結果から隔離');
+  }
+
+  {
+    const target = new OrpheInsole(0);
+    const logged = [];
+    const originalError = console.error;
+    console.error = (...args) => { logged.push(args); };
+    try {
+      target.onError = async () => { throw new Error('async onError failed'); };
+      target._safeReportError(new Error('source error'), 'test');
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(logged.length, 1, 'async onError rejection is consumed');
+      assert.match(String(logged[0][1]), /async onError failed/);
+    } finally {
+      console.error = originalError;
+    }
+  }
+
+  {
+    // 遅れてrejectした公開callbackを、再接続transportの失敗原因へ混入させない
+    const target = new OrpheInsole(0);
+    let resolveAttemptCallback;
+    let resolveBegin;
+    let failedError = null;
+    const errors = [];
+    target._autoReconnectEnabled = true;
+    target._autoReconnectOptions = { reconnectMaxAttempts: 1, reconnectIntervalMs: 1 };
+    target._restoreAutoReconnectDevice = async () => true;
+    target.onReconnectAttempt = async () => {
+      await new Promise((resolve) => { resolveAttemptCallback = resolve; });
+      throw new Error('late callback failure');
+    };
+    target.begin = async () => new Promise((resolve) => { resolveBegin = resolve; });
+    target.onReconnectFailed = (info) => { failedError = info.error; };
+    target.onError = (error) => { errors.push(error.message); };
+
+    const reconnecting = target._startAutoReconnect();
+    while (!resolveAttemptCallback || !resolveBegin) await new Promise((resolve) => setImmediate(resolve));
+    resolveAttemptCallback();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(target._lastAutoReconnectError, null, 'callback error is not stored as transport error');
+    resolveBegin(false);
+    await reconnecting;
+    assert.equal(failedError.message, 'Auto reconnect attempt failed.');
+    assert.deepEqual(errors, ['late callback failure', 'Auto reconnect attempt failed.']);
+  }
+
   // ── _reportError は自動再接続中に onError を抑制する ───────────
   let errorCount = 0;
   insole.onError = () => { errorCount++; };
@@ -264,6 +356,209 @@ async function main() {
       'SENSOR_VALUES characteristic must be fetched once and cached');
     assert.equal(env.stats.characteristicRequests[target.ORPHE_DEVICE_INFORMATION], 1,
       'DEVICE_INFORMATION characteristic must be fetched once and cached');
+  }
+
+  // シナリオB2: 古いGATTの非同期notify完了が、新しいGATTのhandlerを上書き/削除しない
+  {
+    function notifyChar(name, holdStart = false, holdStop = false) {
+      let releaseStart = null;
+      let releaseStop = null;
+      const listeners = [];
+      const char = {
+        name,
+        listeners,
+        startNotifications() {
+          if (!holdStart) return Promise.resolve(this);
+          holdStart = false;
+          return new Promise((resolve) => { releaseStart = () => resolve(this); });
+        },
+        stopNotifications() {
+          if (!holdStop) return Promise.resolve(this);
+          holdStop = false;
+          return new Promise((resolve) => { releaseStop = () => resolve(this); });
+        },
+        addEventListener(_type, handler) { listeners.push(handler); },
+        removeEventListener(_type, handler) {
+          const i = listeners.indexOf(handler);
+          if (i >= 0) listeners.splice(i, 1);
+        },
+        get releaseStart() { return releaseStart; },
+        get releaseStop() { return releaseStop; },
+      };
+      return char;
+    }
+
+    const target = new OrpheInsole(0);
+    const oldChar = notifyChar('old', true, false);
+    const currentChar = notifyChar('current', false, true);
+    const newestChar = notifyChar('newest', false, false);
+    let selected = oldChar;
+    target.scan = async () => { };
+    target.connectGATT = async () => { };
+    target._characteristicFor = () => selected;
+    target.onError = () => { };
+
+    const oldStart = target.startNotify('STEP_ANALYSIS');
+    while (!oldChar.releaseStart) await new Promise((resolve) => setImmediate(resolve));
+    target._invalidateNotifyOperations(); // 物理切断相当
+    selected = currentChar;
+    await target.startNotify('STEP_ANALYSIS');
+    assert.equal(currentChar.listeners.length, 1);
+
+    oldChar.releaseStart();
+    await oldStart;
+    assert.equal(oldChar.listeners.length, 0, '古いstart完了はlistenerを追加しない');
+    assert.equal(currentChar.listeners.length, 1, '現listenerを維持');
+
+    const oldStop = target.stopNotify('STEP_ANALYSIS');
+    while (!currentChar.releaseStop) await new Promise((resolve) => setImmediate(resolve));
+    target._invalidateNotifyOperations(); // さらに再接続
+    selected = newestChar;
+    await target.startNotify('STEP_ANALYSIS');
+    assert.equal(newestChar.listeners.length, 1);
+
+    currentChar.releaseStop();
+    await oldStop;
+    assert.equal(newestChar.listeners.length, 1, '古いstop完了は新listenerを削除しない');
+    assert.equal(target._notifyCharacteristics.STEP_ANALYSIS, newestChar);
+  }
+
+  // シナリオB3: 同一characteristicのstart/stopは呼出順に直列化し、
+  // 後から呼んだ操作が物理notificationの最終状態になること。
+  {
+    function deferred() {
+      let resolve;
+      const promise = new Promise((done) => { resolve = done; });
+      return { promise, resolve };
+    }
+
+    function queuedNotifyChar(name) {
+      const char = {
+        name,
+        notifying: false,
+        startCalls: 0,
+        stopCalls: 0,
+        listeners: [],
+        startGate: null,
+        stopGate: null,
+        async startNotifications() {
+          this.startCalls++;
+          const gate = this.startGate;
+          this.startGate = null;
+          if (gate) await gate.promise;
+          this.notifying = true;
+          return this;
+        },
+        async stopNotifications() {
+          this.stopCalls++;
+          const gate = this.stopGate;
+          this.stopGate = null;
+          if (gate) await gate.promise;
+          this.notifying = false;
+          return this;
+        },
+        addEventListener(_type, handler) { this.listeners.push(handler); },
+        removeEventListener(_type, handler) {
+          const index = this.listeners.indexOf(handler);
+          if (index >= 0) this.listeners.splice(index, 1);
+        },
+      };
+      return char;
+    }
+
+    function notifyTarget(characteristicFor) {
+      const target = new OrpheInsole(0);
+      target.scan = async () => { };
+      target.connectGATT = async () => { };
+      target._characteristicFor = characteristicFor;
+      target.onError = () => { };
+      return target;
+    }
+
+    // issued stop -> start: stopが未完了の間はstartNotificationsへ進まず、最終ON。
+    {
+      const characteristic = queuedNotifyChar('stop-then-start');
+      const target = notifyTarget(() => characteristic);
+      await target.startNotify('STEP_ANALYSIS');
+      assert.equal(characteristic.notifying, true);
+      assert.equal(characteristic.listeners.length, 1);
+
+      const stopGate = deferred();
+      characteristic.stopGate = stopGate;
+      const stopping = target.stopNotify('STEP_ANALYSIS');
+      while (characteristic.stopCalls === 0) await new Promise((resolve) => setImmediate(resolve));
+
+      const starting = target.startNotify('STEP_ANALYSIS');
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(characteristic.startCalls, 1,
+        'new startNotifications waits for the issued stopNotifications');
+
+      stopGate.resolve();
+      await Promise.all([stopping, starting]);
+      assert.equal(characteristic.notifying, true, 'issued stop -> start ends with notifications ON');
+      assert.equal(characteristic.listeners.length, 1, 'final ON state has exactly one listener');
+      assert.equal(target._notifyCharacteristics.STEP_ANALYSIS, characteristic);
+    }
+
+    // issued start -> stop: startが未完了の間はstopNotificationsへ進まず、最終OFF。
+    {
+      const characteristic = queuedNotifyChar('start-then-stop');
+      const target = notifyTarget(() => characteristic);
+      const startGate = deferred();
+      characteristic.startGate = startGate;
+      const starting = target.startNotify('STEP_ANALYSIS');
+      while (characteristic.startCalls === 0) await new Promise((resolve) => setImmediate(resolve));
+
+      const stopping = target.stopNotify('STEP_ANALYSIS');
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(characteristic.stopCalls, 0,
+        'new stopNotifications waits for the issued startNotifications');
+
+      startGate.resolve();
+      await Promise.all([starting, stopping]);
+      assert.equal(characteristic.notifying, false, 'issued start -> stop ends with notifications OFF');
+      assert.equal(characteristic.listeners.length, 0, 'final OFF state has no listener');
+      assert.equal(target.dataChangedEventHandlerMap.STEP_ANALYSIS, undefined);
+      assert.equal(target._notifyCharacteristics.STEP_ANALYSIS, undefined);
+    }
+
+    // old stopがconnectGATT待ちの間に再接続しても、新characteristicをstopしない。
+    {
+      const oldCharacteristic = queuedNotifyChar('old-connect-generation');
+      const newCharacteristic = queuedNotifyChar('new-connect-generation');
+      let selected = oldCharacteristic;
+      const target = notifyTarget(() => selected);
+      await target.startNotify('STEP_ANALYSIS');
+
+      const connectGate = deferred();
+      const oldStopEnteredConnect = deferred();
+      let connectCalls = 0;
+      target.connectGATT = async () => {
+        connectCalls++;
+        if (connectCalls === 1) {
+          oldStopEnteredConnect.resolve();
+          await connectGate.promise;
+        }
+      };
+
+      const oldStop = target.stopNotify('STEP_ANALYSIS');
+      await oldStopEnteredConnect.promise;
+      target._invalidateNotifyOperations();
+      selected = newCharacteristic;
+      await target.startNotify('STEP_ANALYSIS');
+      assert.equal(newCharacteristic.notifying, true);
+      assert.equal(newCharacteristic.listeners.length, 1);
+
+      connectGate.resolve();
+      await oldStop;
+      assert.equal(oldCharacteristic.stopCalls, 0,
+        'stale stop waiting in connect never reaches its old characteristic');
+      assert.equal(newCharacteristic.stopCalls, 0,
+        'stale stop waiting in connect never captures the new characteristic');
+      assert.equal(newCharacteristic.notifying, true, 'new connection remains notifying');
+      assert.equal(newCharacteristic.listeners.length, 1, 'new connection listener remains installed');
+      assert.equal(target._notifyCharacteristics.STEP_ANALYSIS, newCharacteristic);
+    }
   }
 
   // シナリオC: clear() / selectBluetoothDevice() で characteristic キャッシュが破棄されること

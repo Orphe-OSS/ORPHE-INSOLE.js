@@ -286,52 +286,454 @@ function completeStep(agg, step) {
 }
 
 // ── ライフサイクル系（非同期）: モック insole で start/stop 直列化・所有権・再接続を検証 ──
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+function nextTurn() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function makeMockInsole() {
-  return {
+  const disconnectListeners = new Set();
+  const bluetoothDevice = {
+    gatt: { connected: true },
+    addEventListener(type, listener) {
+      if (type === 'gattserverdisconnected') disconnectListeners.add(listener);
+    },
+    removeEventListener(type, listener) {
+      if (type === 'gattserverdisconnected') disconnectListeners.delete(listener);
+    },
+  };
+  const mock = {
     id: 0,
     ORPHE_OTHER_SERVICE: 'svc',
     ORPHE_STEP_ANALYSIS: 'char',
+    bluetoothDevice,
     _gaitNotifySink: undefined,
     _afterReconnectSuccess: [],
+    _characteristics: {},
     _connected: true,
+    notifying: false,
     calls: { startNotify: 0, stopNotify: 0, setUUID: 0 },
-    isConnected() { return this._connected; },
+    isConnected() { return this._connected && this.bluetoothDevice.gatt.connected; },
     setUUID() { this.calls.setUUID++; },
-    async startNotify() { this.calls.startNotify++; },
-    async stopNotify() { this.calls.stopNotify++; },
+    async startNotify(uuid) {
+      this.calls.startNotify++;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    },
+    async stopNotify() {
+      this.calls.stopNotify++;
+      this.notifying = false;
+    },
+    emitDisconnect() {
+      this._connected = false;
+      this.bluetoothDevice.gatt.connected = false;
+      this.notifying = false;
+      this._characteristics = {};
+      for (const listener of Array.from(disconnectListeners)) listener({ target: this.bluetoothDevice });
+    },
+    emitReconnect() {
+      this._connected = true;
+      this.bluetoothDevice.gatt.connected = true;
+      // Core の手動 begin() では SENSOR_VALUES が先に復旧し、STEP_ANALYSIS はまだ無い。
+      this._characteristics.SENSOR_VALUES = {};
+    },
   };
+  return mock;
 }
 
 (async () => {
-  // P1-2: start() の startNotify 待機中に stop() を呼んでも、最終状態が確実に停止になる
+  // P1-2: startNotify が未完了でも stop() は待たずに完了し、遅延成功時は補償停止する
   {
     const mock = makeMockInsole();
-    let resolveStart;
-    mock.startNotify = function () { this.calls.startNotify++; return new Promise((r) => { resolveStart = r; }); };
+    const startGate = deferred();
+    mock.startNotify = async function (uuid) {
+      this.calls.startNotify++;
+      await startGate.promise;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    };
     const gait = new Gait(mock);
-    const p1 = gait.start();     // startNotify で待機
-    const p2 = gait.stop();      // start 完了を待ってから停止するはず
-    resolveStart();              // start を完了させる
-    await Promise.all([p1, p2]);
+    const startPromise = gait.start();
+    const stopPromise = gait.stop();
+    const outcome = await Promise.race([
+      stopPromise.then(() => 'stopped'),
+      nextTurn().then(() => 'still-pending'),
+    ]);
+    assert.equal(outcome, 'stopped', 'stop は未完了の BLE startNotify に依存しない');
     assert.equal(gait.isRunning, false, 'start中stop後: running=false');
     assert.equal(mock._gaitNotifySink, undefined, 'start中stop後: sink なし');
-    assert.equal(mock.calls.stopNotify, 1, 'start中stop後: stopNotify が呼ばれた（stopがstartを待った）');
+    assert.equal(mock._afterReconnectSuccess.length, 0, 'start中stop後: 再接続フックなし');
+
+    startGate.resolve();
+    assert.equal(await startPromise, false, '停止後に遅れて完了した start は開始成功にしない');
+    await nextTurn();
+    assert.equal(mock.notifying, false, '遅延購読は補償停止済み');
+    assert.equal(mock.calls.stopNotify, 1, '遅延購読に stopNotify を1回適用');
   }
 
-  // P1-2: 複数 Gait インスタンスの sink 所有権（stop が他インスタンスの sink を消さない）
+  // P1-2: 同一 insole の複数 active Gait は拒否し、共有 notify を壊さない
   {
     const mock = makeMockInsole();
     const g1 = new Gait(mock);
     const g2 = new Gait(mock);
+    let ownerError = null;
+    g2.onError = (error) => { ownerError = error; };
     assert.equal(await g1.start(), true);
     const g1sink = mock._gaitNotifySink;
-    assert.equal(await g2.start(), true);
-    assert.notEqual(mock._gaitNotifySink, g1sink, 'g2 が sink を上書き');
-    const g2sink = mock._gaitNotifySink;
+    assert.equal(await g2.start(), false, '2つ目の active Gait は拒否');
+    assert.ok(ownerError instanceof Error, '競合理由を onError へ通知');
+    assert.equal(ownerError.code, 'GAIT_ALREADY_ACTIVE');
+    assert.equal(mock.calls.startNotify, 1, '2つ目は startNotify しない');
+    assert.equal(mock._gaitNotifySink, g1sink, 'g1 の sink を維持');
+    assert.equal(g1.isRunning, true);
+    assert.equal(g2.isRunning, false);
+
     await g1.stop();
-    assert.equal(mock._gaitNotifySink, g2sink, 'g1.stop() は g2 の sink を消さない');
+    assert.equal(mock.notifying, false, '所有者の stop で notify 停止');
+    assert.equal(await g2.start(), true, '所有者の停止後は別インスタンスを開始可能');
+    assert.equal(mock.calls.startNotify, 2);
     await g2.stop();
     assert.equal(mock._gaitNotifySink, undefined, 'g2.stop() で sink 削除');
+  }
+
+  // stopNotify 待機中は owner を保持し、古いstopが新しいGaitのnotifyを止める競合を防ぐ
+  {
+    const mock = makeMockInsole();
+    const stopGate = deferred();
+    mock.stopNotify = async function () {
+      this.calls.stopNotify++;
+      await stopGate.promise;
+      this.notifying = false;
+    };
+    const g1 = new Gait(mock);
+    const g2 = new Gait(mock);
+    let ownerError = null;
+    g2.onError = (error) => { ownerError = error; };
+    assert.equal(await g1.start(), true);
+    const stopping = g1.stop();
+    await nextTurn();
+    assert.equal(await g2.start(), false, 'stopNotify完了前はownerを譲らない');
+    assert.equal(ownerError.code, 'GAIT_ALREADY_ACTIVE');
+    assert.equal(mock.calls.startNotify, 1);
+
+    stopGate.resolve();
+    await stopping;
+    assert.equal(await g2.start(), true, 'stopNotify完了後は次のownerを開始可能');
+    assert.equal(mock.calls.startNotify, 2);
+    await g2.stop();
+  }
+
+  // 遅延startの補償stop中は明示的にtransition pendingを返し、完了後のretryを許す
+  {
+    const mock = makeMockInsole();
+    const startGate = deferred();
+    const cleanupGate = deferred();
+    mock.startNotify = async function (uuid) {
+      this.calls.startNotify++;
+      if (this.calls.startNotify === 1) await startGate.promise;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    };
+    mock.stopNotify = async function () {
+      this.calls.stopNotify++;
+      await cleanupGate.promise;
+      this.notifying = false;
+    };
+    const gait = new Gait(mock);
+    let transitionError = null;
+    gait.onError = (error) => { transitionError = error; };
+    const oldStart = gait.start();
+    await gait.stop();
+    startGate.resolve();
+    while (mock.calls.stopNotify === 0) await nextTurn();
+
+    assert.equal(await gait.start(), false, '補償stop中のrestartは曖昧な成功にしない');
+    assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
+    cleanupGate.resolve();
+    assert.equal(await oldStart, false);
+    assert.equal(await gait.start(), true, '補償stop完了後のretryは成功');
+    assert.equal(mock.calls.startNotify, 2);
+    await gait.stop();
+  }
+
+  // stop後も旧startが未完了なら、同一characteristicへ次のstartを重ねない
+  {
+    const mock = makeMockInsole();
+    const startGate = deferred();
+    const cleanupGate = deferred();
+    mock.startNotify = async function (uuid) {
+      this.calls.startNotify++;
+      if (this.calls.startNotify === 1) await startGate.promise;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    };
+    mock.stopNotify = async function () {
+      this.calls.stopNotify++;
+      if (this.calls.stopNotify === 1) await cleanupGate.promise;
+      this.notifying = false;
+    };
+
+    const g1 = new Gait(mock);
+    const oldStart = g1.start();
+    await g1.stop();
+    const g2 = new Gait(mock);
+    let transitionError = null;
+    g2.onError = (error) => { transitionError = error; };
+    assert.equal(await g2.start(), false, '旧startがpendingな間は次のownerを開始しない');
+    assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
+    assert.equal(mock.calls.startNotify, 1, '同一characteristicへstartNotifyを重ねない');
+
+    startGate.resolve();
+    while (mock.calls.stopNotify < 1) await nextTurn();
+    transitionError = null;
+    assert.equal(await g2.start(), false, '補償stop完了までは次のownerを開始しない');
+    assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
+
+    cleanupGate.resolve();
+    assert.equal(await oldStart, false);
+    assert.equal(await g2.start(), true, '旧startと補償stop完了後は次のownerを開始できる');
+    assert.equal(mock.calls.startNotify, 2);
+    assert.equal(mock.notifying, true);
+    await g2.stop();
+  }
+
+  // 切断でpending Setを新世代へ切り替えた後、旧Promiseのcleanupが新Setを削除しない
+  {
+    const mock = makeMockInsole();
+    const startGates = [deferred(), deferred()];
+    mock.startNotify = async function (uuid) {
+      const index = this.calls.startNotify++;
+      if (index < startGates.length) await startGates[index].promise;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    };
+
+    const gait = new Gait(mock);
+    const oldStart = gait.start();
+    const oldPendingSet = mock._gaitNotifyPendingSubscriptions;
+    assert.equal(oldPendingSet.size, 1);
+
+    mock.emitDisconnect();
+    mock.emitReconnect();
+    for (const hook of mock._afterReconnectSuccess.slice()) hook();
+    await nextTurn();
+
+    const currentPendingSet = mock._gaitNotifyPendingSubscriptions;
+    assert.ok(currentPendingSet instanceof Set);
+    assert.notEqual(currentPendingSet, oldPendingSet, '再接続後は新しいpending Setを使う');
+    assert.equal(currentPendingSet.size, 1);
+    assert.equal(mock.calls.startNotify, 2, '旧pendingを待たず現世代の購読を開始');
+
+    startGates[0].resolve();
+    assert.equal(await oldStart, false);
+    await nextTurn();
+    assert.equal(mock._gaitNotifyPendingSubscriptions, currentPendingSet,
+      '旧Promiseのcleanupは現世代のpending Setを削除しない');
+    assert.equal(currentPendingSet.size, 1);
+
+    const competing = new Gait(mock);
+    let transitionError = null;
+    competing.onError = (error) => { transitionError = error; };
+    assert.equal(await competing.start(), false, '現世代の購読中は他ownerを開始しない');
+    assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
+
+    startGates[1].resolve();
+    await nextTurn();
+    await nextTurn();
+    assert.equal(mock._gaitNotifyPendingSubscriptions, undefined, '現世代の完了後にSetを解放');
+    assert.equal(gait._subscribed, true);
+    await gait.stop();
+  }
+
+  // 切断で破棄した旧cleanup Setのfinallyが、新世代のcleanup Setを削除しない
+  {
+    const mock = makeMockInsole();
+    const startGates = [deferred(), deferred()];
+    const cleanupGates = [deferred(), deferred()];
+    mock.startNotify = async function (uuid) {
+      const index = this.calls.startNotify++;
+      if (index < startGates.length) await startGates[index].promise;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    };
+    mock.stopNotify = async function () {
+      const index = this.calls.stopNotify++;
+      if (index < cleanupGates.length) await cleanupGates[index].promise;
+      this.notifying = false;
+    };
+
+    const g1 = new Gait(mock);
+    const oldStart = g1.start();
+    await g1.stop();
+    startGates[0].resolve();
+    while (mock.calls.stopNotify < 1) await nextTurn();
+    const oldCleanupSet = mock._gaitNotifyCleanupPromises;
+    assert.equal(oldCleanupSet.size, 1);
+
+    // Core._invalidateNotifyOperations() が切断時に旧世代のbarrierを破棄する動作を再現。
+    oldCleanupSet.clear();
+    delete mock._gaitNotifyCleanupPromises;
+    const oldPendingSet = mock._gaitNotifyPendingSubscriptions;
+    oldPendingSet.clear();
+    delete mock._gaitNotifyPendingSubscriptions;
+
+    const g2 = new Gait(mock);
+    const currentStart = g2.start();
+    await g2.stop();
+    startGates[1].resolve();
+    while (mock.calls.stopNotify < 2) await nextTurn();
+    const currentCleanupSet = mock._gaitNotifyCleanupPromises;
+    assert.ok(currentCleanupSet instanceof Set);
+    assert.notEqual(currentCleanupSet, oldCleanupSet);
+    assert.equal(currentCleanupSet.size, 1);
+
+    cleanupGates[0].resolve();
+    assert.equal(await oldStart, false);
+    await nextTurn();
+    assert.equal(mock._gaitNotifyCleanupPromises, currentCleanupSet,
+      '旧cleanupのfinallyは現世代のcleanup Setを削除しない');
+    assert.equal(currentCleanupSet.size, 1);
+
+    const g3 = new Gait(mock);
+    let transitionError = null;
+    g3.onError = (error) => { transitionError = error; };
+    assert.equal(await g3.start(), false, '現世代のcleanup中は次ownerを開始しない');
+    assert.equal(transitionError.code, 'GAIT_TRANSITION_PENDING');
+
+    cleanupGates[1].resolve();
+    assert.equal(await currentStart, false);
+    assert.equal(await g3.start(), true, '現世代のcleanup完了後は次ownerを開始できる');
+    await g3.stop();
+  }
+
+  // 購読準備中の同期例外でも start は false に収束し、owner/sink/hook を残さない
+  {
+    const mock = makeMockInsole();
+    mock.setUUID = () => { throw new Error('setUUID failed'); };
+    const gait = new Gait(mock);
+    let reported = null;
+    gait.onError = (error) => { reported = error; };
+    assert.equal(await gait.start(), false);
+    assert.match(reported.message, /setUUID failed/);
+    assert.equal(gait.isRunning, false);
+    assert.equal(mock._gaitNotifyOwner, undefined);
+    assert.equal(mock._gaitNotifySink, undefined);
+    assert.equal(mock._afterReconnectSuccess.length, 0);
+  }
+
+  // P1-3: 通常の重複startは冪等、物理切断→手動begin後の明示startは再購読する
+  {
+    const mock = makeMockInsole();
+    const gait = new Gait(mock);
+    assert.equal(await gait.start(), true);
+    assert.equal(await gait.start(), true);
+    assert.equal(mock.calls.startNotify, 1, '同じ接続中の重複 start は再購読しない');
+    gait.rows.push({ step_number: 99 });
+
+    mock.emitDisconnect();
+    mock.emitReconnect();
+    assert.equal(await gait.start(), true, '手動再接続後の明示 start は成功');
+    assert.equal(mock.calls.startNotify, 2, '手動再接続後に STEP_ANALYSIS を再購読');
+    assert.equal(mock.notifying, true);
+    assert.equal(gait.rows.length, 1, '再接続では収集中の rows を維持');
+    await gait.stop();
+  }
+
+  // P1-3: 自動再接続の再購読中にstopしても、遅延完了したnotifyを残さない
+  {
+    const mock = makeMockInsole();
+    const reconnectGate = deferred();
+    mock.startNotify = async function (uuid) {
+      this.calls.startNotify++;
+      if (this.calls.startNotify === 1) {
+        this._characteristics[uuid] = {};
+        this.notifying = true;
+        return;
+      }
+      await reconnectGate.promise;
+      this._characteristics[uuid] = {};
+      this.notifying = true;
+    };
+    const gait = new Gait(mock);
+    assert.equal(await gait.start(), true);
+    mock.emitDisconnect();
+    mock.emitReconnect();
+    for (const hook of mock._afterReconnectSuccess.slice()) hook();
+    await nextTurn();
+    assert.equal(mock.calls.startNotify, 2, '再接続の startNotify が開始済み');
+
+    const stopPromise = gait.stop();
+    const outcome = await Promise.race([
+      stopPromise.then(() => 'stopped'),
+      nextTurn().then(() => 'still-pending'),
+    ]);
+    assert.equal(outcome, 'stopped', '再購読中でも stop は完了');
+    assert.equal(gait.isRunning, false);
+    assert.equal(mock._gaitNotifySink, undefined);
+
+    reconnectGate.resolve();
+    await nextTurn();
+    await nextTurn();
+    assert.equal(mock.notifying, false, '遅延した再購読を補償停止');
+    assert.equal(mock.calls.stopNotify, 1);
+  }
+
+  // 1回目の再接続購読が未完了でも、さらに切断→再接続した現GATTの購読を開始する
+  {
+    const mock = makeMockInsole();
+    const staleReconnectGate = deferred();
+    let session = 0;
+    let notifyToken = 0;
+    mock.activeSession = null;
+    mock.startNotify = async function (uuid) {
+      const token = ++notifyToken;
+      const capturedSession = session;
+      this.calls.startNotify++;
+      if (this.calls.startNotify === 2) await staleReconnectGate.promise;
+      // Coreのnotify operation tokenと同じく、古い完了は現listenerを上書きしない。
+      if (token === notifyToken) {
+        this._characteristics[uuid] = { session: capturedSession };
+        this.activeSession = capturedSession;
+        this.notifying = true;
+      }
+    };
+    mock.stopNotify = async function () {
+      ++notifyToken;
+      this.calls.stopNotify++;
+      this.notifying = false;
+    };
+    const gait = new Gait(mock);
+    assert.equal(await gait.start(), true);
+
+    mock.emitDisconnect();
+    session = 1;
+    mock.emitReconnect();
+    for (const hook of mock._afterReconnectSuccess.slice()) hook();
+    await nextTurn();
+    assert.equal(mock.calls.startNotify, 2, '再接続1の購読はpending');
+
+    mock.emitDisconnect();
+    session = 2;
+    mock.emitReconnect();
+    for (const hook of mock._afterReconnectSuccess.slice()) hook();
+    await nextTurn();
+    await nextTurn();
+    assert.equal(mock.calls.startNotify, 3, '古いpendingを待たず再接続2を購読');
+    assert.equal(mock.activeSession, 2);
+    assert.equal(gait._subscribed, true);
+
+    staleReconnectGate.resolve();
+    await nextTurn();
+    await nextTurn();
+    assert.equal(mock.activeSession, 2, '古い再接続1の完了を現GATTとして受理しない');
+    assert.equal(gait._subscribed, true);
+    await gait.stop();
   }
 
   // P1-3: GATT 再接続後に STEP_ANALYSIS を1回だけ再購読し、同一 step の二重出力が無い
@@ -351,13 +753,18 @@ function makeMockInsole() {
     assert.deepEqual(emitted, [300], '切断前に step300 emit');
 
     // 切断→再接続（Core が _afterReconnectSuccess を発火）
-    mock._connected = false;
-    mock._connected = true;
+    mock.emitDisconnect();
+    mock.emitReconnect();
     for (const hook of mock._afterReconnectSuccess.slice()) hook();
     await new Promise((r) => setTimeout(r, 0)); // _subscribe の await を消化
 
     assert.equal(mock.calls.startNotify, 2, '再接続後に STEP_ANALYSIS を正確に1回だけ再購読');
     assert.ok(mock._gaitNotifySink, '再購読後も sink 有効');
+
+    // 同じ reconnect success が重複しても、購読済みなら listener を増やさない
+    for (const hook of mock._afterReconnectSuccess.slice()) hook();
+    await nextTurn();
+    assert.equal(mock.calls.startNotify, 2, 'settle後の重複再接続フックは冪等');
 
     // 再購読後、切断前と同じ step 300 を再送しても二重出力しない（集約状態は維持）
     completeStepViaSink(mock._gaitNotifySink);

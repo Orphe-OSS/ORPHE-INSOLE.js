@@ -310,8 +310,14 @@
       this._subscribed = false;    // 実際に STEP_ANALYSIS を購読中か
       this._startPromise = null;   // 進行中の start()（直列化用）
       this._stopPromise = null;    // 進行中の stop()（直列化用）
-      this._sinkFn = null;         // 自分が設定した _gaitNotifySink（所有権判定用）
+      this._subscribePromise = null; // 現在の接続世代で進行中の購読処理
+      this._currentSubscribeAttempt = null; // { connectionGeneration, lifecycleGeneration, sink, promise }
+      this._lifecycleGeneration = 0; // stop→start をまたぐ古い Promise を識別
+      this._connectionGeneration = 0; // 物理切断ごとに更新し、古い GATT の完了を識別
+      this._sinkFn = null;         // 現在の接続世代で設定した _gaitNotifySink
       this._reconnectHook = null;  // 再接続後に再購読するフック
+      this._disconnectDevice = null; // STEP_ANALYSIS 購読状態を無効化する切断監視先
+      this._disconnectHandler = () => this._onPhysicalDisconnect();
 
       // コールバック（ユーザが上書き）
       this.onGait = null;     // (deviceId, row) 1歩ごとの歩容パラメーター（overview+stride+pronation 集約後）
@@ -331,85 +337,227 @@
      */
     async start() {
       // 直前の stop() が進行中なら完了を待つ（stop の finally が新しい sink を消す競合を防ぐ）
-      if (this._stopPromise) { try { await this._stopPromise; } catch (_) { /* noop */ } }
-      if (this._startPromise) return this._startPromise; // 進行中の start に合流
-      if (this._running) return true;
-      this._startPromise = this._doStart();
-      try { return await this._startPromise; } finally { this._startPromise = null; }
+      if (this._stopPromise) { try { await this._stopPromise; } catch { /* noop */ } }
+      if (this._startPromise) return this._startPromise;
+      const pendingCleanups = this.insole && this.insole._gaitNotifyCleanupPromises;
+      const pendingSubscriptions = this.insole && this.insole._gaitNotifyPendingSubscriptions;
+      // reconnect hook が開始した自分自身の現 attempt には合流できる。それ以外の
+      // 未完了 start は、stop 後も transport 側で生きているため完了まで restart しない。
+      const hasBlockingSubscription = pendingSubscriptions && Array.from(pendingSubscriptions)
+        .some((attempt) => attempt !== this._currentSubscribeAttempt);
+      if ((pendingCleanups && pendingCleanups.size > 0) || hasBlockingSubscription) {
+        const error = new Error('OrpheInsoleGait.start(): previous notification transition is still pending');
+        error.code = 'GAIT_TRANSITION_PENDING';
+        this._reportError(error);
+        return false;
+      }
+      const promise = this._doStart();
+      this._startPromise = promise;
+      try { return await promise; } finally {
+        if (this._startPromise === promise) this._startPromise = null;
+      }
     }
 
     async _doStart() {
-      if (!this.insole || !this.insole.isConnected || !this.insole.isConnected()) {
-        this._reportError(new Error('OrpheInsoleGait.start(): insole is not connected'));
-        return false;
+      if (!this._canStart()) return false;
+      if (!this._claimOwner()) return false;
+      const continuing = this._running;
+      if (!continuing) {
+        this.aggregator = new GaitAggregator();
+        this.rows = [];
+        this._lifecycleGeneration++;
       }
-      this.aggregator = new GaitAggregator();
-      this.rows = [];
-      this._running = true;           // 望む状態を先に確定（実購読は _subscribe で）
+      const lifecycleGeneration = this._lifecycleGeneration;
+      const connectionGeneration = this._connectionGeneration;
+      this._running = true;           // 望む状態を先に確定（実購読は _requestSubscribe で）
       this._installReconnectHook();   // 再接続後に STEP_ANALYSIS を1回だけ再購読する
-      const ok = await this._subscribe();
-      if (!ok) {
+      this._installDisconnectHook();  // 手動再接続でも _subscribed=false を検知できるようにする
+      if (this._subscribed) return true;
+      const ok = await this._requestSubscribe(lifecycleGeneration);
+      // 古い接続/ライフサイクルの失敗で、新しい再接続・restart要求を巻き戻さない。
+      const stillSameRequest = lifecycleGeneration === this._lifecycleGeneration &&
+        connectionGeneration === this._connectionGeneration;
+      if (!ok && !continuing && stillSameRequest && !this._subscribed) {
         this._running = false;
         this._removeReconnectHook();
+        this._removeDisconnectHook();
+        this._clearSink();
+        this._releaseOwner();
       }
       return ok;
     }
 
+    _canStart() {
+      if (this.insole && this.insole.isConnected && this.insole.isConnected()) return true;
+      this._reportError(new Error('OrpheInsoleGait.start(): insole is not connected'));
+      return false;
+    }
+
+    // STEP_ANALYSIS は1 characteristic / 1 sink なので、同一 insole の active Gait は1つに限定する。
+    // 壊れた「複数running」状態を許すより、開始時に明示的に失敗させる方が後方互換上も安全。
+    _claimOwner() {
+      if (!this.insole) return false;
+      const owner = this.insole._gaitNotifyOwner;
+      if (owner && owner !== this) {
+        // owner の stopNotify が進行中でも奪わない。owner 自身の finally だけが解放できる。
+        const error = new Error('OrpheInsoleGait.start(): another gait instance is already active for this insole');
+        error.code = 'GAIT_ALREADY_ACTIVE';
+        this._reportError(error);
+        return false;
+      }
+      this.insole._gaitNotifyOwner = this;
+      return true;
+    }
+
+    _releaseOwner() {
+      if (this.insole && this.insole._gaitNotifyOwner === this) {
+        delete this.insole._gaitNotifyOwner;
+      }
+    }
+
+    /** 初回・再接続の subscribe を1本にまとめ、同じ characteristic への二重 startNotify を防ぐ。 */
+    _requestSubscribe(lifecycleGeneration = this._lifecycleGeneration) {
+      const connectionGeneration = this._connectionGeneration;
+      const current = this._currentSubscribeAttempt;
+      if (current && current.connectionGeneration === connectionGeneration &&
+        current.lifecycleGeneration === lifecycleGeneration) {
+        return current.promise;
+      }
+
+      const attempt = {
+        gait: this,
+        connectionGeneration,
+        lifecycleGeneration,
+        sink: (dv) => this._onPacket(dv),
+        promise: null,
+      };
+      const pendingSubscriptions = this.insole._gaitNotifyPendingSubscriptions || new Set();
+      this.insole._gaitNotifyPendingSubscriptions = pendingSubscriptions;
+      pendingSubscriptions.add(attempt);
+      this._currentSubscribeAttempt = attempt;
+      this._sinkFn = attempt.sink;
+      const promise = this._subscribe(attempt);
+      attempt.promise = promise;
+      this._subscribePromise = promise;
+      const cleanup = () => {
+        pendingSubscriptions.delete(attempt);
+        if (pendingSubscriptions.size === 0 &&
+          this.insole._gaitNotifyPendingSubscriptions === pendingSubscriptions) {
+          delete this.insole._gaitNotifyPendingSubscriptions;
+        }
+        if (this._currentSubscribeAttempt === attempt) {
+          this._currentSubscribeAttempt = null;
+          this._subscribePromise = null;
+        }
+      };
+      promise.then(cleanup, cleanup);
+      return promise;
+    }
+
     /** STEP_ANALYSIS を購読する（初回・再接続共通）。成功で true。 */
-    async _subscribe() {
-      const service = this.options.serviceUUID || this.insole.ORPHE_OTHER_SERVICE;
-      const characteristic = this.options.characteristicUUID || this.insole.ORPHE_STEP_ANALYSIS || STEP_ANALYSIS_CHAR_UUID;
-      // notify をこのモジュールの sink へ横取り（core SDK の onRead が STEP_ANALYSIS で呼ぶ）
-      this._sinkFn = (dv) => this._onPacket(dv);
-      this.insole._gaitNotifySink = this._sinkFn;
-      this.insole.setUUID('STEP_ANALYSIS', service, characteristic);
+    async _subscribe(attempt) {
       try {
+        const service = this.options.serviceUUID || this.insole.ORPHE_OTHER_SERVICE;
+        const characteristic = this.options.characteristicUUID || this.insole.ORPHE_STEP_ANALYSIS || STEP_ANALYSIS_CHAR_UUID;
+        // notify をこのモジュールの sink へ横取り（core SDK の onRead が STEP_ANALYSIS で呼ぶ）
+        this.insole._gaitNotifySink = attempt.sink;
+        this.insole.setUUID('STEP_ANALYSIS', service, characteristic);
         await this.insole.startNotify('STEP_ANALYSIS');
+        const attemptIsCurrent = this._currentSubscribeAttempt === attempt;
+        const stillCurrent = this._running &&
+          attempt.lifecycleGeneration === this._lifecycleGeneration &&
+          attempt.connectionGeneration === this._connectionGeneration &&
+          this.insole._gaitNotifyOwner === this && attemptIsCurrent;
+        // stop() は pending startNotify を待たずに戻る。遅れて購読が成功した場合は、
+        // 停止済みの desired state に合わせてここで補償停止し、notify を残さない。
+        if (!stillCurrent) {
+          if (attemptIsCurrent) this._subscribed = false;
+          this._clearSink(attempt.sink);
+          const owner = this.insole._gaitNotifyOwner;
+          const newerAttempt = this._currentSubscribeAttempt && this._currentSubscribeAttempt !== attempt &&
+            this._currentSubscribeAttempt.connectionGeneration === attempt.connectionGeneration;
+          // 別の接続世代や新しいowner/attemptを止めない。同じ世代に後継が無い場合だけ補償停止する。
+          if (attempt.connectionGeneration === this._connectionGeneration && !newerAttempt &&
+            (!owner || owner === this) && !this._subscribed && this.insole.isConnected && this.insole.isConnected()) {
+            const cleanups = this.insole._gaitNotifyCleanupPromises || new Set();
+            this.insole._gaitNotifyCleanupPromises = cleanups;
+            const cleanupPromise = Promise.resolve().then(() => this.insole.stopNotify('STEP_ANALYSIS'));
+            cleanups.add(cleanupPromise);
+            try {
+              await cleanupPromise;
+            } finally {
+              cleanups.delete(cleanupPromise);
+              if (cleanups.size === 0 && this.insole._gaitNotifyCleanupPromises === cleanups) {
+                delete this.insole._gaitNotifyCleanupPromises;
+              }
+            }
+          }
+          return false;
+        }
         this._subscribed = true;
         return true;
       } catch (e) {
-        this._subscribed = false;
-        this._clearSink();
-        this._reportError(e);
+        const attemptIsCurrent = this._currentSubscribeAttempt === attempt;
+        if (attemptIsCurrent) this._subscribed = false;
+        this._clearSink(attempt.sink);
+        // ユーザが stop() した後の遅延失敗は期待されたキャンセル結果なので報告しない。
+        if (this._running && attemptIsCurrent &&
+          attempt.lifecycleGeneration === this._lifecycleGeneration &&
+          attempt.connectionGeneration === this._connectionGeneration) this._reportError(e);
         return false;
       }
     }
 
     /** 歩容解析の notify を停止する。start()/stop() の交錯でも安全に停止する。 */
     async stop() {
-      // 進行中の start() を待ってから停止する（pending start を確実に止める）
-      if (this._startPromise) { try { await this._startPromise; } catch (_) { /* noop */ } }
       if (this._stopPromise) return this._stopPromise; // 進行中の stop に合流
-      if (!this._running) return;
-      this._stopPromise = this._doStop();
-      try { return await this._stopPromise; } finally { this._stopPromise = null; }
+      // desired state と callback sink は同期的に停止する。startNotify がハングしても stop() を塞がない。
+      const owned = this.insole && this.insole._gaitNotifyOwner === this;
+      const needsStop = this._running || this._subscribed || this._subscribePromise || owned;
+      const shouldStopNotify = this._subscribed && owned;
+      this._running = false;
+      this._lifecycleGeneration++;
+      this._subscribed = false;
+      this._startPromise = null;       // 古い start の finally は identity check で新しい start を消さない
+      this._subscribePromise = null;   // 古い購読は継続するが、新しい lifecycle/接続を塞がない
+      this._currentSubscribeAttempt = null;
+      this._removeReconnectHook();
+      this._removeDisconnectHook();
+      this._clearSink();
+      if (!needsStop) return;
+      const promise = this._doStop(shouldStopNotify);
+      this._stopPromise = promise;
+      try { return await promise; } finally {
+        if (this._stopPromise === promise) this._stopPromise = null;
+      }
     }
 
-    async _doStop() {
-      this._running = false;
-      this._removeReconnectHook();
+    async _doStop(shouldStopNotify) {
       try {
-        if (this._subscribed && this.insole && this.insole.isConnected && this.insole.isConnected()) {
+        if (shouldStopNotify && this.insole.isConnected && this.insole.isConnected()) {
           await this.insole.stopNotify('STEP_ANALYSIS');
         }
-      } catch (_) { /* noop */ } finally {
+      } catch { /* noop */ } finally {
         this._subscribed = false;
         this._clearSink();
+        if (!this._running) this._releaseOwner();
       }
     }
 
     // 自分が設定した sink のみ削除する（複数 Gait インスタンスが単一の _gaitNotifySink を奪い合わないため）。
-    _clearSink() {
-      if (this.insole && this.insole._gaitNotifySink === this._sinkFn) {
+    _clearSink(expectedSink = this._sinkFn) {
+      if (this.insole && this.insole._gaitNotifySink === expectedSink) {
         delete this.insole._gaitNotifySink;
       }
-      this._sinkFn = null;
+      if (this._sinkFn === expectedSink) this._sinkFn = null;
     }
 
     // Core の再接続成功後に STEP_ANALYSIS を再購読するフックを登録する（既存の on* callback は壊さない）。
     _installReconnectHook() {
       if (this._reconnectHook || !this.insole) return;
-      this._reconnectHook = () => this._onReconnected();
+      this._reconnectHook = () => {
+        this._onReconnected().catch((e) => this._reportError(e));
+      };
       const list = this.insole._afterReconnectSuccess;
       if (Array.isArray(list)) list.push(this._reconnectHook);
     }
@@ -425,10 +573,48 @@
 
     // Core が SENSOR_VALUES を再確立した直後に呼ばれる。旧購読は GATT 切断で無効なので、
     // 望む状態（_running）なら STEP_ANALYSIS を1回だけ再購読する（集約状態は維持＝重複 step は dedup で無視）。
-    _onReconnected() {
-      if (!this._running) return;
+    async _onReconnected() {
+      // 同じ成功通知が重複しても、現接続ですでに購読済みなら何もしない。
+      // 実際の物理切断では _disconnectHandler が先に _subscribed=false にする。
+      if (!this._running || this._subscribed) return;
+      this._installDisconnectHook();
+      // 古い接続世代の未完了 Promise は待たない。現在世代の購読だけを共有する。
+      await this._requestSubscribe(this._lifecycleGeneration);
+    }
+
+    _onPhysicalDisconnect() {
+      this._connectionGeneration++;
+      if (this.insole && this.insole._gaitNotifyCleanupPromises) {
+        // 旧GATTを対象にしたcleanupは新接続を塞がない。Core側のoperation tokenで古い完了も隔離される。
+        this.insole._gaitNotifyCleanupPromises.clear();
+        delete this.insole._gaitNotifyCleanupPromises;
+      }
+      if (this.insole && this.insole._gaitNotifyPendingSubscriptions) {
+        this.insole._gaitNotifyPendingSubscriptions.clear();
+        delete this.insole._gaitNotifyPendingSubscriptions;
+      }
       this._subscribed = false;
-      this._subscribe().catch((e) => this._reportError(e));
+      this._startPromise = null;
+      this._subscribePromise = null;
+      this._currentSubscribeAttempt = null;
+      this._clearSink();
+    }
+
+    // Core の公開 onDisconnect を上書きせず、BluetoothDevice の切断イベントで購読状態だけ無効化する。
+    // これにより自動再接続以外の begin() 後も、gait.start() を再度呼べば安全に再購読できる。
+    _installDisconnectHook() {
+      const device = this.insole && this.insole.bluetoothDevice;
+      if (!device || !device.addEventListener || this._disconnectDevice === device) return;
+      this._removeDisconnectHook();
+      this._disconnectDevice = device;
+      device.addEventListener('gattserverdisconnected', this._disconnectHandler);
+    }
+
+    _removeDisconnectHook() {
+      if (this._disconnectDevice && this._disconnectDevice.removeEventListener) {
+        try { this._disconnectDevice.removeEventListener('gattserverdisconnected', this._disconnectHandler); } catch { /* noop */ }
+      }
+      this._disconnectDevice = null;
     }
 
     _onPacket(dv) {

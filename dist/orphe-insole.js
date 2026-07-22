@@ -362,6 +362,9 @@ class OrpheInsole {
     this.dataCharacteristic = null;// 最後に操作した characteristic（後方互換のために残す参照）
     this._characteristics = {}; // uuid名 -> characteristic。read/write/notify は必ずこちらを参照する
     this.dataChangedEventHandlerMap = {}; // イベントハンドラを保持するマップ
+    this._notifyOperationTokens = {}; // uuid ごとの notify start/stop 世代（古い非同期完了の無効化）
+    this._notifyCharacteristics = {}; // dataChangedEventHandlerMap の handler を登録した characteristic
+    this._notifyOperationQueues = {}; // 同一 characteristic の notify start/stop を呼出順に直列化
     // 自動再接続の成功後に呼ぶ内部フック（ユーザ向け on* callback とは別系統）。
     // SENSOR_VALUES 以外の characteristic（例: STEP_ANALYSIS/OrpheInsoleGait）を
     // 再購読するのに使う。onReconnectSuccess を上書きせずに再購読できるようにするため。
@@ -398,7 +401,10 @@ class OrpheInsole {
     // this.onDisconnect を直接 addEventListener すると、リスナー登録後に
     // ユーザが onDisconnect を上書きしても古い関数が呼ばれ続けるため、
     // 必ずこのラッパーを登録する。
-    this._onDisconnectHandler = (event) => this.onDisconnect(event);
+    this._onDisconnectHandler = (event) => {
+      this._invalidateNotifyOperations();
+      this._safeLifecycleCallback('onDisconnect', event);
+    };
     OrpheInsole._instances = OrpheInsole._instances || [];
     OrpheInsole._instances.push(this);
 
@@ -697,7 +703,100 @@ class OrpheInsole {
       this._lastAutoReconnectError = error;
       return;
     }
-    this.onError(error);
+    return this.onError(error);
+  }
+
+  // 接続ライフサイクルのユーザ callback が throw しても、BLE の状態遷移や
+  // 自動再接続ループを失敗扱いにしない。onError 自体の throw も外へ伝播させない。
+  _safeLifecycleCallback(name, ...args) {
+    try {
+      if (typeof this[name] === 'function') {
+        const result = this[name](...args);
+        if (result && typeof result.catch === 'function') {
+          result.catch((error) => this._safeReportError(error, name));
+        }
+        return result;
+      }
+    } catch (error) {
+      this._safeReportError(error, name);
+    }
+    return undefined;
+  }
+
+  _safeReportError(error, source = 'lifecycle') {
+    try {
+      // ライフサイクル callback/hook の失敗は transport error ではないため、
+      // 自動再接続中でも _lastAutoReconnectError へ混ぜず onError へ直接報告する。
+      const result = typeof this.onError === 'function' ? this.onError(error) : undefined;
+      if (result && typeof result.catch === 'function') {
+        result.catch((reportError) => {
+          try { console.error(`OrpheInsole.${source} callback failed:`, reportError); } catch { /* noop */ }
+        });
+      }
+    } catch (reportError) {
+      try { console.error(`OrpheInsole.${source} callback failed:`, reportError); } catch { /* noop */ }
+    }
+  }
+
+  _nextNotifyOperation(uuid) {
+    const next = (this._notifyOperationTokens[uuid] || 0) + 1;
+    this._notifyOperationTokens[uuid] = next;
+    return next;
+  }
+
+  // startNotifications/stopNotifications は完了順が逆転すると、JS 側の handler と
+  // characteristic の実状態が食い違う。同じ characteristic に対する副作用だけを
+  // 直列化し、再接続で characteristic が変わった場合は旧 GATT を待たない。
+  _enqueueNotifyOperation(uuid, characteristic, operationToken, operation) {
+    const previousEntry = this._notifyOperationQueues[uuid];
+    const previous = previousEntry && previousEntry.characteristic === characteristic
+      ? previousEntry.tail
+      : Promise.resolve();
+    const result = previous
+      .catch(() => { /* 前の呼出しの失敗で次の操作を止めない */ })
+      .then(() => {
+        if (this._notifyOperationTokens[uuid] !== operationToken) return undefined;
+        return operation();
+      });
+    // queue の tail は常に fulfilled にして、呼出し側へ返す result の reject だけを維持する。
+    const entry = { characteristic, tail: result.catch(() => { /* sequencing only */ }) };
+    this._notifyOperationQueues[uuid] = entry;
+    entry.tail.then(() => {
+      if (this._notifyOperationQueues[uuid] === entry) delete this._notifyOperationQueues[uuid];
+    });
+    return result;
+  }
+
+  // GATT切断/clear後に古い startNotifications Promise が解決しても、
+  // 新接続の handler map を上書きしないよう全notify操作を無効化する。
+  _invalidateNotifyOperations() {
+    const uuids = new Set([
+      ...Object.keys(this._notifyOperationTokens),
+      ...Object.keys(this.dataChangedEventHandlerMap),
+      ...Object.keys(this._notifyCharacteristics),
+    ]);
+    for (const uuid of uuids) {
+      this._notifyOperationTokens[uuid] = (this._notifyOperationTokens[uuid] || 0) + 1;
+      const handler = this.dataChangedEventHandlerMap[uuid];
+      const characteristic = this._notifyCharacteristics[uuid];
+      if (handler && characteristic) {
+        try { characteristic.removeEventListener('characteristicvaluechanged', handler); } catch { /* noop */ }
+      }
+      delete this.dataChangedEventHandlerMap[uuid];
+      delete this._notifyCharacteristics[uuid];
+    }
+    // 新しい GATT 世代は旧 characteristic の未完了操作を待たない。
+    // 旧 queue の identity-check cleanup が新しい辞書を消すことはない。
+    this._notifyOperationQueues = {};
+    // Gait の補償 stop も旧 GATT 世代の処理なので、再接続後の start を塞がない。
+    if (this._gaitNotifyCleanupPromises) {
+      this._gaitNotifyCleanupPromises.clear();
+      delete this._gaitNotifyCleanupPromises;
+    }
+    if (this._gaitNotifyPendingSubscriptions) {
+      this._gaitNotifyPendingSubscriptions.clear();
+      delete this._gaitNotifyPendingSubscriptions;
+    }
   }
 
   // ── 自動再接続 ──────────────────────────────────────────────
@@ -767,7 +866,7 @@ class OrpheInsole {
     let lastError = null;
 
     for (let attempt = 1; this._autoReconnectEnabled && attempt <= maxAttempts; attempt++) {
-      this.onReconnectAttempt({ attempt, maxAttempts, intervalMs });
+      this._safeLifecycleCallback('onReconnectAttempt', { attempt, maxAttempts, intervalMs });
 
       try {
         const hasDevice = await this._restoreAutoReconnectDevice();
@@ -780,17 +879,25 @@ class OrpheInsole {
 
         if (result) {
           this._autoReconnectInProgress = false;
-          this.onReconnectSuccess({
+          const info = {
             attempt,
             maxAttempts,
             elapsedMs: Date.now() - startedAt,
             result,
-          });
+          };
           // SENSOR_VALUES 以外の characteristic を再購読する内部フック（例: OrpheInsoleGait）。
-          // ユーザの onReconnectSuccess を壊さないよう別系統で呼ぶ。
+          // 公開 callback が throw して内部復旧を妨げないよう、内部フックを先に起動する。
           for (const hook of this._afterReconnectSuccess.slice()) {
-            try { hook(); } catch (hookError) { this._reportError(hookError); }
+            try {
+              const hookResult = hook();
+              if (hookResult && typeof hookResult.catch === 'function') {
+                hookResult.catch((hookError) => this._safeReportError(hookError, 'reconnectHook'));
+              }
+            } catch (hookError) {
+              this._safeReportError(hookError, 'reconnectHook');
+            }
           }
+          this._safeLifecycleCallback('onReconnectSuccess', info);
           return;
         }
 
@@ -806,8 +913,8 @@ class OrpheInsole {
 
     this._autoReconnectInProgress = false;
     const error = lastError || new Error('Auto reconnect failed.');
-    this.onReconnectFailed({ maxAttempts, elapsedMs: Date.now() - startedAt, error });
-    this._reportError(error);
+    this._safeLifecycleCallback('onReconnectFailed', { maxAttempts, elapsedMs: Date.now() - startedAt, error });
+    this._safeReportError(error, 'autoReconnect');
   }
 
   // ── デバイス記憶（選択ダイアログなしの再接続） ─────────────────
@@ -818,6 +925,7 @@ class OrpheInsole {
    */
   selectBluetoothDevice(uuid = 'DEVICE_INFORMATION') {
     this._disableAutoReconnect();
+    this._invalidateNotifyOperations();
     this.forgetLastBluetoothDevice();
     if (this.bluetoothDevice?.gatt?.connected) {
       try { this.bluetoothDevice.gatt.disconnect(); } catch (_) { }
@@ -1247,13 +1355,35 @@ class OrpheInsole {
    *
    */
   startNotify(uuid, options = {}) {
+    const operationToken = this._nextNotifyOperation(uuid);
     return this.scan(uuid, options)
-      .then(() => this.connectGATT(uuid, options))
-      .then(() => this._characteristicFor(uuid).startNotifications())
       .then(() => {
-        this.dataChangedEventHandlerMap[uuid] = this.dataChanged(this, uuid);
-        this._characteristicFor(uuid).addEventListener('characteristicvaluechanged', this.dataChangedEventHandlerMap[uuid]);
-        this.onStartNotify(uuid);
+        // scan 待機中に新しい start/stop または切断が発生した旧操作は、
+        // 新しい接続へ進まずここで終了する。
+        if (this._notifyOperationTokens[uuid] !== operationToken) return undefined;
+        return this.connectGATT(uuid, options);
+      })
+      .then(() => {
+        // connectGATT 待機中に世代が変わった旧操作が、新 GATT の characteristic を
+        // 取得して startNotifications() しないよう、取得前に再度確認する。
+        if (this._notifyOperationTokens[uuid] !== operationToken) return undefined;
+        const characteristic = this._characteristicFor(uuid);
+        return this._enqueueNotifyOperation(uuid, characteristic, operationToken, async () => {
+          await characteristic.startNotifications();
+          // 待機中により新しい操作が予約された場合、その操作が同じ queue の後ろで
+          // 最終状態を確定するため、この古い handler は登録しない。
+          if (this._notifyOperationTokens[uuid] !== operationToken) return;
+          const handler = this.dataChanged(this, uuid);
+          const previousHandler = this.dataChangedEventHandlerMap[uuid];
+          const previousCharacteristic = this._notifyCharacteristics[uuid];
+          if (previousHandler && previousCharacteristic) {
+            try { previousCharacteristic.removeEventListener('characteristicvaluechanged', previousHandler); } catch { /* noop */ }
+          }
+          this.dataChangedEventHandlerMap[uuid] = handler;
+          this._notifyCharacteristics[uuid] = characteristic;
+          characteristic.addEventListener('characteristicvaluechanged', handler);
+          this.onStartNotify(uuid);
+        });
       })
       .catch(error => {
         console.error('startNotify: Error : ' + error);
@@ -1267,26 +1397,28 @@ class OrpheInsole {
    *
    */
   stopNotify(uuid, options = {}) {
+    const operationToken = this._nextNotifyOperation(uuid);
     return this.scan(uuid, options) // BLEデバイスのスキャンを開始します。
       .then(() => {
+        if (this._notifyOperationTokens[uuid] !== operationToken) return undefined;
         return this.connectGATT(uuid, options); // GATTサーバーに接続します。
       })
       .then(() => {
-        // stopNotificationsメソッドを呼び出してNotificationを停止します。
-        // このメソッドはPromiseを返すため、その完了を待つ必要があります。
-        return this._characteristicFor(uuid).stopNotifications();
-      })
-      .then(() => {
-        // イベントハンドラを解除
-        if (this.dataChangedEventHandlerMap[uuid]) {
-          this._characteristicFor(uuid).removeEventListener(
-            'characteristicvaluechanged',
-            this.dataChangedEventHandlerMap[uuid]
-          );
-          // 登録されたハンドラをマップから削除
-          delete this.dataChangedEventHandlerMap[uuid];
-        }
-        this.onStopNotify(uuid);
+        if (this._notifyOperationTokens[uuid] !== operationToken) return undefined;
+        const characteristic = this._characteristicFor(uuid);
+        return this._enqueueNotifyOperation(uuid, characteristic, operationToken, async () => {
+          // handler は queue 内で取得する。先行 startNotify が待機中なら、その完了後に
+          // 登録された handler をこの stop が確実に解除するため。
+          const handler = this.dataChangedEventHandlerMap[uuid];
+          const handlerCharacteristic = this._notifyCharacteristics[uuid] || characteristic;
+          await characteristic.stopNotifications();
+          if (handler && handlerCharacteristic) {
+            try { handlerCharacteristic.removeEventListener('characteristicvaluechanged', handler); } catch { /* noop */ }
+          }
+          if (this.dataChangedEventHandlerMap[uuid] === handler) delete this.dataChangedEventHandlerMap[uuid];
+          if (this._notifyCharacteristics[uuid] === handlerCharacteristic) delete this._notifyCharacteristics[uuid];
+          if (this._notifyOperationTokens[uuid] === operationToken) this.onStopNotify(uuid);
+        });
       })
       .catch(error => {
         this._reportError(error);
@@ -1330,6 +1462,7 @@ class OrpheInsole {
     this.stopWatchingAdvertisements();
 
     if (this.bluetoothDevice.gatt.connected) {
+      this._invalidateNotifyOperations();
       this.bluetoothDevice.gatt.disconnect();
       // 切断後の再接続では characteristic を取り直す
       this._characteristics = {};
@@ -1422,6 +1555,7 @@ class OrpheInsole {
    * 接続情報をクリアします。
    */
   clear() {
+    this._invalidateNotifyOperations();
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
     this._characteristics = {};
