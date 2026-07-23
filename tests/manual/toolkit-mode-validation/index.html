@@ -261,6 +261,39 @@
           </div>
         </div>
       </div>
+
+      <div class="panel attitude-panel mt-3">
+        <div class="chart-heading attitude-heading">
+          <div>
+            <strong>Quaternion → 3D姿勢</strong>
+            <span>showcaseと同じ靴モデルへ受信Quaternionを適用します。Format 1/4では動き、Format 3・FIFO・Step-onlyでは「Quatなし」になることを確認します。</span>
+          </div>
+          <span id="attitude_mode_badge" class="metric-chip neutral">Quaternion確認待ち</span>
+        </div>
+        <div class="row g-3 align-items-stretch">
+          <div class="col-xl-8">
+            <div id="validation_canvas3d" aria-label="左右インソールのQuaternion 3D表示"></div>
+            <button id="reset_attitude_button" class="btn btn-warning btn-sm mt-2">
+              姿勢をリセット（現在の向きを基準）
+            </button>
+          </div>
+          <div class="col-xl-4">
+            <div class="attitude-readouts">
+              <article class="attitude-device">
+                <div><strong>INSOLE 01</strong><span id="attitude_status_0" class="metric-chip neutral">受信待ち</span></div>
+                <p id="quat_readout_0">w — / x — / y — / z —</p>
+                <p id="euler_readout_0">pitch — / roll — / yaw —</p>
+              </article>
+              <article class="attitude-device">
+                <div><strong>INSOLE 02</strong><span id="attitude_status_1" class="metric-chip neutral">受信待ち</span></div>
+                <p id="quat_readout_1">w — / x — / y — / z —</p>
+                <p id="euler_readout_1">pitch — / roll — / yaw —</p>
+              </article>
+              <p class="form-hint mb-0">数値とCGが両方停止した場合は、イベントログの実機状態とQuaternion列を確認してください。</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="row g-3 mb-4" aria-label="最新データ">
@@ -403,8 +436,13 @@
   <script src="../../../src/InsoleFifo.js"></script>
   <script src="../../../src/InsoleGait.js"></script>
   <script src="../../../src/InsoleToolkit.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/toxiclibsjs/0.1.3/toxiclibs.min.js"
+    integrity="sha512-XXs22VoCpwSw/DSIaY5YXMBLEp2CFA7vQO+GzNxFk8kmhabcHgXYpU7gFDij7+VLmoDfW3F3y5bu0O9r7REP2A=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./metrics.js"></script>
+  <script src="./attitude-viz.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

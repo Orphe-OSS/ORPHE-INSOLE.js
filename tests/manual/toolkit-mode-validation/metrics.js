@@ -224,6 +224,17 @@
         return Boolean(sample[field]);
     }
 
+    /**
+     * ToolkitはRaw/Stepの同時OFFを許可しないため、設定切替中だけ使う安全な中間出力。
+     * Rawを維持し、現在または切替先で必要なStepを先に購読してから最終出力へ移る。
+     */
+    function safeOutputBridge(currentOutputs = {}, targetOutputs = {}) {
+        return {
+            sensorValues: true,
+            stepAnalysis: Boolean(currentOutputs.stepAnalysis || targetOutputs.stepAnalysis),
+        };
+    }
+
     function evaluateDeviceRun(stats, preset) {
         const checks = [];
         const add = (level, label, detail) => checks.push({ level, label, detail });
@@ -335,6 +346,7 @@
         summarizeArrivals,
         deviceTimestampToEpoch,
         sampleHasField,
+        safeOutputBridge,
         evaluateDeviceRun,
     };
 

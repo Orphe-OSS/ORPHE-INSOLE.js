@@ -1,4 +1,4 @@
-/* global ToolkitValidationMetrics, buildInsoleToolkit, getInsoleToolkitSession, insoles */
+/* global ToolkitValidationMetrics, AttitudeViz, buildInsoleToolkit, getInsoleToolkitSession, insoles */
 
 'use strict';
 
@@ -22,6 +22,7 @@ const sessions = [null, null];
 const eventEntries = [];
 const previewDevices = DEVICE_IDS.map((id) => createPreviewDevice(id));
 const lastSessionStateSignatures = [null, null];
+const pendingConnectPresetApply = [false, false];
 
 const reconnectStats = DEVICE_IDS.map(() => createReconnectStats());
 
@@ -44,6 +45,8 @@ const dom = {
     historyBody: document.getElementById('history_body'),
     eventLog: document.getElementById('event_log'),
     copyLog: document.getElementById('copy_event_log_button'),
+    resetAttitude: document.getElementById('reset_attitude_button'),
+    attitudeMode: document.getElementById('attitude_mode_badge'),
     resetReconnect: document.getElementById('reset_reconnect_button'),
     downloadJson: document.getElementById('download_json_button'),
     downloadFifo: document.getElementById('download_fifo_button'),
@@ -70,10 +73,22 @@ function createPreviewDevice(id) {
     return {
         id,
         rawPackets: 0,
+        rawSamples: 0,
         stepPackets: 0,
+        completedSteps: 0,
+        startedAt: null,
+        serialTracker: Metrics.createSerialTracker(),
+        fieldCounts: { acc: 0, gyro: 0, press: 0, quat: 0 },
+        batchGaps: [],
+        deliveryAges: [],
+        lastBatchArrival: null,
         lastSignalAt: null,
         latestRaw: null,
         latestStep: null,
+        fifoLag: 0,
+        fifoLagMax: 0,
+        fifoDropped: 0,
+        unexpectedRealtimePackets: 0,
     };
 }
 
@@ -275,8 +290,8 @@ function setRunState(next, message) {
             : next === 'switching'
                 ? '設定切替中'
                 : connectedIds().length > 0 ? '計測待機' : '接続待ち';
-    if (message) dom.runMessage.textContent = message;
     updateControls();
+    if (message) dom.runMessage.textContent = message;
 }
 
 function updateControls() {
@@ -294,7 +309,20 @@ function updateControls() {
     }
 }
 
-function selectPreset(id) {
+function resetLivePreview(reason) {
+    signalPoints.length = 0;
+    timingPoints.length = 0;
+    for (const id of DEVICE_IDS) {
+        previewDevices[id] = createPreviewDevice(id);
+        renderDevice(id);
+        renderSerialMap(id, null, null);
+    }
+    if (typeof AttitudeViz !== 'undefined') AttitudeViz.clearAll();
+    renderAttitude();
+    if (reason) logEvent(null, `ライブプレビューをリセット: ${reason}`);
+}
+
+async function selectPreset(id) {
     if (!PRESETS[id] || runState !== 'idle') return;
     selectedPresetId = id;
     document.querySelectorAll('.preset-card').forEach((button) => {
@@ -303,6 +331,26 @@ function selectPreset(id) {
     dom.selectedPreset.textContent = PRESETS[id].label;
     renderExpectations();
     logEvent(null, `プリセット選択: ${PRESETS[id].label}`, 'success');
+    resetLivePreview(`${PRESETS[id].label}へ切替`);
+
+    const ids = connectedIds();
+    if (ids.length === 0) return;
+    setRunState('switching', `② ${PRESETS[id].label} を実機へ適用中…`);
+    const settled = await Promise.allSettled(ids.map((deviceId) => applyPresetToDevice(deviceId, PRESETS[id])));
+    let applied = 0;
+    settled.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            applied += 1;
+        } else {
+            logEvent(ids[index], `プリセット即時適用失敗: ${result.reason?.message || result.reason}`, 'error');
+        }
+    });
+    setRunState(
+        'idle',
+        applied > 0
+            ? `${PRESETS[id].label} を${applied}台へ適用済み。ライブ表示を確認して③「計測開始」へ`
+            : '設定を適用できませんでした。イベントログを確認してください'
+    );
 }
 
 function chip(text, level = 'neutral') {
@@ -331,15 +379,29 @@ function renderExpectations() {
 async function applyPresetToDevice(id, preset) {
     const session = sessions[id];
     if (!session || !isConnected(id)) throw new Error(`${deviceLabel(id)} is not connected`);
-    // 前回のStep/FIFOストアを次の計測へ持ち込まないよう、取得を一度止めてから再構成する。
-    await session.setOutputs({ sensorValues: false, stepAnalysis: false });
+    const before = session.snapshot();
+    if (sessionMatchesPreset(before, preset)) {
+        logEvent(id, `${preset.label} は適用済み: ${formatSessionState(before)}`, 'success');
+        return;
+    }
+
+    // Raw/Stepの同時OFFは禁止。Rawを一時的に維持し、Stepが必要なら先に購読してから
+    // streaming/acquisitionを切り替え、最後に目的の出力構成へ確定する。
+    await session.setOutputs(Metrics.safeOutputBridge(before.outputs, {
+        sensorValues: preset.raw,
+        stepAnalysis: preset.step,
+    }));
     await session.setStreamingMode(preset.streamingMode);
     await session.setSensorDataMode(preset.acquisition);
     await session.setOutputs({
         sensorValues: preset.raw,
         stepAnalysis: preset.step,
     });
-    logEvent(id, `${preset.label} を適用: ${formatSessionState(session.snapshot())}`, 'success');
+    const after = session.snapshot();
+    if (!sessionMatchesPreset(after, preset)) {
+        throw new Error(`InsoleToolkit: preset state mismatch (${formatSessionState(after)})`);
+    }
+    logEvent(id, `${preset.label} を適用完了: ${formatSessionState(after)}`, 'success');
 }
 
 async function startRun() {
@@ -467,6 +529,16 @@ function noteBatchArrival(device, now) {
     device.lastBatchArrival = now;
 }
 
+function notePreviewBatchArrival(device, now) {
+    if (device.startedAt === null) device.startedAt = now;
+    if (device.lastBatchArrival !== null) {
+        const gap = now - device.lastBatchArrival;
+        device.batchGaps.push(gap);
+        timingPoints.push({ t: now, id: device.id, gap, lag: device.fifoLag });
+    }
+    device.lastBatchArrival = now;
+}
+
 function sampleFieldList(sample) {
     return ['acc', 'gyro', 'press', 'quat']
         .filter((field) => Metrics.sampleHasField(sample, field))
@@ -479,6 +551,11 @@ function recordSample(device, sample, source, phase) {
     const inPreview = phase === 'preview';
     if (inWindow) {
         device.windowRawSamples += 1;
+        for (const field of ['acc', 'gyro', 'press', 'quat']) {
+            if (Metrics.sampleHasField(sample, field)) device.fieldCounts[field] += 1;
+        }
+    } else if (inPreview) {
+        device.rawSamples += 1;
         for (const field of ['acc', 'gyro', 'press', 'quat']) {
             if (Metrics.sampleHasField(sample, field)) device.fieldCounts[field] += 1;
         }
@@ -495,7 +572,7 @@ function recordSample(device, sample, source, phase) {
         : null;
     const accNorm = acc ? Math.hypot(acc.x, acc.y, acc.z) : null;
     const deviceEpoch = Metrics.deviceTimestampToEpoch(sample.timestamp ?? sample.t);
-    if ((inWindow || inDrain) && deviceEpoch !== null) {
+    if ((inWindow || inDrain || inPreview) && deviceEpoch !== null) {
         const age = Date.now() - deviceEpoch;
         if (age >= -2000 && age <= 120000) device.deliveryAges.push(Math.max(0, age));
     }
@@ -511,6 +588,7 @@ function recordSample(device, sample, source, phase) {
         timestamp: sample.timestamp ?? sample.t,
         arrivedAt: performance.now(),
     };
+    if (quat && typeof AttitudeViz !== 'undefined') AttitudeViz.setQuat(device.id, quat);
     const now = performance.now();
     if ((inWindow || inPreview) && (device.lastSignalAt === null || now - device.lastSignalAt >= 8)) {
         signalPoints.push({
@@ -535,7 +613,26 @@ function handleRealtimePacket(id, data, uuid) {
 
     if (!currentRun) {
         const preview = previewDevices[id];
+        const state = sessions[id]?.snapshot();
+        const expected = state?.connected
+            && !state.transitioning
+            && state.sensorDataMode === 'realtime'
+            && state.outputs.sensorValues;
+        if (!expected) {
+            preview.unexpectedRealtimePackets += 1;
+            if (preview.unexpectedRealtimePackets === 1) {
+                logEvent(
+                    id,
+                    `選択中モードではRealtime Rawを表示対象外にしました: ${formatSessionState(state)}`,
+                    'warn'
+                );
+            }
+            return;
+        }
+        const now = performance.now();
+        notePreviewBatchArrival(preview, now);
         preview.rawPackets += 1;
+        Metrics.recordSerial(preview.serialTracker, parsed.serial_number);
         if (preview.rawPackets === 1) {
             logEvent(
                 id,
@@ -576,9 +673,17 @@ function handleRealtimePacket(id, data, uuid) {
 function handleFifoSamples(id, samples) {
     if (!currentRun) {
         const preview = previewDevices[id];
+        const state = sessions[id]?.snapshot();
+        const expected = state?.connected
+            && !state.transitioning
+            && state.sensorDataMode === 'fifo'
+            && state.outputs.sensorValues;
+        if (!expected) return;
+        notePreviewBatchArrival(preview, performance.now());
         const firstBatch = preview.rawPackets === 0;
         const serials = new Set(samples.map((sample) => sample.serial_number));
         preview.rawPackets += serials.size;
+        for (const serial of serials) Metrics.recordSerial(preview.serialTracker, serial);
         if (firstBatch && samples.length > 0) {
             logEvent(
                 id,
@@ -620,6 +725,13 @@ function handleFifoSamples(id, samples) {
 
 function handleFifoProgress(id, info) {
     const device = runDeviceFor(id);
+    if (!device && !currentRun) {
+        const preview = previewDevices[id];
+        preview.fifoLag = Number(info.lag || 0);
+        preview.fifoLagMax = Math.max(preview.fifoLagMax, preview.fifoLag);
+        if (Number.isFinite(Number(info.dropped))) preview.fifoDropped = Number(info.dropped);
+        return;
+    }
     if (!device) return;
     device.fifoLag = Number(info.lag || 0);
     device.fifoLagMax = Math.max(device.fifoLagMax, device.fifoLag);
@@ -635,6 +747,8 @@ function handleFifoDataLoss(id, info) {
     if (device) {
         device.fifoCurrentDropped = Number(info.cumulative ?? info.dropped ?? 0);
         device.fifoDropped = device.fifoFinalizedDropped + device.fifoCurrentDropped;
+    } else if (!currentRun) {
+        previewDevices[id].fifoDropped = Number(info.cumulative ?? info.dropped ?? 0);
     }
     logEvent(id, `FIFO data loss: ${info.reason}, +${info.dropped}, cumulative ${info.cumulative}`, 'error');
 }
@@ -649,6 +763,8 @@ function handleFifoStopped(id, info) {
         device.fifoDrainRecovered += Number(info.drainRecovered || 0);
         device.fifoStopped = true;
         device.fifoStopReason = info.reason || null;
+    } else if (!currentRun) {
+        previewDevices[id].fifoDropped = Number(info.dropped || 0);
     }
     logEvent(
         id,
@@ -660,6 +776,8 @@ function handleFifoStopped(id, info) {
 function handleStepRaw(id, packet) {
     if (!currentRun) {
         const preview = previewDevices[id];
+        const state = sessions[id]?.snapshot();
+        if (!state?.outputs.stepAnalysis || !state.gaitActive) return;
         preview.stepPackets += 1;
         if (preview.stepPackets === 1) {
             logEvent(id, `Stepライブプレビュー受信開始: type=${packet.type}`, 'success');
@@ -682,6 +800,9 @@ function handleStepRaw(id, packet) {
 function handleStepRow(id, row) {
     if (!currentRun) {
         const preview = previewDevices[id];
+        const state = sessions[id]?.snapshot();
+        if (!state?.outputs.stepAnalysis || !state.gaitActive) return;
+        preview.completedSteps += 1;
         preview.latestStep = row;
         signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
         logEvent(id, `Stepプレビュー ${row.step_number} 完成 (${row.gait_type})`, 'success');
@@ -863,8 +984,34 @@ function verdictLabel(level, active) {
     return '未計測';
 }
 
+function actualModeLabel(snapshot) {
+    if (!snapshot?.connected) return 'disconnected';
+    const acquisition = snapshot.sensorDataMode === 'fifo'
+        ? `FIFO${snapshot.fifoActive ? ' active' : ' starting'}`
+        : `Realtime F${snapshot.streamingMode}`;
+    return `${acquisition} / Raw ${snapshot.outputs.sensorValues ? 'ON' : 'OFF'} / Step ${snapshot.outputs.stepAnalysis ? 'ON' : 'OFF'}`;
+}
+
+function renderPreviewMetrics(id, preview) {
+    const elapsedSec = preview.startedAt === null
+        ? 0
+        : Math.max(0.001, (performance.now() - preview.startedAt) / 1000);
+    const serial = Metrics.summarizeSerialTracker(preview.serialTracker);
+    const gaps = Metrics.summarizeValues(preview.batchGaps);
+    const delivery = Metrics.summarizeValues(preview.deliveryAges);
+    setText(`metric_sample_hz_${id}`, preview.rawSamples > 0 ? formatNumber(preview.rawSamples / elapsedSec, 1) : '0');
+    setText(`metric_packet_hz_${id}`, preview.rawPackets > 0 ? formatNumber(preview.rawPackets / elapsedSec, 1) : '0');
+    setText(`metric_missing_${id}`, String(serial.missing || 0));
+    setText(`metric_gap_${id}`, gaps.p95 === null ? '—' : formatNumber(gaps.p95, 0));
+    setText(`metric_age_${id}`, delivery.median === null ? '—' : formatNumber(delivery.median, 0));
+    setText(`metric_steps_${id}`, String(preview.completedSteps || 0));
+    setText(`metric_lag_${id}`, String(preview.fifoLagMax || 0));
+    setText(`metric_dropped_${id}`, String(preview.fifoDropped || 0));
+    renderSerialMap(id, preview.serialTracker, serial);
+}
+
 function renderDevice(id) {
-    const result = liveResult(id);
+    const result = !currentRun && isConnected(id) ? null : liveResult(id);
     const verdict = document.getElementById(`device_verdict_${id}`);
     if (!result) {
         const preview = previewDevices[id];
@@ -873,12 +1020,11 @@ function renderDevice(id) {
         verdict.textContent = receiving ? 'ライブ受信' : '未計測';
         const checks = document.getElementById(`checks_${id}`);
         checks.replaceChildren();
-        if (receiving) {
-            checks.append(
-                chip(`接続プレビュー: Raw ${preview.rawPackets} pkt / Step ${preview.stepPackets} pkt`, 'pass'),
-                chip('正式な数値集計は「計測開始」後', 'neutral')
-            );
-        }
+        const snapshot = sessions[id]?.snapshot();
+        checks.append(chip(`実機状態: ${actualModeLabel(snapshot)}`, snapshot?.connected ? 'pass' : 'neutral'));
+        if (receiving) checks.append(chip(`接続プレビュー: Raw ${preview.rawPackets} pkt / Step ${preview.stepPackets} pkt`, 'pass'));
+        checks.append(chip('正式な数値集計は「計測開始」後', 'neutral'));
+        renderPreviewMetrics(id, preview);
         renderLatestRaw(id, preview.latestRaw);
         renderLatestStep(id, preview.latestStep);
         return;
@@ -906,6 +1052,61 @@ function renderDevice(id) {
     renderLatestRaw(id, result.latestRaw);
     renderLatestStep(id, result.latestStep);
     renderSerialMap(id, result.serialTracker, result.serial);
+}
+
+function quatToEulerDegrees(q) {
+    if (!q) return null;
+    const sinRoll = 2 * (q.w * q.x + q.y * q.z);
+    const cosRoll = 1 - 2 * (q.x * q.x + q.y * q.y);
+    const sinPitch = Math.max(-1, Math.min(1, 2 * (q.w * q.y - q.z * q.x)));
+    const sinYaw = 2 * (q.w * q.z + q.x * q.y);
+    const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
+    return {
+        roll: Math.atan2(sinRoll, cosRoll) * 180 / Math.PI,
+        pitch: Math.asin(sinPitch) * 180 / Math.PI,
+        yaw: Math.atan2(sinYaw, cosYaw) * 180 / Math.PI,
+    };
+}
+
+function latestRawForDisplay(id) {
+    if (currentRun?.devices[id]?.latestRaw) return currentRun.devices[id].latestRaw;
+    if (previewDevices[id].latestRaw) return previewDevices[id].latestRaw;
+    return lastResults[id]?.latestRaw || null;
+}
+
+function renderAttitude() {
+    const preset = PRESETS[selectedPresetId];
+    dom.attitudeMode.className = `metric-chip ${preset.fields.quat ? 'pass' : 'warn'}`;
+    dom.attitudeMode.textContent = preset.fields.quat
+        ? `${preset.label}: Quaternion expected`
+        : `${preset.label}: Quaternionなし`;
+
+    for (const id of DEVICE_IDS) {
+        const latest = latestRawForDisplay(id);
+        const quat = latest?.quat || null;
+        const status = document.getElementById(`attitude_status_${id}`);
+        const quatReadout = document.getElementById(`quat_readout_${id}`);
+        const eulerReadout = document.getElementById(`euler_readout_${id}`);
+        if (!preset.fields.quat) {
+            status.className = 'metric-chip warn';
+            status.textContent = 'このモードはQuatなし';
+            quatReadout.textContent = 'w — / x — / y — / z —';
+            eulerReadout.textContent = 'pitch — / roll — / yaw —';
+            continue;
+        }
+        if (!quat) {
+            status.className = 'metric-chip neutral';
+            status.textContent = 'Quaternion受信待ち';
+            quatReadout.textContent = 'w — / x — / y — / z —';
+            eulerReadout.textContent = 'pitch — / roll — / yaw —';
+            continue;
+        }
+        const euler = quatToEulerDegrees(quat);
+        status.className = 'metric-chip pass';
+        status.textContent = 'Quaternion受信中';
+        quatReadout.textContent = `w ${formatNumber(quat.w, 3)} / x ${formatNumber(quat.x, 3)} / y ${formatNumber(quat.y, 3)} / z ${formatNumber(quat.z, 3)}`;
+        eulerReadout.textContent = `pitch ${formatNumber(euler.pitch, 1)}° / roll ${formatNumber(euler.roll, 1)}° / yaw ${formatNumber(euler.yaw, 1)}°`;
+    }
 }
 
 function renderLatestRaw(id, latest) {
@@ -1139,6 +1340,10 @@ function renderConnectionState(id) {
     stateElement.className = `metric-chip ${state === 'connected' ? 'pass' : state === 'reconnecting' ? 'warn' : 'neutral'}`;
     const name = insole?.bluetoothDevice?.name || '未選択';
     setText(`connection_name_${id}`, name);
+    const mountPosition = insole?.device_information?.mount_position;
+    if (typeof AttitudeViz !== 'undefined' && Number.isFinite(Number(mountPosition))) {
+        AttitudeViz.setFoot(id, (Number(mountPosition) & 0b1) === 1 ? 'R' : 'L');
+    }
 }
 
 function renderReconnect(id) {
@@ -1174,19 +1379,47 @@ function renderReconnect(id) {
     });
 }
 
-function desiredStateRestored(id) {
-    if (!currentRun || !currentRun.activeIds.includes(id)) return false;
-    const state = sessions[id]?.snapshot();
-    const preset = currentRun.preset;
+function sessionMatchesPreset(state, preset) {
     if (!state?.connected || state.transitioning) return false;
     if (state.streamingMode !== preset.streamingMode) return false;
     if (state.sensorDataMode !== preset.acquisition) return false;
     if (state.outputs.sensorValues !== preset.raw || state.outputs.stepAnalysis !== preset.step) return false;
     if (preset.raw && preset.acquisition === 'fifo' && !state.fifoActive) return false;
     if (preset.raw && preset.acquisition === 'realtime' && !state.sensorNotifyActive) return false;
+    if (preset.acquisition === 'realtime' && state.fifoActive) return false;
     if (!preset.raw && state.sensorNotifyActive) return false;
     if (preset.step && !state.gaitActive) return false;
+    if (!preset.step && state.gaitActive) return false;
     return true;
+}
+
+function desiredStateRestored(id) {
+    if (!currentRun || !currentRun.activeIds.includes(id)) return false;
+    return sessionMatchesPreset(sessions[id]?.snapshot(), currentRun.preset);
+}
+
+function ensureSelectedPresetAfterConnect(id, snapshot) {
+    if (
+        runState !== 'idle'
+        || pendingConnectPresetApply[id]
+        || !snapshot?.connected
+        || snapshot.transitioning
+        || sessionMatchesPreset(snapshot, PRESETS[selectedPresetId])
+    ) return;
+
+    pendingConnectPresetApply[id] = true;
+    setTimeout(async () => {
+        try {
+            logEvent(id, `接続後に選択プリセットを自動適用: ${PRESETS[selectedPresetId].label}`, 'success');
+            await applyPresetToDevice(id, PRESETS[selectedPresetId]);
+            resetLivePreview(`${deviceLabel(id)} 接続後の設定適用`);
+        } catch (error) {
+            logEvent(id, `接続後プリセット適用失敗: ${error.message || error}`, 'error');
+        } finally {
+            pendingConnectPresetApply[id] = false;
+            updateControls();
+        }
+    }, 0);
 }
 
 function updateReconnectRestore() {
@@ -1307,6 +1540,8 @@ function clearDisplay() {
     }
     renderHistory();
     renderDownloads();
+    if (typeof AttitudeViz !== 'undefined') AttitudeViz.clearAll();
+    renderAttitude();
     logEvent(null, '計測表示と履歴をクリア');
 }
 
@@ -1365,6 +1600,7 @@ function installDevice(id) {
             onStateChange(snapshot) {
                 renderConnectionState(id);
                 noteSessionState(id, snapshot);
+                ensureSelectedPresetAfterConnect(id, snapshot);
             },
             onError(error) {
                 const cancelled = error?.name === 'NotFoundError';
@@ -1444,13 +1680,22 @@ function installDevice(id) {
 }
 
 document.querySelectorAll('.preset-card').forEach((button) => {
-    button.addEventListener('click', () => selectPreset(button.dataset.preset));
+    button.addEventListener('click', () => {
+        selectPreset(button.dataset.preset).catch((error) => {
+            logEvent(null, `プリセット切替失敗: ${error.message || error}`, 'error');
+            setRunState('idle', 'プリセット切替に失敗しました。イベントログを確認してください');
+        });
+    });
 });
 dom.start.addEventListener('click', startRun);
 dom.stop.addEventListener('click', () => finishRun('manual'));
 dom.clear.addEventListener('click', clearDisplay);
 dom.resetReconnect.addEventListener('click', resetReconnectLogs);
 dom.copyLog.addEventListener('click', copyEventLog);
+dom.resetAttitude.addEventListener('click', () => {
+    if (typeof AttitudeViz !== 'undefined') AttitudeViz.reset();
+    logEvent(null, '3D姿勢の基準を現在向きへリセット', 'success');
+});
 dom.downloadJson.addEventListener('click', () => {
     const payload = {
         exportedAt: new Date().toISOString(),
@@ -1486,6 +1731,7 @@ if (!window.isSecureContext || !navigator.bluetooth) {
 
 for (const id of DEVICE_IDS) installDevice(id);
 renderExpectations();
+renderAttitude();
 renderHistory();
 renderDownloads();
 updateControls();
@@ -1521,6 +1767,7 @@ function animationLoop(now) {
             renderDevice(id);
             renderReconnect(id);
         }
+        renderAttitude();
         const newest = DEVICE_IDS
             .flatMap((id) => [
                 liveResult(id)?.latestRaw?.arrivedAt,

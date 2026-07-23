@@ -68,6 +68,23 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
 }
 
 {
+    assert.deepEqual(
+        metrics.safeOutputBridge(
+            { sensorValues: true, stepAnalysis: false },
+            { sensorValues: false, stepAnalysis: true }
+        ),
+        { sensorValues: true, stepAnalysis: true }
+    );
+    assert.deepEqual(
+        metrics.safeOutputBridge(
+            { sensorValues: false, stepAnalysis: true },
+            { sensorValues: true, stepAnalysis: false }
+        ),
+        { sensorValues: true, stepAnalysis: true }
+    );
+}
+
+{
     const evaluation = metrics.evaluateDeviceRun({
         durationSec: 10,
         rawPackets: 500,
@@ -140,6 +157,10 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.match(app, /RUN_PROGRESS_LOG_INTERVAL_MS = 5000/);
     assert.match(app, /events: eventEntries\.slice\(\)/);
     assert.match(app, /Rawライブプレビュー受信開始/);
+    assert.match(app, /Metrics\.safeOutputBridge/);
+    assert.doesNotMatch(app, /sensorValues:\s*false,\s*stepAnalysis:\s*false/);
+    assert.match(html, /id="validation_canvas3d"/);
+    assert.match(html, /attitude-viz\.js/);
 }
 
 console.log('toolkit-mode-validation tests: ok');
