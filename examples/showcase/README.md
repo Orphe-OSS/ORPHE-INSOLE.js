@@ -26,13 +26,16 @@ npx serve .
 # → http://localhost:3000/examples/showcase/ を Chrome で開く
 ```
 
-接続はページ上部のトグルスイッチから。ストリーミングモード（1/3/4）はトグル横の
-<i>ギアアイコン</i>から切り替えられます（モードにより配信されないデータのセクションには注記が表示されます）。
+接続はページ上部のトグルスイッチから。トグル横の<i>ギアアイコン</i>では、
+Sensor Values / Step Analysis（両方も可）、Sensor Values の Realtime / FIFO、
+Realtime Streaming Format（1/3/4）を切り替えられます。FIFO 選択中も Step Analysis は
+専用の realtime characteristic から取得します（モードにより配信されないデータのセクションには注記が表示されます）。
 
 「データ記録（CSV）」セクションの**ロスレス収録（FIFO）**は、通常のストリーミングと異なり
 FWバッファから欠損なくデータを回収します（`read_sensor_data_by_tokoroten_loop` 相当）。収録開始で
 リアルタイム配信が一時停止し、回収したデータで各可視化がライブ更新されます。CSVは参照実装互換
 （`serial_number, timestamp, gyro[dps], acc[G], press1..6[N]`）。FIFOモードにクォータニオンは含まれません。
+この記録カードとギア内の設定は同じ Toolkit セッションを操作するため、どちらから切り替えても競合しません。
 
 ## デモ用歩行データの差し替え
 

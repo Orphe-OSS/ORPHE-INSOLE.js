@@ -648,9 +648,93 @@ export declare class OrpheInsoleGait {
 
 type OrpheInsoleGaitConstructor = typeof OrpheInsoleGait;
 
+export type InsoleSensorDataMode = 'realtime' | 'fifo';
+
+export interface InsoleToolkitOutputs {
+    sensorValues?: boolean;
+    stepAnalysis?: boolean;
+}
+
+export interface InsoleToolkitFifoOptions extends InsoleFifoOptions {
+    onSamples?: (deviceId: number, samples: InsoleFifoSample[]) => void;
+    onProgress?: (info: InsoleFifoProgress) => void;
+    onAnomaly?: (info: InsoleFifoAnomaly) => void;
+    onDataLoss?: (info: InsoleFifoDataLoss) => void;
+    onStopped?: (info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void;
+    onError?: (error: unknown) => void;
+}
+
+export interface InsoleToolkitGaitOptions extends InsoleGaitOptions {
+    onGait?: (deviceId: number, row: InsoleGaitRow) => void;
+    onMotion?: (deviceId: number, motion: InsoleGaitMotion) => void;
+    onRaw?: (deviceId: number, packet: InsoleGaitPacket) => void;
+    onError?: (error: unknown) => void;
+}
+
+export interface InsoleToolkitSessionState {
+    connected: boolean;
+    transitioning: boolean;
+    streamingMode: InsoleStreamingMode;
+    sensorDataMode: InsoleSensorDataMode;
+    outputs: Required<InsoleToolkitOutputs>;
+    sensorNotifyActive: boolean;
+    fifoActive: boolean;
+    gaitActive: boolean;
+    supportsFifo: boolean;
+    supportsStepAnalysis: boolean;
+    lastError: unknown | null;
+}
+
 export interface BuildInsoleToolkitOptions extends InsoleBeginOptions {
     /** true にすると実機の代わりに OrpheInsoleSimulator を使う（要 InsoleSimulator.js） */
     simulator?: boolean;
+    /** SENSOR_VALUES の取得経路。FIFO は InsoleFifo.js の読み込みが必要 */
+    sensorDataMode?: InsoleSensorDataMode;
+    /** Sensor Values / Step Analysis の出力選択（最低1つ必要） */
+    outputs?: InsoleToolkitOutputs;
+    /** FIFO の収集設定とコールバック */
+    fifo?: InsoleToolkitFifoOptions;
+    /** Step Analysis の購読設定とコールバック */
+    gait?: InsoleToolkitGaitOptions;
+    /** Toolkit の状態遷移後に呼ばれる */
+    onStateChange?: (state: InsoleToolkitSessionState) => void;
+    /** Toolkit または統合モジュールのエラー */
+    onError?: (error: unknown, state: InsoleToolkitSessionState) => void;
+}
+
+export declare class InsoleToolkitSession {
+    constructor(
+        insole: OrpheInsole | OrpheInsoleSimulator,
+        options?: BuildInsoleToolkitOptions,
+        adapters?: {
+            FifoClass?: OrpheInsoleFifoConstructor | null;
+            GaitClass?: OrpheInsoleGaitConstructor | null;
+        }
+    );
+    readonly insole: OrpheInsole | OrpheInsoleSimulator;
+    streamingMode: InsoleStreamingMode;
+    sensorDataMode: InsoleSensorDataMode;
+    outputs: Required<InsoleToolkitOutputs>;
+    connected: boolean;
+    transitioning: boolean;
+    sensorNotifyActive: boolean;
+    fifoActive: boolean;
+    gaitActive: boolean;
+    lastError: unknown | null;
+    readonly supportsFifo: boolean;
+    readonly supportsStepAnalysis: boolean;
+    readonly fifo: OrpheInsoleFifo | null;
+    readonly gait: OrpheInsoleGait | null;
+    snapshot(): InsoleToolkitSessionState;
+    setFifoCallbacks(callbacks?: InsoleToolkitFifoOptions): void;
+    setGaitCallbacks(callbacks?: InsoleToolkitGaitOptions): void;
+    connect(options?: InsoleBeginOptions): Promise<string | void>;
+    disconnect(): Promise<void>;
+    setOutputs(outputs: InsoleToolkitOutputs): Promise<void>;
+    setSensorDataMode(mode: InsoleSensorDataMode): Promise<void>;
+    setStreamingMode(mode: InsoleStreamingMode): Promise<void>;
+    reapplyAfterReconnect(): Promise<void>;
+    markDisconnected(): void;
 }
 
 type OrpheInsoleConstructor = typeof OrpheInsole;
@@ -674,10 +758,12 @@ declare global {
     var insoles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var bles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var cores: Array<OrpheInsole | OrpheInsoleSimulator>;
+    var insoleToolkitSessions: Array<InsoleToolkitSession | null>;
     var FixedSizeArray: FixedSizeArrayConstructor;
     var OrpheTimestamp: OrpheTimestampConstructor;
     var parseInsoleSensorValues: ParseInsoleSensorValues;
     var buildInsoleToolkit: BuildInsoleToolkit;
+    var getInsoleToolkitSession: (insole_id: number) => InsoleToolkitSession | null;
 }
 
 // ── InsoleUtils (src/InsoleUtils.js) — 圧力データ処理ユーティリティ ──
