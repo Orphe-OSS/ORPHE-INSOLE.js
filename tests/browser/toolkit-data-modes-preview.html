@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InsoleToolkit data modes visual fixture</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+  <style>
+    body { min-height: 100vh; background: #101416; color: #f0f3f5; }
+    .preview-header { min-height: 64px; border-top: 2px solid #666; border-bottom: 1px solid #333; }
+  </style>
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleSimulator.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+  <header class="preview-header d-flex align-items-center px-4">
+    <strong class="text-secondary me-4">ORPHE INSOLE Showcase</strong>
+    <div id="toolkit"></div>
+  </header>
+  <main class="container py-5 text-center text-secondary">
+    Visual fixture for the Toolkit settings modal.
+  </main>
+  <script>
+    window.addEventListener('load', async () => {
+      // Simulator を通常デバイスのスロットへ置き、実機用 FIFO / Gait UI の
+      // 有効状態だけを安全にブラウザ確認する（実機通信は行わない）。
+      window.OrpheInsoleFifo = class {
+        constructor(insole) {
+          this.insole = insole;
+          this.onStopped = null;
+          this.collectedCount = 0;
+          this.droppedCount = 0;
+          this.lag = 0;
+        }
+        async start() { return true; }
+        async stop() {
+          if (this.onStopped) {
+            this.onStopped({ reason: 'manual', dropped: 0, collected: 0, drainRecovered: 0 });
+          }
+          return new Map();
+        }
+      };
+      window.OrpheInsoleGait = class {
+        constructor(insole) {
+          this.insole = insole;
+          this.isRunning = false;
+          this.rows = [];
+        }
+        get stepCount() { return this.rows.length; }
+        async start() { this.isRunning = true; return true; }
+        async stop() { this.isRunning = false; }
+      };
+      insoles[0] = new OrpheInsoleSimulator(0);
+      insoles[0].startNotify = async () => {};
+      insoles[0].stopNotify = async () => {};
+      insoles[0].setup();
+      buildInsoleToolkit(document.getElementById('toolkit'), 'INSOLE 01', 0, {
+        streamingMode: 4,
+        autoReconnect: false,
+      });
+      const toggle = document.getElementById('switch_ble0');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      while (!getInsoleToolkitSession(0).connected) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      document.body.dataset.ready = 'true';
+    });
+  </script>
+</body>
+</html>
