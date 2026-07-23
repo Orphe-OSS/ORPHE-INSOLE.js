@@ -36,6 +36,101 @@ var cores = insoles;
  */
 var insoleToolkitSessions = [null, null];
 
+function freezeInsoleToolkitProfile(profile) {
+    return Object.freeze({
+        ...profile,
+        outputs: Object.freeze({ ...profile.outputs }),
+        fields: Object.freeze({ ...profile.fields }),
+        recommendedFor: Object.freeze([...(profile.recommendedFor || [])]),
+        cautions: Object.freeze([...(profile.cautions || [])]),
+    });
+}
+
+/**
+ * 実機検証済みの計測プロファイル。
+ * アプリは低レベル設定を順番に変更せず、applyProfile(id)で原子的に切り替える。
+ */
+var INSOLE_TOOLKIT_PROFILES = Object.freeze({
+    'realtime-orientation': freezeInsoleToolkitProfile({
+        id: 'realtime-orientation',
+        label: 'Realtime Orientation',
+        shortLabel: '姿勢を高速表示',
+        streamingMode: 1,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: false },
+        transport: 'notify',
+        sampleHz: 200,
+        fields: { acc: true, gyro: true, press: false, quat: true, step: false },
+        recommendedFor: ['姿勢・回転の可視化', 'インタラクション'],
+        cautions: ['圧力は含まれません', 'RealtimeはBLE取りこぼしを再取得しません'],
+    }),
+    'realtime-pressure': freezeInsoleToolkitProfile({
+        id: 'realtime-pressure',
+        label: 'Realtime Pressure + IMU',
+        shortLabel: '圧力を高速表示',
+        streamingMode: 3,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: false },
+        transport: 'notify',
+        sampleHz: 200,
+        fields: { acc: true, gyro: true, press: true, quat: false, step: false },
+        recommendedFor: ['接地・リズム検出', '圧力の高速可視化'],
+        cautions: ['Quaternionは含まれません', 'RealtimeはBLE取りこぼしを再取得しません'],
+    }),
+    'realtime-full': freezeInsoleToolkitProfile({
+        id: 'realtime-full',
+        label: 'Realtime Full Sensor',
+        shortLabel: 'まず試す',
+        streamingMode: 4,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: false },
+        transport: 'notify',
+        sampleHz: 100,
+        fields: { acc: true, gyro: true, press: true, quat: true, step: false },
+        recommendedFor: ['初めての可視化', '圧力と姿勢の同時利用'],
+        cautions: ['RealtimeはBLE取りこぼしを再取得しません'],
+    }),
+    'realtime-full-step': freezeInsoleToolkitProfile({
+        id: 'realtime-full-step',
+        label: 'Realtime Full + Step Analysis',
+        shortLabel: 'RawとStepを同時利用',
+        streamingMode: 4,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: true },
+        transport: 'notify',
+        sampleHz: 100,
+        fields: { acc: true, gyro: true, press: true, quat: true, step: true },
+        recommendedFor: ['ライブ表示＋歩行イベント', '可視化アプリ'],
+        cautions: ['通知負荷が増えます', 'Realtime Rawはlosslessではありません'],
+    }),
+    'step-analysis': freezeInsoleToolkitProfile({
+        id: 'step-analysis',
+        label: 'Step Analysis',
+        shortLabel: '歩行指標だけ取得',
+        streamingMode: 4,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: false, stepAnalysis: true },
+        transport: 'notify',
+        sampleHz: null,
+        fields: { acc: false, gyro: false, press: false, quat: false, step: true },
+        recommendedFor: ['歩数・ストライド・接地パターン', '通信量をRawより抑えたいアプリ'],
+        cautions: ['FWが算出するStep Analysisです', 'SENSOR_VALUES Rawは停止します'],
+    }),
+    'fifo-recording': freezeInsoleToolkitProfile({
+        id: 'fifo-recording',
+        label: 'FIFO Lossless Recording',
+        shortLabel: '欠損なく記録',
+        streamingMode: 4,
+        sensorDataMode: 'fifo',
+        outputs: { sensorValues: true, stepAnalysis: false },
+        transport: 'request-response',
+        sampleHz: 200,
+        fields: { acc: true, gyro: true, press: true, quat: false, step: false },
+        recommendedFor: ['研究・後解析用の保存', 'Rawデータの完全性を優先'],
+        cautions: ['到着はバースト状で遅延します', 'QuaternionとStep Analysisは併用できません'],
+    }),
+});
+
 function normalizeInsoleToolkitOutputs(outputs) {
     const normalized = {
         sensorValues: !outputs || outputs.sensorValues !== false,
@@ -53,6 +148,89 @@ function normalizeInsoleSensorDataMode(mode) {
     return mode === 'fifo' ? 'fifo' : 'realtime';
 }
 
+function insoleToolkitError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+}
+
+function normalizeInsoleToolkitConfiguration(config = {}, current = {}) {
+    const currentOutputs = current.outputs || { sensorValues: true, stepAnalysis: false };
+    const outputs = normalizeInsoleToolkitOutputs(config.outputs
+        ? { ...currentOutputs, ...config.outputs }
+        : currentOutputs);
+    const streamingMode = config.streamingMode === undefined
+        ? Number(current.streamingMode || 4)
+        : Number(config.streamingMode);
+    if (![1, 3, 4].includes(streamingMode)) {
+        throw insoleToolkitError(
+            'INVALID_MODE',
+            `InsoleToolkit: invalid streaming mode ${config.streamingMode}.`
+        );
+    }
+    if (
+        config.sensorDataMode !== undefined
+        && config.sensorDataMode !== 'realtime'
+        && config.sensorDataMode !== 'fifo'
+    ) {
+        throw insoleToolkitError(
+            'INVALID_SENSOR_DATA_MODE',
+            `InsoleToolkit: invalid sensor data mode ${config.sensorDataMode}.`
+        );
+    }
+    const sensorDataMode = config.sensorDataMode === undefined
+        ? normalizeInsoleSensorDataMode(current.sensorDataMode)
+        : normalizeInsoleSensorDataMode(config.sensorDataMode);
+    if (sensorDataMode === 'fifo' && !outputs.sensorValues) {
+        throw insoleToolkitError(
+            'FIFO_REQUIRES_SENSOR_VALUES',
+            'InsoleToolkit: FIFO is a Raw Sensor Data mode. Enable Sensor Values or use Step Analysis with Realtime.'
+        );
+    }
+    if (sensorDataMode === 'fifo' && outputs.sensorValues && outputs.stepAnalysis) {
+        throw insoleToolkitError(
+            'FIFO_STEP_INCOMPATIBLE',
+            'InsoleToolkit: lossless FIFO Raw and Step Analysis cannot run simultaneously on the current firmware. Use sequential modes.'
+        );
+    }
+    return { streamingMode, sensorDataMode, outputs };
+}
+
+function resolveInsoleToolkitProfile(profile) {
+    if (typeof profile === 'string') {
+        const resolved = INSOLE_TOOLKIT_PROFILES[profile];
+        if (!resolved) {
+            throw insoleToolkitError('PROFILE_NOT_FOUND', `InsoleToolkit: unknown profile "${profile}".`);
+        }
+        return resolved;
+    }
+    if (!profile || typeof profile !== 'object') {
+        throw insoleToolkitError('PROFILE_NOT_FOUND', 'InsoleToolkit: profile must be a profile id or configuration object.');
+    }
+    const config = normalizeInsoleToolkitConfiguration(profile, {
+        streamingMode: 4,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: false },
+    });
+    return {
+        id: typeof profile.id === 'string' ? profile.id : 'custom',
+        label: typeof profile.label === 'string' ? profile.label : 'Custom profile',
+        ...config,
+    };
+}
+
+function insoleToolkitProfileIdFor(config) {
+    for (const profile of Object.values(INSOLE_TOOLKIT_PROFILES)) {
+        if (
+            profile.streamingMode === config.streamingMode
+            && profile.sensorDataMode === config.sensorDataMode
+            && profile.outputs.sensorValues === config.outputs.sensorValues
+            && profile.outputs.stepAnalysis === config.outputs.stepAnalysis
+        ) return profile.id;
+    }
+    return 'custom';
+}
+
 function insoleToolkitModuleOptions(options, key) {
     const value = options && options[key];
     return value && typeof value === 'object' ? value : {};
@@ -66,17 +244,32 @@ class InsoleToolkitSession {
     constructor(insole, options = {}, adapters = {}) {
         this.insole = insole;
         this.options = options;
-        this.streamingMode = options.streamingMode || 4;
-        this.sensorDataMode = normalizeInsoleSensorDataMode(options.sensorDataMode);
-        this.outputs = normalizeInsoleToolkitOutputs(options.outputs);
+        const initialProfile = options.profile ? resolveInsoleToolkitProfile(options.profile) : null;
+        const initialConfig = normalizeInsoleToolkitConfiguration(
+            initialProfile || options,
+            {
+                streamingMode: 4,
+                sensorDataMode: 'realtime',
+                outputs: { sensorValues: true, stepAnalysis: false },
+            }
+        );
+        this.streamingMode = initialConfig.streamingMode;
+        this.sensorDataMode = initialConfig.sensorDataMode;
+        this.outputs = initialConfig.outputs;
+        this.profileId = initialProfile?.id || insoleToolkitProfileIdFor(initialConfig);
         this.connected = false;
         this.transitioning = false;
         this.sensorNotifyActive = false;
         this.fifoActive = false;
         this.gaitActive = false;
+        this.measurementPhase = 'idle';
+        this.activeMeasurement = null;
+        this.lastMeasurement = null;
         this.lastError = null;
         this._transition = Promise.resolve();
         this._reconnectHook = null;
+        this._measurementSequence = 0;
+        this._sensorDataUnsubscribe = null;
 
         const FifoClass = adapters.FifoClass;
         const GaitClass = adapters.GaitClass;
@@ -96,12 +289,17 @@ class InsoleToolkitSession {
         return {
             connected: this.connected,
             transitioning: this.transitioning,
+            profileId: this.profileId,
+            profile: INSOLE_TOOLKIT_PROFILES[this.profileId] || null,
             streamingMode: this.streamingMode,
             sensorDataMode: this.sensorDataMode,
             outputs: { ...this.outputs },
             sensorNotifyActive: this.sensorNotifyActive,
             fifoActive: this.fifoActive,
             gaitActive: this.gaitActive,
+            measurementPhase: this.measurementPhase,
+            measurement: this.activeMeasurement ? this._measurementSnapshot(this.activeMeasurement) : null,
+            lastMeasurement: this.lastMeasurement ? this._measurementResultSnapshot(this.lastMeasurement) : null,
             supportsFifo: this.supportsFifo,
             supportsStepAnalysis: this.supportsStepAnalysis,
             lastError: this.lastError,
@@ -118,6 +316,7 @@ class InsoleToolkitSession {
 
     connect(beginOptions = {}) {
         return this._enqueue(async () => {
+            this._validateCapabilities(this._configuration());
             if (this.connected && this.insole.isConnected && this.insole.isConnected()) {
                 await this._applyDesiredState();
                 return 'already connected';
@@ -153,8 +352,12 @@ class InsoleToolkitSession {
 
     disconnect() {
         return this._enqueue(async () => {
+            if (this.activeMeasurement) {
+                await this._finishMeasurement({ reason: 'disconnect', skipRestore: true });
+            }
             await this._stopFifo();
             await this._stopGait();
+            this._removeSensorDataMeasurementListener();
             this._removeReconnectHook();
             if (this.insole && typeof this.insole.reset === 'function') this.insole.reset();
             this.connected = false;
@@ -167,24 +370,137 @@ class InsoleToolkitSession {
     setOutputs(outputs) {
         try {
             const next = normalizeInsoleToolkitOutputs(outputs);
-            return this._changeConfig('outputs', next);
+            return this.configure({ outputs: next });
         } catch (error) {
             return this._enqueue(() => { throw error; });
         }
     }
 
     setSensorDataMode(mode) {
-        return this._changeConfig('sensorDataMode', normalizeInsoleSensorDataMode(mode));
+        return this.configure({ sensorDataMode: normalizeInsoleSensorDataMode(mode) });
     }
 
     setStreamingMode(mode) {
-        const normalized = Number(mode);
-        if (![1, 3, 4].includes(normalized)) {
-            const error = new Error(`InsoleToolkit: invalid streaming mode ${mode}.`);
-            error.code = 'INVALID_MODE';
-            return Promise.reject(error);
+        return this.configure({ streamingMode: mode });
+    }
+
+    /**
+     * 複数の低レベル設定を1回の状態遷移として適用する。
+     * 個別setterも後方互換のため残し、このAPIへ集約する。
+     */
+    configure(config = {}) {
+        let next;
+        try {
+            next = normalizeInsoleToolkitConfiguration(config, this._configuration());
+        } catch (error) {
+            return this._enqueue(() => { throw error; });
         }
-        return this._changeConfig('streamingMode', normalized);
+        return this._enqueue(() => this._applyConfiguration(next, {
+            profileId: insoleToolkitProfileIdFor(next),
+        }));
+    }
+
+    /**
+     * 実機検証済みの名前付きプロファイル、またはカスタム構成を原子的に適用する。
+     */
+    applyProfile(profile) {
+        let resolved;
+        try {
+            resolved = resolveInsoleToolkitProfile(profile);
+        } catch (error) {
+            return this._enqueue(() => { throw error; });
+        }
+        const next = normalizeInsoleToolkitConfiguration(resolved, this._configuration());
+        return this._enqueue(() => this._applyConfiguration(next, { profileId: resolved.id }));
+    }
+
+    /**
+     * 選択したプロファイルの正式計測区間を開始する。
+     * Realtimeはデコード済みsample、FIFOはcheckpoint以降、Stepは完成rowを記録する。
+     */
+    startMeasurement(options = {}) {
+        return this._enqueue(async () => {
+            if (!this.connected) {
+                throw insoleToolkitError('NOT_CONNECTED', 'InsoleToolkit: connect before starting a measurement.');
+            }
+            if (this.activeMeasurement) {
+                throw insoleToolkitError('MEASUREMENT_ACTIVE', 'InsoleToolkit: a measurement is already active.');
+            }
+
+            const previousConfiguration = this._configuration();
+            const previousProfileId = this.profileId;
+            if (options.profile !== undefined) {
+                const resolved = resolveInsoleToolkitProfile(options.profile);
+                const next = normalizeInsoleToolkitConfiguration(resolved, previousConfiguration);
+                await this._applyConfiguration(next, { profileId: resolved.id, allowDuringMeasurement: true });
+            }
+
+            const measurement = {
+                id: ++this._measurementSequence,
+                deviceId: this.insole?.id || 0,
+                status: 'recording',
+                reason: null,
+                startedAt: Date.now(),
+                endedAt: null,
+                durationMs: null,
+                profileId: this.profileId,
+                profile: INSOLE_TOOLKIT_PROFILES[this.profileId] || {
+                    id: this.profileId,
+                    label: 'Custom profile',
+                    ...this._configuration(),
+                },
+                previousConfiguration,
+                previousProfileId,
+                metadata: options.metadata && typeof options.metadata === 'object'
+                    ? { ...options.metadata }
+                    : {},
+                limits: {
+                    maxSamples: Number.isFinite(Number(options.maxSamples))
+                        ? Math.max(0, Number(options.maxSamples))
+                        : 120000,
+                    maxStepRows: Number.isFinite(Number(options.maxStepRows))
+                        ? Math.max(0, Number(options.maxStepRows))
+                        : 10000,
+                },
+                raw: {
+                    packets: 0,
+                    samples: [],
+                    serials: new Set(),
+                    firstSerial: null,
+                    lastSerial: null,
+                    lastForwardSerial: null,
+                    maxSerialDistance: -1,
+                    truncated: false,
+                },
+                step: {
+                    packets: 0,
+                    typeCounts: { motion: 0, overview: 0, stride: 0, pronation: 0 },
+                    rows: [],
+                    truncated: false,
+                },
+                fifoCheckpoint: this.sensorDataMode === 'fifo' && this.fifo?.createCheckpoint
+                    ? this.fifo.createCheckpoint()
+                    : null,
+                fifoSummary: null,
+                restoreProfile: options.restoreProfile,
+            };
+            this.activeMeasurement = measurement;
+            this.measurementPhase = 'recording';
+            this._installSensorDataMeasurementListener();
+            this._emitState();
+            return this._measurementSnapshot(measurement);
+        });
+    }
+
+    /**
+     * 正式計測を終了する。FIFOはdrain完了を待ってから結果を返す。
+     * 多重clickでも直近結果を返すためidempotent。
+     */
+    stopMeasurement(options = {}) {
+        return this._enqueue(() => this._finishMeasurement({
+            reason: options.reason || 'manual',
+            restoreProfile: options.restoreProfile,
+        }));
     }
 
     reapplyAfterReconnect() {
@@ -206,24 +522,53 @@ class InsoleToolkitSession {
         this._emitState();
     }
 
-    _changeConfig(key, value) {
-        return this._enqueue(async () => {
-            const previous = key === 'outputs' ? { ...this.outputs } : this[key];
-            this[key] = key === 'outputs' ? { ...value } : value;
+    _configuration() {
+        return {
+            streamingMode: this.streamingMode,
+            sensorDataMode: this.sensorDataMode,
+            outputs: { ...this.outputs },
+        };
+    }
+
+    async _applyConfiguration(next, options = {}) {
+        if (this.activeMeasurement && !options.allowDuringMeasurement) {
+            throw insoleToolkitError(
+                'MEASUREMENT_ACTIVE',
+                'InsoleToolkit: stop the active measurement before changing profiles.'
+            );
+        }
+        this._validateCapabilities(next);
+        const previous = this._configuration();
+        const previousProfileId = this.profileId;
+        this.streamingMode = next.streamingMode;
+        this.sensorDataMode = next.sensorDataMode;
+        this.outputs = { ...next.outputs };
+        this.profileId = options.profileId || insoleToolkitProfileIdFor(next);
+        this._syncOptions();
+        try {
+            if (this.connected) await this._applyDesiredState();
+        } catch (error) {
+            this.streamingMode = previous.streamingMode;
+            this.sensorDataMode = previous.sensorDataMode;
+            this.outputs = previous.outputs;
+            this.profileId = previousProfileId;
             this._syncOptions();
-            try {
-                if (this.connected) await this._applyDesiredState();
-            } catch (error) {
-                this[key] = previous;
-                this._syncOptions();
-                if (this.connected) {
-                    try { await this._applyDesiredState(); } catch (rollbackError) {
-                        this._reportError(rollbackError);
-                    }
+            if (this.connected) {
+                try { await this._applyDesiredState(); } catch (rollbackError) {
+                    this._reportError(rollbackError);
                 }
-                throw error;
             }
-        });
+            throw error;
+        }
+    }
+
+    _validateCapabilities(config) {
+        if (config.sensorDataMode === 'fifo' && config.outputs.sensorValues && !this.supportsFifo) {
+            throw insoleToolkitError('FIFO_UNAVAILABLE', 'InsoleToolkit: FIFO requires InsoleFifo.js.');
+        }
+        if (config.outputs.stepAnalysis && !this.supportsStepAnalysis) {
+            throw insoleToolkitError('GAIT_UNAVAILABLE', 'InsoleToolkit: Step Analysis requires InsoleGait.js.');
+        }
     }
 
     _enqueue(operation) {
@@ -249,41 +594,34 @@ class InsoleToolkitSession {
 
     async _applyDesiredState() {
         if (!this.connected) return;
+        const desired = this._configuration();
+        this._validateCapabilities(desired);
 
-        if (this.sensorDataMode === 'fifo' &&
-            this.outputs.sensorValues &&
-            this.outputs.stepAnalysis) {
-            const error = new Error(
-                'InsoleToolkit: lossless FIFO Raw and Step Analysis cannot run simultaneously on the current firmware. Use sequential modes.'
-            );
-            error.code = 'FIFO_STEP_INCOMPATIBLE';
-            throw error;
-        }
-
-        // Step-only へ切り替える場合も、先に STEP_ANALYSIS を購読してから
-        // SENSOR_VALUES を止める。FWがactive状態を要求するため順序を逆にしない。
-        if (!this.outputs.sensorValues) {
-            if (this.outputs.stepAnalysis) await this._startGait();
-            else await this._stopGait();
-            await this._stopFifo();
-            await this._stopSensorNotify();
+        // FIFOへ入る前にStep購読を停止する。現行FWではread modeが排他であり、
+        // FIFO開始後にStepを止める順序だと停止操作がFIFO応答と競合しうる。
+        if (this.sensorDataMode === 'fifo') {
+            await this._stopGait();
+            await this._ensureSensorNotify();
+            await this._startFifo();
             return;
         }
 
+        // FIFOからRealtime/Stepへ出る場合は、最初にdrainとread mode復帰を完了する。
+        const fifoStopped = await this._stopFifo();
         await this._ensureSensorNotify();
-        if (this.sensorDataMode === 'fifo') {
-            await this._startFifo();
-            await this._stopGait();
-        } else {
-            const fifoStopped = await this._stopFifo();
+        if (this.insole.streaming_mode !== this.streamingMode) {
             await this.insole.setDataStreamingMode(this.streamingMode);
-            if (this.outputs.stepAnalysis) {
-                // FIFO teardownのread-mode復帰後も同じ理由で通知を再確立する。
-                if (fifoStopped && this.gaitActive) await this._refreshGait();
-                else await this._startGait();
-            } else {
-                await this._stopGait();
-            }
+        }
+        if (this.outputs.stepAnalysis) {
+            // FIFO teardownのread-mode復帰後も同じ理由で通知を再確立する。
+            if (fifoStopped && this.gaitActive) await this._refreshGait();
+            else await this._startGait();
+        } else {
+            await this._stopGait();
+        }
+        // Step-onlyでもFWをactiveにするため、Step購読が成立してからRaw notifyを止める。
+        if (!this.outputs.sensorValues) {
+            await this._stopSensorNotify();
         }
     }
 
@@ -358,6 +696,266 @@ class InsoleToolkitSession {
         this.gaitActive = false;
     }
 
+    _installSensorDataMeasurementListener() {
+        this._removeSensorDataMeasurementListener();
+        if (!this.insole || typeof this.insole.addSensorDataListener !== 'function') return;
+        this._sensorDataUnsubscribe = this.insole.addSensorDataListener((event) => {
+            this._captureRealtimePacket(event);
+        });
+    }
+
+    _removeSensorDataMeasurementListener() {
+        if (typeof this._sensorDataUnsubscribe === 'function') {
+            try { this._sensorDataUnsubscribe(); } catch (_) { /* noop */ }
+        }
+        this._sensorDataUnsubscribe = null;
+    }
+
+    _captureRealtimePacket(event) {
+        const measurement = this.activeMeasurement;
+        if (!measurement || measurement.status !== 'recording' || this.sensorDataMode !== 'realtime') return;
+        const packet = event && event.packet;
+        if (!packet || !Array.isArray(packet.samples)) return;
+        const raw = measurement.raw;
+        raw.packets += 1;
+        this._recordMeasurementSerial(raw, packet.serial_number);
+        this._appendMeasurementSamples(raw, packet.samples);
+    }
+
+    _captureFifoSamples(samples) {
+        const measurement = this.activeMeasurement;
+        if (
+            !measurement
+            || !['recording', 'draining'].includes(measurement.status)
+            || measurement.profile.sensorDataMode !== 'fifo'
+        ) return;
+        if (!Array.isArray(samples)) return;
+        const raw = measurement.raw;
+        for (const sample of samples) {
+            const serial = sample && Number.isInteger(sample.serial_number) ? sample.serial_number : null;
+            if (serial !== null) this._recordMeasurementSerial(raw, serial);
+        }
+        raw.packets = raw.serials.size;
+        this._appendMeasurementSamples(raw, samples);
+    }
+
+    _recordMeasurementSerial(raw, serial) {
+        if (!Number.isInteger(serial)) return;
+        const normalized = serial & 0xffff;
+        raw.serials.add(normalized);
+        if (raw.firstSerial === null) {
+            raw.firstSerial = normalized;
+            raw.lastSerial = normalized;
+            raw.lastForwardSerial = normalized;
+            raw.maxSerialDistance = 0;
+            return;
+        }
+        const forward = (normalized - raw.lastForwardSerial + 65536) % 65536;
+        if (forward === 0) return;
+        if (forward >= 32768) {
+            const beforeFirst = (raw.firstSerial - normalized + 65536) % 65536;
+            if (beforeFirst > 0 && beforeFirst < 32768) {
+                raw.firstSerial = normalized;
+                raw.maxSerialDistance += beforeFirst;
+            }
+            return;
+        }
+        raw.lastForwardSerial = normalized;
+        raw.lastSerial = normalized;
+        raw.maxSerialDistance = Math.max(
+            raw.maxSerialDistance,
+            (normalized - raw.firstSerial + 65536) % 65536
+        );
+    }
+
+    _appendMeasurementSamples(raw, samples) {
+        const measurement = this.activeMeasurement;
+        if (!measurement) return;
+        const remaining = Math.max(0, measurement.limits.maxSamples - raw.samples.length);
+        if (remaining > 0) {
+            raw.samples.push(...samples.slice(0, remaining).map((sample) => this._cloneMeasurementSample(sample)));
+        }
+        if (samples.length > remaining) raw.truncated = true;
+    }
+
+    _cloneMeasurementSample(sample) {
+        if (!sample || typeof sample !== 'object') return sample;
+        const copy = { ...sample };
+        for (const key of ['quat', 'gyro', 'acc', 'converted_gyro', 'converted_acc', 'press']) {
+            if (sample[key] && typeof sample[key] === 'object') {
+                copy[key] = { ...sample[key] };
+                if (Array.isArray(sample[key].values)) copy[key].values = [...sample[key].values];
+            }
+        }
+        return copy;
+    }
+
+    _captureStepPacket(packet) {
+        const measurement = this.activeMeasurement;
+        if (!measurement || measurement.status !== 'recording' || !this.outputs.stepAnalysis) return;
+        measurement.step.packets += 1;
+        if (
+            packet?.type
+            && Object.prototype.hasOwnProperty.call(measurement.step.typeCounts, packet.type)
+        ) {
+            measurement.step.typeCounts[packet.type] += 1;
+        }
+    }
+
+    _captureStepRow(row) {
+        const measurement = this.activeMeasurement;
+        if (!measurement || measurement.status !== 'recording' || !this.outputs.stepAnalysis) return;
+        if (measurement.step.rows.length < measurement.limits.maxStepRows) {
+            measurement.step.rows.push({ ...row });
+        } else {
+            measurement.step.truncated = true;
+        }
+    }
+
+    async _finishMeasurement(options = {}) {
+        const measurement = this.activeMeasurement;
+        if (!measurement) return this.lastMeasurement;
+
+        measurement.endedAt = Date.now();
+        measurement.durationMs = Math.max(0, measurement.endedAt - measurement.startedAt);
+        measurement.reason = options.reason || 'manual';
+        this._removeSensorDataMeasurementListener();
+
+        const wasFifo = measurement.profile.sensorDataMode === 'fifo';
+        if (wasFifo) {
+            measurement.status = 'draining';
+            this.measurementPhase = 'draining';
+            this._emitState();
+            await this._stopFifo();
+            if (measurement.fifoCheckpoint && this.fifo?.summarizeSince) {
+                measurement.fifoSummary = this.fifo.summarizeSince(measurement.fifoCheckpoint);
+            }
+        }
+
+        measurement.status = 'completed';
+        const result = this._finalizeMeasurementResult(measurement);
+        this.lastMeasurement = result;
+
+        const restoreProfile = options.restoreProfile ?? measurement.restoreProfile;
+        if (!options.skipRestore && wasFifo) {
+            const previousWasRealtime = measurement.previousConfiguration.sensorDataMode === 'realtime';
+            const target = restoreProfile !== false && previousWasRealtime
+                ? measurement.previousConfiguration
+                : INSOLE_TOOLKIT_PROFILES['realtime-full'];
+            const targetProfileId = restoreProfile !== false && previousWasRealtime
+                ? measurement.previousProfileId
+                : 'realtime-full';
+            await this._applyConfiguration(
+                normalizeInsoleToolkitConfiguration(target, this._configuration()),
+                { profileId: targetProfileId, allowDuringMeasurement: true }
+            );
+        } else if (!options.skipRestore && restoreProfile === true) {
+            await this._applyConfiguration(measurement.previousConfiguration, {
+                profileId: measurement.previousProfileId,
+                allowDuringMeasurement: true,
+            });
+        }
+
+        this.activeMeasurement = null;
+        this.measurementPhase = 'idle';
+        this._emitState();
+        return result;
+    }
+
+    _measurementSnapshot(measurement) {
+        const rawSerial = this._summarizeMeasurementSerial(measurement.raw);
+        return {
+            id: measurement.id,
+            deviceId: measurement.deviceId,
+            status: measurement.status,
+            reason: measurement.reason,
+            startedAt: measurement.startedAt,
+            endedAt: measurement.endedAt,
+            durationMs: measurement.durationMs,
+            profileId: measurement.profileId,
+            metadata: { ...measurement.metadata },
+            raw: {
+                packets: measurement.raw.packets,
+                samples: measurement.raw.samples.length,
+                serial: rawSerial,
+                truncated: measurement.raw.truncated,
+            },
+            step: {
+                packets: measurement.step.packets,
+                typeCounts: { ...measurement.step.typeCounts },
+                rows: measurement.step.rows.length,
+                truncated: measurement.step.truncated,
+            },
+            fifo: measurement.fifoSummary ? { ...measurement.fifoSummary } : null,
+        };
+    }
+
+    _measurementResultSnapshot(result) {
+        return {
+            ...result,
+            raw: {
+                ...result.raw,
+                samples: Array.isArray(result.raw?.samples) ? result.raw.samples.length : Number(result.raw?.samples || 0),
+            },
+            step: {
+                ...result.step,
+                rows: Array.isArray(result.step?.rows) ? result.step.rows.length : Number(result.step?.rows || 0),
+            },
+        };
+    }
+
+    _summarizeMeasurementSerial(raw) {
+        if (
+            raw.firstSerial === null
+            || raw.lastSerial === null
+            || raw.maxSerialDistance < 0
+        ) {
+            return { first: null, last: null, expected: 0, received: 0, missing: 0, missingRate: 0 };
+        }
+        const expected = raw.maxSerialDistance + 1;
+        let received = 0;
+        for (const serial of raw.serials) {
+            const distance = (serial - raw.firstSerial + 65536) % 65536;
+            if (distance <= raw.maxSerialDistance) received += 1;
+        }
+        const missing = Math.max(0, expected - received);
+        return {
+            first: raw.firstSerial,
+            last: raw.lastSerial,
+            expected,
+            received,
+            missing,
+            missingRate: expected > 0 ? missing / expected : 0,
+        };
+    }
+
+    _finalizeMeasurementResult(measurement) {
+        const snapshot = this._measurementSnapshot(measurement);
+        const fifoSerial = measurement.fifoSummary?.available
+            ? {
+                first: measurement.fifoSummary.first,
+                last: measurement.fifoSummary.last,
+                expected: measurement.fifoSummary.expected,
+                received: measurement.fifoSummary.received,
+                missing: measurement.fifoSummary.missing,
+                missingRate: measurement.fifoSummary.missingRate,
+            }
+            : null;
+        return {
+            ...snapshot,
+            profile: measurement.profile,
+            raw: {
+                ...snapshot.raw,
+                serial: fifoSerial || snapshot.raw.serial,
+                samples: measurement.raw.samples.map((sample) => this._cloneMeasurementSample(sample)),
+            },
+            step: {
+                ...snapshot.step,
+                rows: measurement.step.rows.map((row) => ({ ...row })),
+            },
+        };
+    }
+
     _installReconnectHook() {
         const hooks = this.insole && this.insole._afterReconnectSuccess;
         if (!Array.isArray(hooks) || this._reconnectHook) return;
@@ -380,7 +978,10 @@ class InsoleToolkitSession {
 
     _wireModuleCallbacks() {
         if (this.fifo) {
-            this.fifo.onSamples = (...args) => this._callModuleCallback(this._fifoCallbacks, 'onSamples', args);
+            this.fifo.onSamples = (...args) => {
+                this._captureFifoSamples(args[1]);
+                this._callModuleCallback(this._fifoCallbacks, 'onSamples', args);
+            };
             this.fifo.onProgress = (...args) => this._callModuleCallback(this._fifoCallbacks, 'onProgress', args);
             this.fifo.onAnomaly = (...args) => this._callModuleCallback(this._fifoCallbacks, 'onAnomaly', args);
             this.fifo.onDataLoss = (...args) => this._callModuleCallback(this._fifoCallbacks, 'onDataLoss', args);
@@ -395,9 +996,15 @@ class InsoleToolkitSession {
             };
         }
         if (this.gait) {
-            this.gait.onGait = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onGait', args);
+            this.gait.onGait = (...args) => {
+                this._captureStepRow(args[1]);
+                this._callModuleCallback(this._gaitCallbacks, 'onGait', args);
+            };
             this.gait.onMotion = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onMotion', args);
-            this.gait.onRaw = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onRaw', args);
+            this.gait.onRaw = (...args) => {
+                this._captureStepPacket(args[1]);
+                this._callModuleCallback(this._gaitCallbacks, 'onRaw', args);
+            };
             this.gait.onError = (error) => {
                 this._callModuleCallback(this._gaitCallbacks, 'onError', [error]);
                 this._reportError(error);
@@ -452,6 +1059,12 @@ class InsoleToolkitSession {
  *   （要 InsoleSimulator.js の読み込み。実機なしのデモ・開発用）。
  */
 function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) {
+    if (options.profile !== undefined) {
+        const initialProfile = resolveInsoleToolkitProfile(options.profile);
+        options.streamingMode = initialProfile.streamingMode;
+        options.sensorDataMode = initialProfile.sensorDataMode;
+        options.outputs = { ...initialProfile.outputs };
+    }
     if (typeof options.streamingMode === 'undefined') options.streamingMode = 4;
     if (typeof options.autoReconnect === 'undefined') options.autoReconnect = true;
     if (typeof options.sensorDataMode === 'undefined') options.sensorDataMode = 'realtime';
@@ -487,7 +1100,8 @@ function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) 
     input.setAttribute('role', 'switch');
     input.setAttribute('id', `switch_ble${insole_id}`);
     input.setAttribute('value', `${insole_id}`);
-    input.setAttribute('title', `insoleToolkit_version_date: ${insoleToolkit_version_date}\norphe_js_version_date: ${orphe_js_version_date}`);
+    input.setAttribute('aria-label', `${title}を接続`);
+    input.dataset.version = `${insoleToolkit_version_date}; ${orphe_js_version_date}`;
     input.addEventListener('change', function () {
         toggleInsoleModule(this, options);
     })
@@ -826,12 +1440,15 @@ function syncInsoleToolkitControls(no) {
 
     if (sensorValues) {
         if (!state.transitioning) sensorValues.checked = state.outputs.sensorValues;
-        sensorValues.disabled = false;
+        sensorValues.disabled = state.transitioning || state.measurementPhase !== 'idle';
     }
     if (stepAnalysis) {
         if (!state.transitioning) stepAnalysis.checked = state.outputs.stepAnalysis;
         const fifoSelected = state.outputs.sensorValues && state.sensorDataMode === 'fifo';
-        stepAnalysis.disabled = state.transitioning || !state.supportsStepAnalysis || fifoSelected;
+        stepAnalysis.disabled = state.transitioning
+            || state.measurementPhase !== 'idle'
+            || !state.supportsStepAnalysis
+            || fifoSelected;
         stepAnalysis.title = !state.supportsStepAnalysis
             ? 'Load InsoleGait.js to enable Step Analysis.'
             : fifoSelected
@@ -840,7 +1457,9 @@ function syncInsoleToolkitControls(no) {
     }
     if (sensorDataMode) {
         if (!state.transitioning) sensorDataMode.value = state.sensorDataMode;
-        sensorDataMode.disabled = state.transitioning || !state.outputs.sensorValues;
+        sensorDataMode.disabled = state.transitioning
+            || state.measurementPhase !== 'idle'
+            || !state.outputs.sensorValues;
         const fifoOption = Array.from(sensorDataMode.options).find((option) => option.value === 'fifo');
         if (fifoOption) {
             fifoOption.disabled = !state.supportsFifo || state.outputs.stepAnalysis;
@@ -851,13 +1470,20 @@ function syncInsoleToolkitControls(no) {
     }
     if (streamingMode) {
         if (!state.transitioning) streamingMode.value = String(state.streamingMode);
-        streamingMode.disabled = state.transitioning || !state.outputs.sensorValues || state.sensorDataMode === 'fifo';
+        streamingMode.disabled = state.transitioning
+            || state.measurementPhase !== 'idle'
+            || !state.outputs.sensorValues
+            || state.sensorDataMode === 'fifo';
     }
 
     if (status) {
         status.classList.toggle('text-danger', !!state.lastError);
         status.classList.toggle('text-muted', !state.lastError);
-        if (state.transitioning) {
+        if (state.measurementPhase === 'draining') {
+            status.innerText = 'Recording stopped. Recovering the remaining FIFO samples…';
+        } else if (state.measurementPhase === 'recording') {
+            status.innerText = `Recording: ${state.profile?.label || state.profileId}`;
+        } else if (state.transitioning) {
             status.innerText = 'Switching data mode…';
         } else if (state.lastError) {
             status.innerText = state.lastError.message || String(state.lastError);
@@ -970,10 +1596,100 @@ function ITbuildElement(name_tag, innerHTML, str_class, str_style, element_appen
     return element;
 }
 
+function insoleToolkitCsvEscape(value) {
+    if (value === undefined || value === null) return '';
+    const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/**
+ * startMeasurement()/stopMeasurement() の結果を、その計測区間だけのCSVへ変換する。
+ * kind='raw' はRealtime/FIFOで共通列、kind='step' はStep Analysis rowを出力する。
+ */
+function insoleToolkitMeasurementToCSV(result, kind = 'raw') {
+    if (!result || typeof result !== 'object') {
+        throw insoleToolkitError('INVALID_MEASUREMENT', 'InsoleToolkit: a measurement result is required.');
+    }
+    if (kind !== 'raw' && kind !== 'step') {
+        throw insoleToolkitError(
+            'INVALID_CSV_KIND',
+            `InsoleToolkit: CSV kind must be "raw" or "step", received "${kind}".`
+        );
+    }
+    const rows = kind === 'step' ? result.step?.rows : result.raw?.samples;
+    if (!Array.isArray(rows)) {
+        throw insoleToolkitError(
+            'INVALID_MEASUREMENT',
+            `InsoleToolkit: measurement does not contain ${kind === 'step' ? 'Step' : 'Raw'} rows.`
+        );
+    }
+    if (rows.length === 0) return '';
+    if (kind === 'raw') {
+        const columns = [
+            'device_id', 'profile_id', 'timestamp', 'serial_number', 'packet_number',
+            'quat_w', 'quat_x', 'quat_y', 'quat_z',
+            'gyro_x', 'gyro_y', 'gyro_z',
+            'acc_x', 'acc_y', 'acc_z',
+            'converted_gyro_x', 'converted_gyro_y', 'converted_gyro_z',
+            'converted_acc_x', 'converted_acc_y', 'converted_acc_z',
+            'press_0', 'press_1', 'press_2', 'press_3', 'press_4', 'press_5',
+        ];
+        const valueFor = (row, column) => {
+            if (column === 'device_id') return result.deviceId;
+            if (column === 'profile_id') return result.profileId;
+            if (column === 'timestamp') return row.timestamp ?? row.t;
+            if (column === 'serial_number' || column === 'packet_number') return row[column];
+            const vector = /^(quat|gyro|acc|converted_gyro|converted_acc)_([wxyz])$/.exec(column);
+            if (vector) return row[vector[1]]?.[vector[2]];
+            const pressure = /^press_(\d)$/.exec(column);
+            if (pressure) return row.press?.values?.[Number(pressure[1])];
+            return '';
+        };
+        return [
+            columns.join(','),
+            ...rows.map((row) => columns.map((column) => (
+                insoleToolkitCsvEscape(valueFor(row || {}, column))
+            )).join(',')),
+        ].join('\n');
+    }
+    const preferred = kind === 'step'
+        ? ['step_number', 'gait_type', 'stride_direction', 'distance_m',
+            'stance_phase_s', 'swing_phase_s', 'duration_s', 'cadence_hz',
+            'speed_mps', 'foot_angle_deg', 'stride_x_m', 'stride_y_m',
+            'stride_z_m', 'stride_norm_m', 'landing_force', 'strike_angle_deg',
+            'foot_strike', 'pronation_deg', 'pronation_type', 'pronation_z_deg',
+            'calorie']
+        : [];
+    const discovered = new Set();
+    for (const row of rows) {
+        if (row && typeof row === 'object') {
+            for (const key of Object.keys(row)) discovered.add(key);
+        }
+    }
+    const columns = [
+        'device_id',
+        'profile_id',
+        ...preferred.filter((key) => discovered.has(key)),
+        ...Array.from(discovered).filter((key) => !preferred.includes(key)).sort(),
+    ];
+    return [
+        columns.join(','),
+        ...rows.map((row) => columns.map((key) => {
+            if (key === 'device_id') return insoleToolkitCsvEscape(result.deviceId);
+            if (key === 'profile_id') return insoleToolkitCsvEscape(result.profileId);
+            return insoleToolkitCsvEscape(row?.[key]);
+        }).join(',')),
+    ].join('\n');
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         InsoleToolkitSession,
+        INSOLE_TOOLKIT_PROFILES,
+        resolveInsoleToolkitProfile,
+        normalizeInsoleToolkitConfiguration,
         normalizeInsoleToolkitOutputs,
         normalizeInsoleSensorDataMode,
+        insoleToolkitMeasurementToCSV,
     };
 }

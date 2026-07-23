@@ -7,6 +7,7 @@
     const PRESET_EXPECTATIONS = {
         rt1: {
             id: 'rt1',
+            profileId: 'realtime-orientation',
             label: 'Realtime Format 1',
             acquisition: 'realtime',
             streamingMode: 1,
@@ -17,6 +18,7 @@
         },
         rt3: {
             id: 'rt3',
+            profileId: 'realtime-pressure',
             label: 'Realtime Format 3',
             acquisition: 'realtime',
             streamingMode: 3,
@@ -27,6 +29,7 @@
         },
         rt4: {
             id: 'rt4',
+            profileId: 'realtime-full',
             label: 'Realtime Format 4',
             acquisition: 'realtime',
             streamingMode: 4,
@@ -37,6 +40,7 @@
         },
         fifo: {
             id: 'fifo',
+            profileId: 'fifo-recording',
             label: 'FIFO Raw',
             acquisition: 'fifo',
             streamingMode: 4,
@@ -47,6 +51,7 @@
         },
         step: {
             id: 'step',
+            profileId: 'step-analysis',
             label: 'Step Analysis only',
             acquisition: 'realtime',
             streamingMode: 4,
@@ -57,6 +62,7 @@
         },
         'rt4-step': {
             id: 'rt4-step',
+            profileId: 'realtime-full-step',
             label: 'Realtime Format 4 + Step Analysis',
             acquisition: 'realtime',
             streamingMode: 4,

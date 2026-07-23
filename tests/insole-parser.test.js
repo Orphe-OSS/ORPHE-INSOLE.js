@@ -3,6 +3,7 @@ const {
   Orphe,
   OrpheInsole,
   parseInsoleSensorValues,
+  ORPHE_INSOLE_STREAMING_MODES,
 } = require('../src/ORPHE-INSOLE.js');
 
 function createPacket(header, serial = 0x0102) {
@@ -39,6 +40,9 @@ function quatNorm(quat) {
 async function main() {
   assert.equal(OrpheInsole, Orphe);
   assert.equal(typeof Orphe.parseSensorValues, 'function');
+  assert.equal(OrpheInsole.getStreamingModeInfo(4), ORPHE_INSOLE_STREAMING_MODES[4]);
+  assert.equal(OrpheInsole.getStreamingModeInfo(2), null);
+  assert.equal(OrpheInsole.STREAMING_MODES[3].fields.press, true);
 
   {
     const data = createPacket(56);
@@ -162,6 +166,42 @@ async function main() {
     assert.equal(calls.press.length, 2);
     assert.deepEqual(calls.press[0].values, [1, 2, 3, 4, 5, 6]);
     assert.deepEqual(calls.press[1].values, [7, 8, 9, 10, 11, 12]);
+  }
+
+  {
+    const data = createPacket(56, 44);
+    const insole = new Orphe(1);
+    const events = [];
+    const gotData = [];
+    const first = (event) => events.push(event);
+    const unsubscribe = insole.addSensorDataListener(first);
+    insole.gotData = (raw, uuid) => gotData.push({ raw, uuid });
+    insole.onRead(data, 'SENSOR_VALUES');
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].deviceId, 1);
+    assert.equal(events[0].packet.serial_number, 44);
+    assert.equal(events[0].packet.samples.length, 2);
+    assert.equal(gotData.length, 1, 'observer coexists with gotData override');
+    assert.equal(unsubscribe(), true);
+    insole.onRead(createPacket(56, 45), 'SENSOR_VALUES');
+    assert.equal(events.length, 1, 'unsubscribe removes observer');
+    assert.throws(
+      () => insole.addSensorDataListener(null),
+      /expects a function/
+    );
+  }
+
+  {
+    const data = createPacket(54, 100);
+    const insole = new Orphe(0);
+    const events = [];
+    const sink = [];
+    insole.addSensorDataListener((event) => events.push(event));
+    insole._fifoNotifySink = (raw) => sink.push(raw);
+    insole.onRead(data, 'SENSOR_VALUES');
+    assert.equal(sink.length, 1);
+    assert.equal(events.length, 0, 'FIFO protocol responses are not emitted as realtime data');
   }
 
   {

@@ -29,6 +29,23 @@ body {
   max-width: 1560px;
 }
 
+.header-nav {
+  display: flex;
+  gap: 0.95rem;
+  align-items: center;
+}
+
+.header-nav a {
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-decoration: none;
+}
+
+.header-nav a:hover,
+.header-nav a:focus-visible {
+  color: var(--cyan);
+}
+
 .app-header {
   position: sticky;
   z-index: 1040;
@@ -114,6 +131,199 @@ body {
   gap: 1.5rem;
   align-items: center;
   padding: 1.4rem 1.5rem;
+}
+
+.guide-kicker {
+  margin-bottom: 0.45rem;
+  color: var(--cyan);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+
+.guide-section {
+  padding: 0.4rem 0;
+}
+
+.section-intro {
+  max-width: 52rem;
+  margin-bottom: 1.1rem;
+}
+
+.section-intro p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.purpose-grid,
+.protocol-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.purpose-card,
+.protocol-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(19, 31, 41, 0.94), rgba(10, 17, 23, 0.96));
+}
+
+.purpose-card {
+  position: relative;
+  display: flex;
+  min-height: 13rem;
+  padding: 1.15rem;
+  color: var(--text);
+  text-align: left;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.purpose-card:hover,
+.purpose-card:focus-visible {
+  border-color: var(--cyan);
+  outline: none;
+  background: linear-gradient(145deg, rgba(24, 45, 58, 0.98), rgba(10, 20, 27, 0.98));
+  transform: translateY(-2px);
+}
+
+.purpose-card.recommended::after {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.24rem 0.48rem;
+  border: 1px solid rgba(93, 226, 141, 0.45);
+  border-radius: 999px;
+  color: var(--green);
+  font-size: 0.62rem;
+  content: "推奨";
+}
+
+.purpose-number {
+  color: var(--cyan);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+}
+
+.purpose-label {
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.purpose-card strong {
+  margin-top: 0.35rem;
+  font-size: 1.05rem;
+}
+
+.purpose-card > span:not(.purpose-number, .purpose-label) {
+  margin-top: 0.35rem;
+  color: var(--cyan);
+  font-size: 0.78rem;
+}
+
+.purpose-card small {
+  margin-top: 0.65rem;
+  color: var(--muted);
+}
+
+.protocol-panel {
+  padding: 1.5rem;
+}
+
+.protocol-card {
+  padding: 1.05rem;
+  background: rgba(8, 13, 18, 0.48);
+}
+
+.protocol-heading {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.protocol-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+}
+
+.protocol-dot.realtime { background: var(--cyan); }
+.protocol-dot.fifo { background: var(--orange); }
+.protocol-dot.step { background: var(--purple); }
+
+.protocol-card p {
+  min-height: 4.2rem;
+  margin: 0.75rem 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.protocol-card dl {
+  margin: 0;
+}
+
+.protocol-card dl > div {
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(38, 53, 65, 0.65);
+}
+
+.protocol-card dl > div + div {
+  margin-top: 0.55rem;
+}
+
+.protocol-card dt {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+.protocol-card dd {
+  margin: 0.18rem 0 0;
+  font-size: 0.76rem;
+}
+
+.mode-format-note {
+  display: flex;
+  gap: 0.65rem 1rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.73rem;
+  flex-wrap: wrap;
+}
+
+.mode-format-note strong {
+  width: 100%;
+  color: var(--text);
+}
+
+.api-example {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(15rem, 0.42fr) minmax(0, 0.58fr);
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(5, 9, 13, 0.58);
+}
+
+.api-example pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 0.9rem;
+  overflow: auto;
+  border: 1px solid rgba(61, 215, 240, 0.24);
+  border-radius: 8px;
+  color: #c8f7ff;
+  background: #071016;
+  font-size: 0.72rem;
 }
 
 .scope-note {
@@ -791,8 +1001,27 @@ body {
 }
 
 @media (max-width: 767px) {
+  .app-header {
+    position: static;
+  }
+
+  .header-nav {
+    width: 100%;
+    order: 3;
+  }
+
   .intro-panel {
     grid-template-columns: 1fr;
+  }
+
+  .purpose-grid,
+  .protocol-grid,
+  .api-example {
+    grid-template-columns: 1fr;
+  }
+
+  .protocol-card p {
+    min-height: 0;
   }
 
   .preset-grid {

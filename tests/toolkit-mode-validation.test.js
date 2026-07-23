@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const metrics = require('./manual/toolkit-mode-validation/metrics.js');
+const metrics = require('../examples/data-modes/metrics.js');
 
 {
     const tracker = metrics.createSerialTracker();
@@ -210,19 +210,31 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
 }
 
 {
-    const pageRoot = path.join(__dirname, 'manual', 'toolkit-mode-validation');
+    const pageRoot = path.join(__dirname, '..', 'examples', 'data-modes');
     const html = fs.readFileSync(path.join(pageRoot, 'index.html'), 'utf8');
     const app = fs.readFileSync(path.join(pageRoot, 'app.js'), 'utf8');
+    const attitude = fs.readFileSync(path.join(pageRoot, 'attitude-viz.js'), 'utf8');
+    const legacy = fs.readFileSync(
+        path.join(__dirname, 'manual', 'toolkit-mode-validation', 'index.html'),
+        'utf8'
+    );
     assert.match(html, /id="copy_event_log_button"/);
-    assert.match(html, /③ 計測開始（グラフ・集計）/);
+    assert.match(html, /STEP 3 計測・記録を開始/);
+    assert.match(html, /3つの通信経路の違い/);
+    assert.match(html, /data-guide-preset="fifo"/);
+    assert.match(html, /id="profile_code"/);
     assert.match(app, /dom\.copyLog\.addEventListener\('click', copyEventLog\)/);
     assert.match(app, /RUN_PROGRESS_LOG_INTERVAL_MS = 5000/);
     assert.match(app, /events: eventEntries\.slice\(\)/);
     assert.match(app, /Rawライブプレビュー受信開始/);
-    assert.match(app, /Metrics\.safeOutputBridge/);
+    assert.match(app, /session\.applyProfile\(preset\.profileId\)/);
+    assert.match(app, /sessions\[id\]\.startMeasurement/);
+    assert.match(app, /sessions\[id\]\.stopMeasurement/);
+    assert.match(app, /insoleToolkitMeasurementToCSV/);
     assert.doesNotMatch(app, /sensorValues:\s*false,\s*stepAnalysis:\s*false/);
     assert.match(html, /id="validation_canvas3d"/);
     assert.match(html, /attitude-viz\.js/);
+    assert.match(attitude, /\.\.\/showcase\/assets\/models\/orphe_shoeL3\.stl/);
     assert.match(html, /id="fifo_history_chart"/);
     assert.match(html, /id="step_history_body"/);
     assert.match(html, /id="step_packet_summary_0"/);
@@ -243,6 +255,7 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.match(app, /summarizeSince/);
     assert.match(html, /data-preset="rt4-step"/);
     assert.doesNotMatch(html, /data-preset="fifo-step"/);
+    assert.match(legacy, /examples\/data-modes/);
 }
 
 console.log('toolkit-mode-validation tests: ok');

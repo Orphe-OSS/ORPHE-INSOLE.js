@@ -70,6 +70,13 @@ if (parsed && parsed.samples[0]?.press) {
     const values: number[] = parsed.samples[0].press.values;
     void values;
 }
+const fullMode = OrpheInsole.getStreamingModeInfo(4);
+if (fullMode) void fullMode.fields.press;
+const unsubscribeSensorData = insole.addSensorDataListener((event) => {
+    const packetSerial: number = event.packet.serial_number;
+    void packetSerial;
+});
+unsubscribeSensorData();
 
 const buffer = new FixedSizeArray<number>(2);
 buffer.push(1);
@@ -81,6 +88,7 @@ const hz: number = timestamp.getHz();
 void hz;
 
 globalThis.buildInsoleToolkit(document.createElement('div'), 'INSOLE 01', 0, { streamingMode: 4 });
+globalThis.buildInsoleToolkit(document.createElement('div'), 'RECORDER', 0, { profile: 'fifo-recording' });
 globalThis.buildInsoleToolkit(document.createElement('div'), 'ADVANCED', 1, {
     streamingMode: 3,
     sensorDataMode: 'realtime',
@@ -97,6 +105,21 @@ globalThis.buildInsoleToolkit(document.createElement('div'), 'ADVANCED', 1, {
 });
 const toolkitSession = globalThis.getInsoleToolkitSession(1);
 if (toolkitSession) {
+    void toolkitSession.applyProfile('realtime-full-step');
+    void toolkitSession.configure({
+        streamingMode: 3,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: false },
+    });
+    void toolkitSession.startMeasurement({
+        profile: 'realtime-full',
+        metadata: { participant: 'P001' },
+    }).then(() => toolkitSession.stopMeasurement()).then((measurement) => {
+        if (!measurement) return;
+        const csv: string = globalThis.insoleToolkitMeasurementToCSV(measurement, 'raw');
+        void measurement.raw.serial.missing;
+        void csv;
+    });
     void toolkitSession.setSensorDataMode('realtime');
     void toolkitSession.setOutputs({ sensorValues: false, stepAnalysis: true });
     const toolkitState: import('../../types/orphe-insole').InsoleToolkitSessionState = toolkitSession.snapshot();

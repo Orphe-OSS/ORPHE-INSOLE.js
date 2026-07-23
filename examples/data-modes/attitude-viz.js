@@ -5,7 +5,7 @@ createVector, model, push, pop, translate, PI, toxi
 */
 
 /**
- * showcaseのQuaternion→3D靴モデル表示を、手動検証ページ用に切り出したもの。
+ * showcaseのQuaternion→3D靴モデル表示を、data-modes example用に切り出したもの。
  * 各モードでQuaternionが実際に配信されているかを左右同時に確認する。
  */
 const AttitudeViz = (() => {
@@ -61,8 +61,8 @@ let validationModelLeft;
 let validationModelRight;
 
 globalThis.preload = function () {
-    validationModelLeft = loadModel('../../../examples/showcase/assets/models/orphe_shoeL3.stl');
-    validationModelRight = loadModel('../../../examples/showcase/assets/models/orphe_shoeR3.stl');
+    validationModelLeft = loadModel('../showcase/assets/models/orphe_shoeL3.stl');
+    validationModelRight = loadModel('../showcase/assets/models/orphe_shoeR3.stl');
 };
 
 globalThis.setup = function () {

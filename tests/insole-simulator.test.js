@@ -47,6 +47,24 @@ async function main() {
     }
 
     {
+        const simulator = new OrpheInsoleSimulator(0);
+        const events = [];
+        const unsubscribe = simulator.addSensorDataListener((event) => events.push(event));
+        await simulator.begin({ preset: 'stand', streamingMode: 4 });
+        await wait(80);
+        simulator.stop();
+        assert.ok(events.length >= 2);
+        assert.equal(events[0].packet.header, 56);
+        assert.equal(events[0].packet.samples.length, 2);
+        assert.equal(events[0].packet.samples[0].press.values.length, 6);
+        assert.equal(unsubscribe(), true);
+        assert.throws(
+            () => simulator.addSensorDataListener(null),
+            /expects a function/
+        );
+    }
+
+    {
         const { simulator, calls } = await collectFor({ preset: 'walk', streamingMode: 3 }, 120);
         simulator.stop();
         assert.ok(calls.press.length > 0);

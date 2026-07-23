@@ -1,4 +1,4 @@
-/* global ToolkitValidationMetrics, AttitudeViz, buildInsoleToolkit, getInsoleToolkitSession, insoles */
+/* global ToolkitValidationMetrics, AttitudeViz, buildInsoleToolkit, getInsoleToolkitSession, insoles, insoleToolkitMeasurementToCSV */
 
 'use strict';
 
@@ -21,6 +21,7 @@ let currentRun = null;
 let finishingPromise = null;
 let runHistory = [];
 const lastResults = [null, null];
+const latestMeasurements = [null, null];
 const signalPoints = [];
 const timingPoints = [];
 const sessions = [null, null];
@@ -43,6 +44,7 @@ const dom = {
     secureContext: document.getElementById('secure_context_badge'),
     bluetoothWarning: document.getElementById('bluetooth_warning'),
     selectedPreset: document.getElementById('selected_preset_badge'),
+    profileCode: document.getElementById('profile_code'),
     expectations: document.getElementById('expectation_chips'),
     hostLabel: document.getElementById('host_label_input'),
     duration: document.getElementById('duration_select'),
@@ -493,6 +495,7 @@ async function selectPreset(id) {
     });
     dom.selectedPreset.textContent = PRESETS[id].label;
     renderExpectations();
+    renderProfileCode();
     logEvent(null, `プリセット選択: ${PRESETS[id].label}`, 'success');
     if (PRESETS[id].acquisition === 'fifo') resetFifoHistory(`${PRESETS[id].label}の新規取得`);
     resetLivePreview(`${PRESETS[id].label}へ切替`);
@@ -515,6 +518,20 @@ async function selectPreset(id) {
             ? `${PRESETS[id].label} を${applied}台へ適用済み。ライブ表示を確認して③「計測開始」へ`
             : '設定を適用できませんでした。イベントログを確認してください'
     );
+}
+
+function renderProfileCode() {
+    const preset = PRESETS[selectedPresetId];
+    const dataKind = preset.step && !preset.raw ? 'step' : 'raw';
+    dom.profileCode.textContent = [
+        "buildInsoleToolkit(document.querySelector('#toolkit'), 'INSOLE 01', 0);",
+        'const session = getInsoleToolkitSession(0);',
+        '// ユーザが接続スイッチから実機を選択した後:',
+        `await session.applyProfile('${preset.profileId}');`,
+        "await session.startMeasurement({ metadata: { subject: 'P001' } });",
+        'const result = await session.stopMeasurement();',
+        `const csv = insoleToolkitMeasurementToCSV(result, '${dataKind}');`,
+    ].join('\n');
 }
 
 function chip(text, level = 'neutral') {
@@ -550,18 +567,7 @@ async function applyPresetToDevice(id, preset) {
         return;
     }
 
-    // Raw/Stepの同時OFFは禁止。Rawを一時的に維持し、Stepが必要なら先に購読してから
-    // streaming/acquisitionを切り替え、最後に目的の出力構成へ確定する。
-    await session.setOutputs(Metrics.safeOutputBridge(before.outputs, {
-        sensorValues: preset.raw,
-        stepAnalysis: preset.step,
-    }));
-    await session.setStreamingMode(preset.streamingMode);
-    await session.setSensorDataMode(preset.acquisition);
-    await session.setOutputs({
-        sensorValues: preset.raw,
-        stepAnalysis: preset.step,
-    });
+    await session.applyProfile(preset.profileId);
     const after = session.snapshot();
     if (!sessionMatchesPreset(after, preset)) {
         throw new Error(`InsoleToolkit: preset state mismatch (${formatSessionState(after)})`);
@@ -582,7 +588,7 @@ async function startRun() {
     );
     setRunState('switching', `${preset.label}へ切り替えています…`);
     const settled = await Promise.allSettled(ids.map((id) => applyPresetToDevice(id, preset)));
-    const activeIds = ids.filter((_, index) => settled[index].status === 'fulfilled');
+    let activeIds = ids.filter((_, index) => settled[index].status === 'fulfilled');
     settled.forEach((result, index) => {
         if (result.status === 'rejected') {
             logEvent(ids[index], `設定適用失敗: ${result.reason?.message || result.reason}`, 'error');
@@ -594,6 +600,28 @@ async function startRun() {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 700));
+    const measurementStarts = await Promise.allSettled(activeIds.map((id) => sessions[id].startMeasurement({
+        metadata: {
+            host: currentHostLabel(),
+            preset: preset.id,
+            profile: preset.profileId,
+        },
+    })));
+    const configuredIds = activeIds.slice();
+    activeIds = configuredIds.filter((_, index) => measurementStarts[index].status === 'fulfilled');
+    measurementStarts.forEach((result, index) => {
+        if (result.status !== 'rejected') return;
+        logEvent(
+            configuredIds[index],
+            `正式計測区間を開始できません: ${result.reason?.message || result.reason}`,
+            'error'
+        );
+    });
+    if (activeIds.length === 0) {
+        setRunState('idle', '正式計測区間を開始できませんでした。イベントログを確認してください');
+        return;
+    }
+    for (const id of activeIds) latestMeasurements[id] = null;
     const startedAt = performance.now();
     const runProfile = Metrics.classifyRunProfile(preset, activeIds.length);
     currentRun = {
@@ -659,7 +687,11 @@ async function finishRun(reason = 'manual') {
                 run.devices[id].fifoDrainError = null;
             }
             const drainResults = await Promise.allSettled(run.activeIds.map(async (id) => {
-                await sessions[id].setSensorDataMode('realtime');
+                const result = await sessions[id].stopMeasurement({ reason });
+                latestMeasurements[id] = result;
+                run.devices[id].toolkitMeasurement = result
+                    ? sessions[id].snapshot().lastMeasurement
+                    : null;
                 run.devices[id].fifoDrainMs = performance.now() - run.drainStartedAt;
             }));
             drainResults.forEach((result, index) => {
@@ -671,6 +703,20 @@ async function finishRun(reason = 'manual') {
             });
         } else {
             setRunState('switching', '結果を集計しています…');
+            const stopResults = await Promise.allSettled(run.activeIds.map((id) => (
+                sessions[id].stopMeasurement({ reason })
+            )));
+            stopResults.forEach((result, index) => {
+                const id = run.activeIds[index];
+                if (result.status === 'fulfilled') {
+                    latestMeasurements[id] = result.value;
+                    run.devices[id].toolkitMeasurement = result.value
+                        ? sessions[id].snapshot().lastMeasurement
+                        : null;
+                } else {
+                    logEvent(id, `正式計測区間の終了失敗: ${result.reason?.message || result.reason}`, 'error');
+                }
+            });
         }
 
         const results = run.activeIds.map((id) => finalizeDeviceResult(run, id));
@@ -2108,8 +2154,8 @@ function renderHistory() {
 
 function renderDownloads() {
     dom.downloadJson.disabled = runHistory.length === 0;
-    dom.downloadFifo.disabled = !sessions.some((session) => session?.fifo?.collectedCount > 0);
-    dom.downloadStep.disabled = !sessions.some((session) => session?.gait?.stepCount > 0);
+    dom.downloadFifo.disabled = !latestMeasurements.some((measurement) => measurement?.raw?.samples?.length > 0);
+    dom.downloadStep.disabled = !latestMeasurements.some((measurement) => measurement?.step?.rows?.length > 0);
 }
 
 function serializableResult(result) {
@@ -2148,6 +2194,8 @@ function clearDisplay() {
     runHistory = [];
     lastResults[0] = null;
     lastResults[1] = null;
+    latestMeasurements[0] = null;
+    latestMeasurements[1] = null;
     signalPoints.length = 0;
     timingPoints.length = 0;
     for (const id of DEVICE_IDS) {
@@ -2312,6 +2360,16 @@ document.querySelectorAll('.preset-card').forEach((button) => {
         });
     });
 });
+document.querySelectorAll('[data-guide-preset]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const presetId = button.dataset.guidePreset;
+        selectPreset(presetId).then(() => {
+            document.getElementById('preset_heading').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }).catch((error) => {
+            logEvent(null, `計測モード選択失敗: ${error.message || error}`, 'error');
+        });
+    });
+});
 dom.start.addEventListener('click', startRun);
 dom.stop.addEventListener('click', () => finishRun('manual'));
 dom.clear.addEventListener('click', clearDisplay);
@@ -2338,7 +2396,7 @@ dom.resetAttitude.addEventListener('click', () => {
 dom.downloadJson.addEventListener('click', () => {
     const payload = {
         exportedAt: new Date().toISOString(),
-        page: 'toolkit-mode-validation',
+        page: 'data-modes',
         host: {
             label: currentHostLabel(),
             platform: navigator.platform || 'unknown',
@@ -2348,20 +2406,28 @@ dom.downloadJson.addEventListener('click', () => {
         results: runHistory.map(serializableResult),
         events: eventEntries.slice(),
     };
-    downloadBlob(JSON.stringify(payload, null, 2), `toolkit-mode-validation-${stamp()}.json`, 'application/json');
+    downloadBlob(JSON.stringify(payload, null, 2), `orphe-data-modes-${stamp()}.json`, 'application/json');
 });
 dom.downloadFifo.addEventListener('click', () => {
     for (const id of DEVICE_IDS) {
-        if (sessions[id]?.fifo?.collectedCount > 0) {
-            sessions[id].fifo.download(`toolkit-fifo-insole0${id + 1}-${stamp()}.csv`);
-        }
+        const measurement = latestMeasurements[id];
+        if (!measurement?.raw?.samples?.length) continue;
+        downloadBlob(
+            insoleToolkitMeasurementToCSV(measurement, 'raw'),
+            `orphe-insole0${id + 1}-${measurement.profileId}-raw-${stamp()}.csv`,
+            'text/csv;charset=utf-8'
+        );
     }
 });
 dom.downloadStep.addEventListener('click', () => {
     for (const id of DEVICE_IDS) {
-        if (sessions[id]?.gait?.stepCount > 0) {
-            sessions[id].gait.download(`toolkit-step-insole0${id + 1}-${stamp()}.csv`);
-        }
+        const measurement = latestMeasurements[id];
+        if (!measurement?.step?.rows?.length) continue;
+        downloadBlob(
+            insoleToolkitMeasurementToCSV(measurement, 'step'),
+            `orphe-insole0${id + 1}-${measurement.profileId}-step-${stamp()}.csv`,
+            'text/csv;charset=utf-8'
+        );
     }
 });
 
@@ -2382,6 +2448,7 @@ try {
 
 for (const id of DEVICE_IDS) installDevice(id);
 renderExpectations();
+renderProfileCode();
 renderAttitude();
 renderFifoHistory();
 renderStepPacketStatus();
@@ -2389,7 +2456,7 @@ renderStepHistory();
 renderHistory();
 renderDownloads();
 updateControls();
-logEvent(null, '検証ダッシュボードを初期化', 'success');
+logEvent(null, 'Data Modes exampleを初期化', 'success');
 logEvent(
     null,
     `Environment: host=${currentHostLabel()} platform=${navigator.platform || 'unknown'} secureContext=${window.isSecureContext} webBluetooth=${Boolean(navigator.bluetooth)} preset=${PRESETS[selectedPresetId].label}`,

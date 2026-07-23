@@ -167,6 +167,34 @@ function _insoleError(code, message) {
 }
 
 /**
+ * SENSOR_VALUES のリアルタイム配信モード仕様。
+ * UI・Toolkit・アプリが同じ名称と期待データを使えるよう、コアSDKを正とする。
+ */
+const ORPHE_INSOLE_STREAMING_MODES = Object.freeze({
+  1: Object.freeze({
+    id: 1,
+    sampleHz: 200,
+    packetHz: 50,
+    fields: Object.freeze({ quat: true, gyro: true, acc: true, press: false }),
+    label: 'Orientation 200 Hz',
+  }),
+  3: Object.freeze({
+    id: 3,
+    sampleHz: 200,
+    packetHz: 50,
+    fields: Object.freeze({ quat: false, gyro: true, acc: true, press: true }),
+    label: 'Pressure + IMU 200 Hz',
+  }),
+  4: Object.freeze({
+    id: 4,
+    sampleHz: 100,
+    packetHz: 50,
+    fields: Object.freeze({ quat: true, gyro: true, acc: true, press: true }),
+    label: 'Full sensor 100 Hz',
+  }),
+});
+
+/**
  * ORPHE INSOLE SENSOR_VALUES packet parser.
  * @param {DataView} data
  * @param {object} options
@@ -341,6 +369,15 @@ class OrpheInsole {
   }
 
   /**
+   * リアルタイム配信モードの仕様を返す。
+   * @param {number} mode
+   * @returns {object|null}
+   */
+  static getStreamingModeInfo(mode) {
+    return ORPHE_INSOLE_STREAMING_MODES[Number(mode)] || null;
+  }
+
+  /**
    * 初期化関数
    * @param {number}[id=0] id コアの番号（0 or 1）を指定します。
    */
@@ -369,6 +406,9 @@ class OrpheInsole {
     // SENSOR_VALUES 以外の characteristic（例: STEP_ANALYSIS/OrpheInsoleGait）を
     // 再購読するのに使う。onReconnectSuccess を上書きせずに再購読できるようにするため。
     this._afterReconnectSuccess = [];
+    // gotData / gotPress 等の単一コールバックを上書きせず、複数の可視化・
+    // 記録モジュールが同じRealtime packetを購読するための追加API。
+    this._sensorDataListeners = new Set();
     this.hashUUID = {}; // UUIDを保持するハッシュ
     this.hashUUID_lastConnected; // 最後に接続したUUIDを保持する
     this.id = id;
@@ -561,6 +601,47 @@ class OrpheInsole {
     // メンバ変数の初期化ここまで
     //////////////////////////
 
+  }
+
+  /**
+   * Realtime SENSOR_VALUES のデコード済みpacketを購読する。
+   * 既存の gotData / gotPress 等とは独立して呼ばれ、解除関数を返す。
+   * FIFO read mode中の要求応答packetは通知されない。
+   * @param {function} listener ({deviceId, receivedAt, packet, data}) => void
+   * @returns {function} unsubscribe
+   */
+  addSensorDataListener(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('OrpheInsole.addSensorDataListener expects a function');
+    }
+    this._sensorDataListeners.add(listener);
+    return () => this.removeSensorDataListener(listener);
+  }
+
+  /**
+   * addSensorDataListener() で登録した購読を解除する。
+   * @param {function} listener
+   * @returns {boolean}
+   */
+  removeSensorDataListener(listener) {
+    return this._sensorDataListeners.delete(listener);
+  }
+
+  _emitSensorData(data, packet) {
+    if (!packet || this._sensorDataListeners.size === 0) return;
+    const event = Object.freeze({
+      deviceId: this.id,
+      receivedAt: Date.now(),
+      packet,
+      data,
+    });
+    for (const listener of Array.from(this._sensorDataListeners)) {
+      try {
+        listener(event);
+      } catch (error) {
+        this._reportError(error);
+      }
+    }
   }
 
   _log(...args) {
@@ -1615,6 +1696,16 @@ class OrpheInsole {
     let ret = this.timestamp.getHz();
     if (ret > 0) this.gotBLEFrequency(ret);
 
+    // Realtime packet listener は既存 gotData / got* のどちらを利用するアプリとも
+    // 共存する。購読者がいる時だけ先にdecodeし、同じpacketを各購読者へ配る。
+    let parsedSensorPacket = null;
+    if (uuid === 'SENSOR_VALUES' && this._sensorDataListeners.size > 0) {
+      parsedSensorPacket = parseInsoleSensorValues(data);
+      if (parsedSensorPacket && [50, 55, 56].includes(parsedSensorPacket.header)) {
+        this._emitSensorData(data, parsedSensorPacket);
+      }
+    }
+
     // 生データモニタリングの場合はそのままデータをgotDataで渡して、returnする（データ欠損以外の他の処理は行わない）
     if (this.isGotDataOverridden() == true) {
       this.gotData(data, uuid);
@@ -1632,7 +1723,7 @@ class OrpheInsole {
     if (uuid == 'DEVICE_INFORMATION') {
     }
     else if (uuid == 'SENSOR_VALUES') {
-      const parsed = parseInsoleSensorValues(data);
+      const parsed = parsedSensorPacket || parseInsoleSensorValues(data);
       if (!parsed) {
         console.warn("SENSOR VALUES: Data length is not 104");
         return;
@@ -1976,6 +2067,8 @@ class OrpheInsole {
   //--------------------------------------------------
 }
 
+OrpheInsole.STREAMING_MODES = ORPHE_INSOLE_STREAMING_MODES;
+
 // ── グローバル公開とエイリアス ─────────────────────────────────
 // 推奨クラス名は OrpheInsole。
 // 後方互換のため、同一ページに ORPHE-CORE.js が読み込まれていない場合に限り
@@ -1998,6 +2091,9 @@ if (!hasLexicalOrphe && typeof global.Orphe === 'undefined') {
 if (typeof global.FixedSizeArray === 'undefined') global.FixedSizeArray = FixedSizeArray;
 if (typeof global.OrpheTimestamp === 'undefined') global.OrpheTimestamp = OrpheTimestamp;
 if (typeof global.parseInsoleSensorValues === 'undefined') global.parseInsoleSensorValues = parseInsoleSensorValues;
+if (typeof global.ORPHE_INSOLE_STREAMING_MODES === 'undefined') {
+  global.ORPHE_INSOLE_STREAMING_MODES = ORPHE_INSOLE_STREAMING_MODES;
+}
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -2005,7 +2101,8 @@ if (typeof module !== 'undefined' && module.exports) {
     OrpheInsole,
     FixedSizeArray,
     OrpheTimestamp,
-    parseInsoleSensorValues
+    parseInsoleSensorValues,
+    ORPHE_INSOLE_STREAMING_MODES
   };
 }
 
