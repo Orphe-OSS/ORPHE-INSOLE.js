@@ -29,6 +29,7 @@ FIFO lag/dropped/drainを分けて確認します。Step Analysisはnotify packe
 ## 実機確認の流れ
 
 1. INSOLE 01 / 02を接続し、L/Rバッジとデバイス名が別々であることを確認する。
+   接続直後はRaw/Stepのライブプレビューが表示される。正式なHz・欠損集計は「計測開始」後だけを対象にする。
 2. Realtime Format 1 / 3 / 4を各30秒計測する。期待するフィールドの取得率、実効sample Hz、
    packet Hz、P95到着間隔、delivery age、serial missingを左右別に確認する。
 3. FIFO Rawを30秒以上計測して停止する。停止時に自動でRealtimeへ戻るまで待ち、
@@ -39,6 +40,7 @@ FIFO lag/dropped/drainを分けて確認します。Step Analysisはnotify packe
 6. 各プリセットの計測中に片方ずつ通信圏外へ移動し、戻した後の再接続成功、
    Toolkit設定復元、最初の期待データまでの時間を確認する。
 7. 結果JSONと、必要に応じてFIFO / Step CSVを保存する。
+8. 問題があれば「イベントログをコピー」を押し、接続・設定・5秒ごとの左右別進捗・最終判定を共有する。
 
 自動判定のsample Hzはnominal値の60〜135%を通常範囲として扱います。電波環境やブラウザ負荷の
 影響を受けるため、`要確認`は即時の機能不良判定ではなく、左右差・繰り返し結果・保存データを

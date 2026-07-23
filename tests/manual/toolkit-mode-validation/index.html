@@ -137,7 +137,7 @@
           </select>
         </label>
         <button id="start_button" class="btn btn-success" disabled>
-          <i class="bi bi-play-fill"></i> この条件で計測開始
+          <i class="bi bi-play-fill"></i> ③ 計測開始（グラフ・集計）
         </button>
         <button id="stop_button" class="btn btn-outline-light" disabled>
           <i class="bi bi-stop-fill"></i> 停止して集計
@@ -146,6 +146,11 @@
           <i class="bi bi-arrow-counterclockwise"></i> 表示をクリア
         </button>
         <div id="run_message" class="run-message">INSOLEを接続してください</div>
+      </div>
+
+      <div class="measurement-tip mt-3">
+        <i class="bi bi-info-circle"></i>
+        <span>接続直後はRaw/Stepのライブ受信だけを表示します。Hz・欠損・FIFO・履歴の正式な集計は、上の緑色の「計測開始」を押した区間が対象です。</span>
       </div>
 
       <div class="expectation-strip mt-3">
@@ -378,11 +383,14 @@
           <div class="section-number">08</div>
           <h2 id="log_heading" class="h5 mb-0">イベントログ</h2>
         </div>
-        <span class="form-hint">接続・切替・欠損・drain・Step完成を時系列表示</span>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="form-hint">接続・設定・5秒進捗・欠損・drain・Step・再接続・最終判定</span>
+          <button id="copy_event_log_button" class="btn btn-outline-light btn-sm">
+            <i class="bi bi-clipboard"></i> イベントログをコピー
+          </button>
+        </div>
       </div>
-      <div id="event_log" class="event-log" aria-live="polite">
-        <div class="event-row"><time>—</time><span class="event-device">SYSTEM</span><span>ページを初期化しました</span></div>
-      </div>
+      <div id="event_log" class="event-log" aria-live="polite"></div>
     </section>
 
     <footer class="page-footer">

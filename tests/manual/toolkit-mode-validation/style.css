@@ -329,6 +329,23 @@ body {
   font-size: 0.8rem;
 }
 
+.measurement-tip {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(93, 226, 141, 0.32);
+  border-radius: 10px;
+  color: #ccebd7;
+  background: rgba(93, 226, 141, 0.07);
+  font-size: 0.78rem;
+}
+
+.measurement-tip i {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
 .expectation-strip {
   justify-content: flex-start;
 }

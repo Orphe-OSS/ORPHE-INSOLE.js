@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const metrics = require('./manual/toolkit-mode-validation/metrics.js');
 
 {
@@ -126,6 +128,18 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
         completedSteps: 4,
     }, metrics.PRESET_EXPECTATIONS.step);
     assert.equal(evaluation.level, 'warn');
+}
+
+{
+    const pageRoot = path.join(__dirname, 'manual', 'toolkit-mode-validation');
+    const html = fs.readFileSync(path.join(pageRoot, 'index.html'), 'utf8');
+    const app = fs.readFileSync(path.join(pageRoot, 'app.js'), 'utf8');
+    assert.match(html, /id="copy_event_log_button"/);
+    assert.match(html, /③ 計測開始（グラフ・集計）/);
+    assert.match(app, /dom\.copyLog\.addEventListener\('click', copyEventLog\)/);
+    assert.match(app, /RUN_PROGRESS_LOG_INTERVAL_MS = 5000/);
+    assert.match(app, /events: eventEntries\.slice\(\)/);
+    assert.match(app, /Rawライブプレビュー受信開始/);
 }
 
 console.log('toolkit-mode-validation tests: ok');

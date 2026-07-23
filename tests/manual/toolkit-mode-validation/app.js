@@ -6,7 +6,9 @@ const Metrics = ToolkitValidationMetrics;
 const PRESETS = Metrics.PRESET_EXPECTATIONS;
 const DEVICE_IDS = [0, 1];
 const CHART_WINDOW_MS = 12000;
-const MAX_EVENT_ROWS = 160;
+const MAX_EVENT_ROWS = 240;
+const MAX_EVENT_ENTRIES = 5000;
+const RUN_PROGRESS_LOG_INTERVAL_MS = 5000;
 
 let selectedPresetId = 'rt4';
 let runState = 'idle'; // idle | switching | running | draining
@@ -17,6 +19,9 @@ const lastResults = [null, null];
 const signalPoints = [];
 const timingPoints = [];
 const sessions = [null, null];
+const eventEntries = [];
+const previewDevices = DEVICE_IDS.map((id) => createPreviewDevice(id));
+const lastSessionStateSignatures = [null, null];
 
 const reconnectStats = DEVICE_IDS.map(() => createReconnectStats());
 
@@ -38,6 +43,7 @@ const dom = {
     latestDataAge: document.getElementById('latest_data_age'),
     historyBody: document.getElementById('history_body'),
     eventLog: document.getElementById('event_log'),
+    copyLog: document.getElementById('copy_event_log_button'),
     resetReconnect: document.getElementById('reset_reconnect_button'),
     downloadJson: document.getElementById('download_json_button'),
     downloadFifo: document.getElementById('download_fifo_button'),
@@ -57,6 +63,17 @@ function createReconnectStats() {
         restoredAfterSuccessMs: null,
         pendingFirstData: false,
         pendingRestore: false,
+    };
+}
+
+function createPreviewDevice(id) {
+    return {
+        id,
+        rawPackets: 0,
+        stepPackets: 0,
+        lastSignalAt: null,
+        latestRaw: null,
+        latestStep: null,
     };
 }
 
@@ -91,6 +108,7 @@ function createRunDevice(id) {
         fifoStopReason: null,
         fifoDrainError: null,
         fifoAnomalies: 0,
+        lastProgressLogAt: 0,
         reconnectStart: {
             disconnects: reconnectStats[id].disconnects,
             attempts: reconnectStats[id].attempts,
@@ -104,30 +122,115 @@ function deviceLabel(id) {
     return `INSOLE 0${id + 1}`;
 }
 
-function nowClock() {
-    return new Date().toLocaleTimeString('ja-JP', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        fractionalSecondDigits: 3,
-    });
-}
-
 function logEvent(id, message, level = '') {
+    const occurredAt = new Date();
+    const entry = {
+        timestamp: occurredAt.toISOString(),
+        clock: occurredAt.toLocaleTimeString('ja-JP', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            fractionalSecondDigits: 3,
+        }),
+        device: id === null ? 'SYSTEM' : `INSOLE 0${id + 1}`,
+        level: level || 'info',
+        message: String(message),
+    };
+    eventEntries.push(entry);
+    if (eventEntries.length > MAX_EVENT_ENTRIES) eventEntries.shift();
+
     const row = document.createElement('div');
     row.className = `event-row ${level}`.trim();
     const time = document.createElement('time');
-    time.textContent = nowClock();
+    time.textContent = entry.clock;
     const device = document.createElement('span');
     device.className = 'event-device';
-    device.textContent = id === null ? 'SYSTEM' : `INSOLE 0${id + 1}`;
+    device.textContent = entry.device;
     const text = document.createElement('span');
-    text.textContent = message;
+    text.textContent = entry.message;
     row.append(time, device, text);
     dom.eventLog.prepend(row);
     while (dom.eventLog.children.length > MAX_EVENT_ROWS) {
         dom.eventLog.lastElementChild.remove();
+    }
+}
+
+function formatSessionState(snapshot) {
+    if (!snapshot) return 'session unavailable';
+    return [
+        `connected=${Boolean(snapshot.connected)}`,
+        `transitioning=${Boolean(snapshot.transitioning)}`,
+        `stream=${snapshot.streamingMode}`,
+        `acquisition=${snapshot.sensorDataMode}`,
+        `raw=${Boolean(snapshot.outputs?.sensorValues)}`,
+        `step=${Boolean(snapshot.outputs?.stepAnalysis)}`,
+        `sensorNotify=${Boolean(snapshot.sensorNotifyActive)}`,
+        `fifo=${Boolean(snapshot.fifoActive)}`,
+        `gait=${Boolean(snapshot.gaitActive)}`,
+    ].join(' ');
+}
+
+function noteSessionState(id, snapshot) {
+    if (!snapshot || snapshot.transitioning) return;
+    const signature = formatSessionState(snapshot);
+    if (lastSessionStateSignatures[id] === signature) return;
+    lastSessionStateSignatures[id] = signature;
+    logEvent(id, `Toolkit state: ${signature}`, snapshot.connected ? 'success' : 'warn');
+}
+
+function formatEventLogText() {
+    const lines = [
+        'Toolkit Data Mode Validation Event Log',
+        `exportedAt=${new Date().toISOString()}`,
+        `page=${window.location.href}`,
+        `secureContext=${window.isSecureContext}`,
+        `webBluetooth=${Boolean(navigator.bluetooth)}`,
+        `selectedPreset=${selectedPresetId}`,
+        `runState=${runState}`,
+        ...DEVICE_IDS.map((id) => `${deviceLabel(id)} ${formatSessionState(sessions[id]?.snapshot())}`),
+        '',
+        'timestamp\tlevel\tdevice\tmessage',
+    ];
+    for (const entry of eventEntries) {
+        lines.push(`${entry.timestamp}\t${entry.level}\t${entry.device}\t${entry.message}`);
+    }
+    return lines.join('\n');
+}
+
+async function writeClipboardText(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) throw new Error('Clipboard API is unavailable');
+}
+
+async function copyEventLog() {
+    const originalHtml = dom.copyLog.innerHTML;
+    dom.copyLog.disabled = true;
+    try {
+        const text = formatEventLogText();
+        await writeClipboardText(text);
+        dom.copyLog.textContent = `コピー済み (${eventEntries.length}件)`;
+        logEvent(null, `イベントログをクリップボードへコピー: ${eventEntries.length} entries`, 'success');
+    } catch (error) {
+        dom.copyLog.textContent = 'コピー失敗';
+        logEvent(null, `イベントログのコピー失敗: ${error.message || error}`, 'error');
+    } finally {
+        setTimeout(() => {
+            dom.copyLog.innerHTML = originalHtml;
+            dom.copyLog.disabled = false;
+        }, 1800);
     }
 }
 
@@ -185,9 +288,9 @@ function updateControls() {
     document.querySelectorAll('.preset-card').forEach((button) => {
         button.disabled = runState !== 'idle';
     });
-    if (runState === 'idle' && count === 0) dom.runMessage.textContent = 'INSOLEを接続してください';
+    if (runState === 'idle' && count === 0) dom.runMessage.textContent = '① INSOLEを接続してください';
     if (runState === 'idle' && count > 0 && !finishingPromise) {
-        dom.runMessage.textContent = `${count}台接続中。プリセットを選んで計測できます`;
+        dom.runMessage.textContent = `${count}台接続中。③「計測開始」を押すと正式な集計を開始します`;
     }
 }
 
@@ -199,6 +302,7 @@ function selectPreset(id) {
     });
     dom.selectedPreset.textContent = PRESETS[id].label;
     renderExpectations();
+    logEvent(null, `プリセット選択: ${PRESETS[id].label}`, 'success');
 }
 
 function chip(text, level = 'neutral') {
@@ -235,7 +339,7 @@ async function applyPresetToDevice(id, preset) {
         sensorValues: preset.raw,
         stepAnalysis: preset.step,
     });
-    logEvent(id, `${preset.label} を適用`, 'success');
+    logEvent(id, `${preset.label} を適用: ${formatSessionState(session.snapshot())}`, 'success');
 }
 
 async function startRun() {
@@ -243,6 +347,11 @@ async function startRun() {
     const ids = connectedIds();
     if (ids.length === 0) return;
     const preset = PRESETS[selectedPresetId];
+    logEvent(
+        null,
+        `計測開始要求: preset=${preset.label} duration=${Number(dom.duration.value) / 1000}s devices=${ids.map((id) => id + 1).join(',')}`,
+        'success'
+    );
     setRunState('switching', `${preset.label}へ切り替えています…`);
     const settled = await Promise.allSettled(ids.map((id) => applyPresetToDevice(id, preset)));
     const activeIds = ids.filter((_, index) => settled[index].status === 'fulfilled');
@@ -273,6 +382,7 @@ async function startRun() {
     signalPoints.length = 0;
     timingPoints.length = 0;
     for (const id of activeIds) {
+        currentRun.devices[id].lastProgressLogAt = startedAt;
         document.getElementById(`device_card_${id}`).classList.add('active');
     }
     logEvent(null, `${preset.label} / ${activeIds.length}台 / ${Number(dom.duration.value) / 1000}秒 を開始`, 'success');
@@ -314,6 +424,11 @@ async function finishRun(reason = 'manual') {
             runHistory.unshift(result);
             lastResults[result.id] = result;
             document.getElementById(`device_card_${result.id}`).classList.remove('active');
+            logEvent(
+                result.id,
+                formatResultLog(result),
+                result.evaluation.level === 'pass' ? 'success' : result.evaluation.level
+            );
         }
         currentRun = null;
         renderHistory();
@@ -352,9 +467,16 @@ function noteBatchArrival(device, now) {
     device.lastBatchArrival = now;
 }
 
+function sampleFieldList(sample) {
+    return ['acc', 'gyro', 'press', 'quat']
+        .filter((field) => Metrics.sampleHasField(sample, field))
+        .join('+') || 'none';
+}
+
 function recordSample(device, sample, source, phase) {
     const inWindow = phase === 'running';
     const inDrain = phase === 'draining';
+    const inPreview = phase === 'preview';
     if (inWindow) {
         device.windowRawSamples += 1;
         for (const field of ['acc', 'gyro', 'press', 'quat']) {
@@ -373,7 +495,7 @@ function recordSample(device, sample, source, phase) {
         : null;
     const accNorm = acc ? Math.hypot(acc.x, acc.y, acc.z) : null;
     const deviceEpoch = Metrics.deviceTimestampToEpoch(sample.timestamp ?? sample.t);
-    if (deviceEpoch !== null) {
+    if ((inWindow || inDrain) && deviceEpoch !== null) {
         const age = Date.now() - deviceEpoch;
         if (age >= -2000 && age <= 120000) device.deliveryAges.push(Math.max(0, age));
     }
@@ -390,7 +512,7 @@ function recordSample(device, sample, source, phase) {
         arrivedAt: performance.now(),
     };
     const now = performance.now();
-    if (inWindow && (device.lastSignalAt === null || now - device.lastSignalAt >= 8)) {
+    if ((inWindow || inPreview) && (device.lastSignalAt === null || now - device.lastSignalAt >= 8)) {
         signalPoints.push({
             t: now,
             id: device.id,
@@ -400,19 +522,33 @@ function recordSample(device, sample, source, phase) {
         });
         device.lastSignalAt = now;
     }
-    if (inWindow || inDrain) noteReconnectData(device.id);
+    if (inWindow || inDrain || inPreview) noteReconnectData(device.id);
 }
 
 function handleRealtimePacket(id, data, uuid) {
-    if (uuid !== 'SENSOR_VALUES' || !currentRun || runState !== 'running') return;
+    if (uuid !== 'SENSOR_VALUES') return;
     if (![50, 55, 56].includes(data.getUint8(0))) return;
-    const device = runDeviceFor(id);
-    if (!device) return;
     const parsed = insoles[id].constructor.parseSensorValues
         ? insoles[id].constructor.parseSensorValues(data)
         : null;
     if (!parsed) return;
 
+    if (!currentRun) {
+        const preview = previewDevices[id];
+        preview.rawPackets += 1;
+        if (preview.rawPackets === 1) {
+            logEvent(
+                id,
+                `Rawライブプレビュー受信開始: source=realtime header=${parsed.header} serial=${parsed.serial_number} samples=${parsed.samples.length} fields=${sampleFieldList(parsed.samples[0])}`,
+                'success'
+            );
+        }
+        for (const sample of parsed.samples) recordSample(preview, sample, 'realtime-preview', 'preview');
+        return;
+    }
+    if (runState !== 'running') return;
+    const device = runDeviceFor(id);
+    if (!device) return;
     const now = performance.now();
     const expected = currentRun.preset.acquisition === 'realtime' && currentRun.preset.raw;
     if (!expected) {
@@ -422,19 +558,45 @@ function handleRealtimePacket(id, data, uuid) {
         return;
     }
     noteBatchArrival(device, now);
+    const firstPacket = device.windowRawPackets === 0;
     device.windowRawPackets += 1;
-    Metrics.recordSerial(device.serialTracker, parsed.serial_number);
+    const serialEvent = Metrics.recordSerial(device.serialTracker, parsed.serial_number);
+    if (firstPacket) {
+        logEvent(
+            id,
+            `Raw受信開始: source=realtime header=${parsed.header} serial=${parsed.serial_number} samples=${parsed.samples.length} fields=${sampleFieldList(parsed.samples[0])}`,
+            'success'
+        );
+    } else if (serialEvent.kind === 'gap' && device.serialTracker.gapEvents.length === 1) {
+        logEvent(id, `Realtime serial gapを検出: ${serialEvent.missing} missing（以降は進捗ログへ集約）`, 'warn');
+    }
     for (const sample of parsed.samples) recordSample(device, sample, 'realtime', 'running');
 }
 
 function handleFifoSamples(id, samples) {
-    if (!currentRun || currentRun.preset.acquisition !== 'fifo') return;
+    if (!currentRun) {
+        const preview = previewDevices[id];
+        const firstBatch = preview.rawPackets === 0;
+        const serials = new Set(samples.map((sample) => sample.serial_number));
+        preview.rawPackets += serials.size;
+        if (firstBatch && samples.length > 0) {
+            logEvent(
+                id,
+                `Rawライブプレビュー受信開始: source=fifo serial=${samples[0].serial_number} samples=${samples.length} fields=${sampleFieldList(samples[0])}`,
+                'success'
+            );
+        }
+        for (const sample of samples) recordSample(preview, sample, 'fifo-preview', 'preview');
+        return;
+    }
+    if (currentRun.preset.acquisition !== 'fifo') return;
     if (runState !== 'running' && runState !== 'draining') return;
     const device = runDeviceFor(id);
     if (!device) return;
     const now = performance.now();
     noteBatchArrival(device, now);
     const serials = new Set();
+    const firstBatch = device.windowRawPackets === 0 && device.drainRawPackets === 0;
     for (const sample of samples) {
         serials.add(sample.serial_number);
         recordSample(device, sample, 'fifo', runState);
@@ -446,6 +608,13 @@ function handleFifoSamples(id, samples) {
         } else {
             device.drainRawPackets += 1;
         }
+    }
+    if (firstBatch && samples.length > 0) {
+        logEvent(
+            id,
+            `Raw受信開始: source=fifo serial=${samples[0].serial_number} packets=${serials.size} samples=${samples.length} fields=${sampleFieldList(samples[0])}`,
+            'success'
+        );
     }
 }
 
@@ -489,10 +658,21 @@ function handleFifoStopped(id, info) {
 }
 
 function handleStepRaw(id, packet) {
-    if (!currentRun || runState !== 'running' || !currentRun.preset.step) return;
+    if (!currentRun) {
+        const preview = previewDevices[id];
+        preview.stepPackets += 1;
+        if (preview.stepPackets === 1) {
+            logEvent(id, `Stepライブプレビュー受信開始: type=${packet.type}`, 'success');
+        }
+        noteReconnectData(id);
+        return;
+    }
+    if (runState !== 'running' || !currentRun.preset.step) return;
     const device = runDeviceFor(id);
     if (!device) return;
+    const firstPacket = device.stepPackets === 0;
     device.stepPackets += 1;
+    if (firstPacket) logEvent(id, `Step notify受信開始: type=${packet.type}`, 'success');
     if (packet.type === 'motion') {
         device.latestMotion = packet;
     }
@@ -500,7 +680,14 @@ function handleStepRaw(id, packet) {
 }
 
 function handleStepRow(id, row) {
-    if (!currentRun || runState !== 'running' || !currentRun.preset.step) return;
+    if (!currentRun) {
+        const preview = previewDevices[id];
+        preview.latestStep = row;
+        signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
+        logEvent(id, `Stepプレビュー ${row.step_number} 完成 (${row.gait_type})`, 'success');
+        return;
+    }
+    if (runState !== 'running' || !currentRun.preset.step) return;
     const device = runDeviceFor(id);
     if (!device) return;
     device.completedSteps += 1;
@@ -573,6 +760,62 @@ function finalizeDeviceResult(run, id) {
     return result;
 }
 
+function formatResultLog(result) {
+    const checks = result.evaluation.checks
+        .map((check) => `${check.label}=${check.level}(${check.detail})`)
+        .join('; ');
+    return [
+        `RESULT ${result.evaluation.level.toUpperCase()}`,
+        `preset=${result.presetLabel}`,
+        `duration=${formatNumber(result.durationSec, 1)}s`,
+        `samples=${result.rawSamples}`,
+        `sampleHz=${formatNumber(result.sampleHz, 1)}`,
+        `packets=${result.rawPackets}`,
+        `packetHz=${formatNumber(result.packetHz, 1)}`,
+        `serial=${result.serial.missing}/${result.serial.expected} missing`,
+        `p95Gap=${formatNumber(result.p95GapMs, 0)}ms`,
+        `age=${formatNumber(result.deliveryAgeMedianMs, 0)}ms`,
+        `fifoDropped=${result.fifoDropped}`,
+        `drainRecovered=${result.fifoDrainRecovered}`,
+        `stepPackets=${result.stepPackets}`,
+        `stepRows=${result.completedSteps}`,
+        `reconnect=${result.reconnect.successes}/${result.reconnect.disconnects}`,
+        `checks=[${checks}]`,
+    ].join(' ');
+}
+
+function logRunProgress(now) {
+    if (!currentRun || runState !== 'running') return;
+    for (const id of currentRun.activeIds) {
+        const device = currentRun.devices[id];
+        if (now - device.lastProgressLogAt < RUN_PROGRESS_LOG_INTERVAL_MS) continue;
+        device.lastProgressLogAt = now;
+        const durationSec = Math.max(0.001, (now - currentRun.startedAt) / 1000);
+        const serial = Metrics.summarizeSerialTracker(device.serialTracker);
+        const p95Gap = Metrics.percentile(device.batchGaps, 0.95);
+        logEvent(
+            id,
+            [
+                'PROGRESS',
+                `preset=${currentRun.preset.label}`,
+                `elapsed=${formatNumber(durationSec, 1)}s`,
+                `samples=${device.windowRawSamples}`,
+                `sampleHz=${formatNumber(device.windowRawSamples / durationSec, 1)}`,
+                `packets=${device.windowRawPackets}`,
+                `packetHz=${formatNumber(device.windowRawPackets / durationSec, 1)}`,
+                `serial=${serial.missing}/${serial.expected} missing`,
+                `gapEvents=${device.serialTracker.gapEvents.length}`,
+                `p95Gap=${formatNumber(p95Gap, 0)}ms`,
+                `fifoLag=${device.fifoLag}`,
+                `fifoDropped=${device.fifoDropped}`,
+                `stepPackets=${device.stepPackets}`,
+                `stepRows=${device.completedSteps}`,
+            ].join(' '),
+            serial.missing > 0 || device.fifoDropped > 0 ? 'warn' : 'success'
+        );
+    }
+}
+
 function liveResult(id) {
     if (!currentRun || !currentRun.devices[id]) return lastResults[id];
     const device = currentRun.devices[id];
@@ -624,8 +867,20 @@ function renderDevice(id) {
     const result = liveResult(id);
     const verdict = document.getElementById(`device_verdict_${id}`);
     if (!result) {
-        verdict.className = 'verdict neutral';
-        verdict.textContent = '未計測';
+        const preview = previewDevices[id];
+        const receiving = preview.rawPackets > 0 || preview.stepPackets > 0;
+        verdict.className = `verdict ${receiving ? 'pass' : 'neutral'}`;
+        verdict.textContent = receiving ? 'ライブ受信' : '未計測';
+        const checks = document.getElementById(`checks_${id}`);
+        checks.replaceChildren();
+        if (receiving) {
+            checks.append(
+                chip(`接続プレビュー: Raw ${preview.rawPackets} pkt / Step ${preview.stepPackets} pkt`, 'pass'),
+                chip('正式な数値集計は「計測開始」後', 'neutral')
+            );
+        }
+        renderLatestRaw(id, preview.latestRaw);
+        renderLatestStep(id, preview.latestStep);
         return;
     }
     const active = !!(currentRun && currentRun.devices[id]);
@@ -1040,6 +1295,7 @@ function clearDisplay() {
     signalPoints.length = 0;
     timingPoints.length = 0;
     for (const id of DEVICE_IDS) {
+        previewDevices[id] = createPreviewDevice(id);
         renderDevice(id);
         renderSerialMap(id, null, null);
         renderLatestRaw(id, null);
@@ -1106,11 +1362,19 @@ function installDevice(id) {
                     logEvent(id, `Step Analysis error: ${error.message || error}`, 'error');
                 },
             },
-            onStateChange() {
+            onStateChange(snapshot) {
                 renderConnectionState(id);
+                noteSessionState(id, snapshot);
             },
             onError(error) {
-                logEvent(id, `Toolkit error: ${error.message || error}`, 'error');
+                const cancelled = error?.name === 'NotFoundError';
+                logEvent(
+                    id,
+                    cancelled
+                        ? 'Toolkit: Bluetooth chooserをキャンセル'
+                        : `Toolkit error: ${error.message || error}`,
+                    cancelled ? 'warn' : 'error'
+                );
             },
         }
     );
@@ -1119,10 +1383,27 @@ function installDevice(id) {
     insoles[id].gotData = function (data, uuid) {
         handleRealtimePacket(this.id, data, uuid);
     };
-    insoles[id].lostData = function (current, previous) {
-        const distance = Metrics.serialForwardDistance(previous, current);
-        const missing = Math.max(0, distance - 1);
-        logEvent(this.id, `Realtime serial gap: ${previous} → ${current} (${missing} missing)`, 'warn');
+    insoles[id].onScan = function (deviceName) {
+        logEvent(this.id, `Bluetooth device選択: ${deviceName || 'name unavailable'}`, 'success');
+    };
+    insoles[id].onConnect = function (uuid) {
+        logEvent(this.id, `GATT接続: ${uuid}`, 'success');
+    };
+    insoles[id].onStartNotify = function (uuid) {
+        logEvent(this.id, `Notify開始: ${uuid}`, 'success');
+    };
+    insoles[id].onStopNotify = function (uuid) {
+        logEvent(this.id, `Notify停止: ${uuid}`, 'warn');
+    };
+    insoles[id].onError = function (error) {
+        const cancelled = error?.name === 'NotFoundError';
+        logEvent(
+            this.id,
+            cancelled
+                ? 'Core: Bluetooth chooserをキャンセル（接続済みデバイスには影響なし）'
+                : `Core error: ${error?.message || error}`,
+            cancelled ? 'warn' : 'error'
+        );
     };
     insoles[id].onDisconnect = function () {
         const reconnect = reconnectStats[this.id];
@@ -1169,11 +1450,13 @@ dom.start.addEventListener('click', startRun);
 dom.stop.addEventListener('click', () => finishRun('manual'));
 dom.clear.addEventListener('click', clearDisplay);
 dom.resetReconnect.addEventListener('click', resetReconnectLogs);
+dom.copyLog.addEventListener('click', copyEventLog);
 dom.downloadJson.addEventListener('click', () => {
     const payload = {
         exportedAt: new Date().toISOString(),
         page: 'toolkit-mode-validation',
         results: runHistory.map(serializableResult),
+        events: eventEntries.slice(),
     };
     downloadBlob(JSON.stringify(payload, null, 2), `toolkit-mode-validation-${stamp()}.json`, 'application/json');
 });
@@ -1207,12 +1490,19 @@ renderHistory();
 renderDownloads();
 updateControls();
 logEvent(null, '検証ダッシュボードを初期化', 'success');
+logEvent(
+    null,
+    `Environment: secureContext=${window.isSecureContext} webBluetooth=${Boolean(navigator.bluetooth)} preset=${PRESETS[selectedPresetId].label}`,
+    window.isSecureContext && navigator.bluetooth ? 'success' : 'error'
+);
+logEvent(null, '操作手順: ①接続 → ②プリセット選択 → ③計測開始。接続直後はライブプレビューのみ表示', 'success');
 
 let lastUiRender = 0;
 function animationLoop(now) {
     drawSignalChart();
     drawTimingChart();
     updateReconnectRestore();
+    logRunProgress(now);
 
     if (currentRun && runState === 'running') {
         const elapsed = now - currentRun.startedAt;
@@ -1232,7 +1522,10 @@ function animationLoop(now) {
             renderReconnect(id);
         }
         const newest = DEVICE_IDS
-            .map((id) => liveResult(id)?.latestRaw?.arrivedAt)
+            .flatMap((id) => [
+                liveResult(id)?.latestRaw?.arrivedAt,
+                previewDevices[id]?.latestRaw?.arrivedAt,
+            ])
             .filter(Number.isFinite)
             .sort((a, b) => b - a)[0];
         if (Number.isFinite(newest)) {
