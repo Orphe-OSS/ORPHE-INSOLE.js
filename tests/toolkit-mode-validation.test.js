@@ -163,9 +163,13 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.match(html, /attitude-viz\.js/);
     assert.match(html, /id="fifo_history_chart"/);
     assert.match(html, /id="step_history_body"/);
+    assert.match(html, /id="step_packet_summary_0"/);
+    assert.match(html, /id="step_packet_summary_1"/);
     assert.match(app, /function appendFifoHistory/);
     assert.match(app, /function renderFifoHistory/);
     assert.match(app, /function recordStepHistory/);
+    assert.match(app, /function recordStepPacket/);
+    assert.match(app, /function renderStepPacketStatus/);
     assert.match(app, /function renderStepHistory/);
     assert.match(app, /REALTIME_HEADER_BY_MODE/);
 }

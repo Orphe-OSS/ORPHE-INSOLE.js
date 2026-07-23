@@ -626,6 +626,8 @@ export declare class OrpheInsoleGait {
     onError: ((error: unknown) => void) | null;
     /** 歩容解析の notify を開始（SENSOR_VALUES は begin() 済みであること） */
     start(): Promise<boolean>;
+    /** 集約中・完成済みのstepを維持したままSTEP_ANALYSIS notifyを再購読 */
+    refreshSubscription(): Promise<boolean>;
     /** 歩容解析の notify を停止 */
     stop(): Promise<void>;
     /** 集めた歩容パラメーターを CSV 文字列にする */

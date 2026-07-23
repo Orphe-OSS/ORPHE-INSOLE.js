@@ -441,13 +441,15 @@ body {
   height: 360px;
 }
 
-.fifo-history-summary {
+.fifo-history-summary,
+.step-packet-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
-.fifo-history-device {
+.fifo-history-device,
+.step-packet-device {
   min-width: 0;
   padding: 0.85rem;
   border: 1px solid var(--line);
@@ -455,14 +457,16 @@ body {
   background: rgba(5, 9, 13, 0.58);
 }
 
-.fifo-history-device > div {
+.fifo-history-device > div,
+.step-packet-device > div {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
   align-items: center;
 }
 
-.fifo-history-device p {
+.fifo-history-device p,
+.step-packet-device p {
   margin: 0.55rem 0 0;
   overflow-wrap: anywhere;
   color: var(--muted);
@@ -794,7 +798,8 @@ body {
     height: 300px;
   }
 
-  .fifo-history-summary {
+  .fifo-history-summary,
+  .step-packet-summary {
     grid-template-columns: 1fr;
   }
 }

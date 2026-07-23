@@ -89,6 +89,11 @@ class FakeGait {
     this.insole.calls.push('gait:stop');
     this.isRunning = false;
   }
+
+  async refreshSubscription() {
+    this.insole.calls.push('gait:refresh');
+    return this.isRunning;
+  }
 }
 
 function createSession(options = {}) {
@@ -131,7 +136,7 @@ async function main() {
     insole.calls.length = 0;
     await session.setOutputs({ sensorValues: true, stepAnalysis: true });
     assert.equal(session.gaitActive, true);
-    assert.deepEqual(insole.calls, ['gait:start', 'mode:4']);
+    assert.deepEqual(insole.calls, ['mode:4', 'gait:start']);
 
     insole.calls.length = 0;
     await session.setOutputs({ sensorValues: false, stepAnalysis: true });
@@ -146,12 +151,29 @@ async function main() {
       'mode:4',
       'notify:start:SENSOR_VALUES',
       'fifo:start',
+      'gait:refresh',
     ]);
 
     insole.calls.length = 0;
     await session.setSensorDataMode('realtime');
     assert.equal(session.fifoActive, false);
-    assert.deepEqual(insole.calls, ['fifo:stop', 'mode:4']);
+    assert.deepEqual(insole.calls, ['fifo:stop', 'mode:4', 'gait:refresh']);
+  }
+
+  {
+    const { insole, session } = createSession();
+    await session.connect();
+    await session.setOutputs({ sensorValues: true, stepAnalysis: true });
+    insole.calls.length = 0;
+
+    await session.setSensorDataMode('fifo');
+    assert.equal(session.fifoActive, true);
+    assert.equal(session.gaitActive, true);
+    assert.deepEqual(insole.calls, ['fifo:start', 'gait:refresh']);
+
+    insole.calls.length = 0;
+    await session.setSensorDataMode('realtime');
+    assert.deepEqual(insole.calls, ['fifo:stop', 'mode:4', 'gait:refresh']);
   }
 
   {
@@ -160,6 +182,7 @@ async function main() {
       outputs: { sensorValues: true, stepAnalysis: true },
     });
     await session.connect();
+    assert.deepEqual(insole.calls, ['begin:SENSOR_VALUES:4', 'fifo:start', 'gait:start']);
     insole.calls.length = 0;
     await session.disconnect();
     assert.deepEqual(insole.calls, ['fifo:stop', 'gait:stop', 'reset']);

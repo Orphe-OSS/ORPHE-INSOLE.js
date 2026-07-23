@@ -12,6 +12,7 @@ const RUN_PROGRESS_LOG_INTERVAL_MS = 5000;
 const MAX_FIFO_PLOT_SAMPLES = 60000;
 const MAX_STEP_HISTORY_ROWS = 500;
 const REALTIME_HEADER_BY_MODE = { 1: 50, 3: 55, 4: 56 };
+const STEP_PACKET_TYPES = ['motion', 'overview', 'stride', 'pronation'];
 
 let selectedPresetId = 'rt4';
 let runState = 'idle'; // idle | switching | running | draining
@@ -27,8 +28,10 @@ const previewDevices = DEVICE_IDS.map((id) => createPreviewDevice(id));
 const lastSessionStateSignatures = [null, null];
 const pendingConnectPresetApply = [false, false];
 const fifoPlotDevices = DEVICE_IDS.map((id) => createFifoPlotDevice(id));
+const stepPacketDevices = DEVICE_IDS.map((id) => createStepPacketDevice(id));
 let stepHistory = [];
 let stepHistoryDirty = true;
+let stepPacketDirty = true;
 
 const reconnectStats = DEVICE_IDS.map(() => createReconnectStats());
 
@@ -90,6 +93,7 @@ function createPreviewDevice(id) {
         startedAt: null,
         serialTracker: Metrics.createSerialTracker(),
         fieldCounts: { acc: 0, gyro: 0, press: 0, quat: 0 },
+        stepTypeCounts: Object.fromEntries(STEP_PACKET_TYPES.map((type) => [type, 0])),
         batchGaps: [],
         deliveryAges: [],
         lastBatchArrival: null,
@@ -121,6 +125,17 @@ function createFifoPlotDevice(id) {
     };
 }
 
+function createStepPacketDevice(id) {
+    return {
+        id,
+        packets: 0,
+        completedRows: 0,
+        typeCounts: Object.fromEntries(STEP_PACKET_TYPES.map((type) => [type, 0])),
+        lastPacket: null,
+        lastAt: null,
+    };
+}
+
 function createRunDevice(id) {
     return {
         id,
@@ -140,6 +155,7 @@ function createRunDevice(id) {
         latestRaw: null,
         latestStep: null,
         stepPackets: 0,
+        stepTypeCounts: Object.fromEntries(STEP_PACKET_TYPES.map((type) => [type, 0])),
         completedSteps: 0,
         fifoLag: 0,
         fifoLagMax: 0,
@@ -233,6 +249,15 @@ function formatEventLogText() {
         `selectedPreset=${selectedPresetId}`,
         `runState=${runState}`,
         ...DEVICE_IDS.map((id) => `${deviceLabel(id)} ${formatSessionState(sessions[id]?.snapshot())}`),
+        ...DEVICE_IDS.map((id) => {
+            const fifo = fifoPlotDevices[id];
+            return `${deviceLabel(id)} fifoHistory phase=${fifo.phase} samples=${fifo.samples.length + fifo.truncated} serials=${fifo.serials.size} batches=${fifo.batches} lagMax=${fifo.lagMax} dropped=${fifo.dropped} drainRecovered=${fifo.drainRecovered}`;
+        }),
+        ...DEVICE_IDS.map((id) => {
+            const step = stepPacketDevices[id];
+            const types = STEP_PACKET_TYPES.map((type) => `${type}:${step.typeCounts[type] || 0}`).join(',');
+            return `${deviceLabel(id)} stepMonitor packets=${step.packets} types=${types} completed=${step.completedRows}`;
+        }),
         '',
         'timestamp\tlevel\tdevice\tmessage',
     ];
@@ -360,6 +385,9 @@ function resetFifoHistory(reason = '') {
 function resetStepHistory(reason = '') {
     stepHistory = [];
     stepHistoryDirty = true;
+    for (const id of DEVICE_IDS) stepPacketDevices[id] = createStepPacketDevice(id);
+    stepPacketDirty = true;
+    renderStepPacketStatus();
     renderStepHistory();
     if (reason) logEvent(null, `Step Analysis履歴をリセット: ${reason}`);
 }
@@ -686,7 +714,25 @@ function recordStepHistory(id, row) {
         id,
     });
     if (stepHistory.length > MAX_STEP_HISTORY_ROWS) stepHistory.length = MAX_STEP_HISTORY_ROWS;
+    stepPacketDevices[id].completedRows += 1;
     stepHistoryDirty = true;
+    stepPacketDirty = true;
+}
+
+function recordStepPacket(id, packet) {
+    const monitor = stepPacketDevices[id];
+    const type = STEP_PACKET_TYPES.includes(packet.type) ? packet.type : 'unknown';
+    monitor.packets += 1;
+    monitor.typeCounts[type] = (monitor.typeCounts[type] || 0) + 1;
+    monitor.lastPacket = packet;
+    monitor.lastAt = Date.now();
+    stepPacketDirty = true;
+}
+
+function noteStepType(target, packet) {
+    const type = STEP_PACKET_TYPES.includes(packet.type) ? packet.type : 'unknown';
+    target.stepTypeCounts[type] = (target.stepTypeCounts[type] || 0) + 1;
+    return target.stepTypeCounts[type];
 }
 
 function handleRealtimePacket(id, data, uuid) {
@@ -888,9 +934,15 @@ function handleStepRaw(id, packet) {
         const preview = previewDevices[id];
         const state = sessions[id]?.snapshot();
         if (!state?.outputs.stepAnalysis || !state.gaitActive) return;
+        recordStepPacket(id, packet);
         preview.stepPackets += 1;
-        if (preview.stepPackets === 1) {
-            logEvent(id, `Stepライブプレビュー受信開始: type=${packet.type}`, 'success');
+        const typeCount = noteStepType(preview, packet);
+        if (typeCount === 1) {
+            logEvent(
+                id,
+                `Stepライブプレビュー受信: type=${packet.type} step=${packet.step_number}`,
+                'success'
+            );
         }
         noteReconnectData(id);
         return;
@@ -898,9 +950,12 @@ function handleStepRaw(id, packet) {
     if (runState !== 'running' || !currentRun.preset.step) return;
     const device = runDeviceFor(id);
     if (!device) return;
-    const firstPacket = device.stepPackets === 0;
+    recordStepPacket(id, packet);
     device.stepPackets += 1;
-    if (firstPacket) logEvent(id, `Step notify受信開始: type=${packet.type}`, 'success');
+    const typeCount = noteStepType(device, packet);
+    if (typeCount === 1) {
+        logEvent(id, `Step notify受信: type=${packet.type} step=${packet.step_number}`, 'success');
+    }
     if (packet.type === 'motion') {
         device.latestMotion = packet;
     }
@@ -974,6 +1029,7 @@ function finalizeDeviceResult(run, id) {
         fifoDrainError: device.fifoDrainError,
         fifoAnomalies: device.fifoAnomalies,
         stepPackets: device.stepPackets,
+        stepTypeCounts: { ...device.stepTypeCounts },
         stepPacketHz: device.stepPackets / durationSec,
         completedSteps: device.completedSteps,
         finished: true,
@@ -1011,6 +1067,7 @@ function formatResultLog(result) {
         `fifoDropped=${result.fifoDropped}`,
         `drainRecovered=${result.fifoDrainRecovered}`,
         `stepPackets=${result.stepPackets}`,
+        `stepTypes=${STEP_PACKET_TYPES.map((type) => `${type}:${result.stepTypeCounts?.[type] || 0}`).join(',')}`,
         `stepRows=${result.completedSteps}`,
         `reconnect=${result.reconnect.successes}/${result.reconnect.disconnects}`,
         `checks=[${checks}]`,
@@ -1042,6 +1099,7 @@ function logRunProgress(now) {
                 `fifoLag=${device.fifoLag}`,
                 `fifoDropped=${device.fifoDropped}`,
                 `stepPackets=${device.stepPackets}`,
+                `stepTypes=${STEP_PACKET_TYPES.map((type) => `${type}:${device.stepTypeCounts[type] || 0}`).join(',')}`,
                 `stepRows=${device.completedSteps}`,
             ].join(' '),
             serial.missing > 0 || device.fifoDropped > 0 ? 'warn' : 'success'
@@ -1078,6 +1136,7 @@ function liveResult(id) {
         fifoStopReason: device.fifoStopReason,
         fifoDrainError: device.fifoDrainError,
         stepPackets: device.stepPackets,
+        stepTypeCounts: { ...device.stepTypeCounts },
         completedSteps: device.completedSteps,
         finished: false,
         latestRaw: device.latestRaw,
@@ -1309,20 +1368,21 @@ function orderedFifoSamples(series) {
     return series.orderedSamples;
 }
 
-function fifoPhaseLabel(phase) {
+function fifoPhaseLabel(series) {
+    if (series.phase === 'complete' && series.dropped > 0) return '回収完了・欠損あり';
     return {
         idle: '未取得',
         preview: 'プレビュー収集中',
         running: '正式計測中',
         draining: 'drain中',
         complete: '回収完了',
-    }[phase] || phase;
+    }[series.phase] || series.phase;
 }
 
-function fifoPhaseLevel(phase) {
-    if (phase === 'complete') return 'pass';
-    if (phase === 'running' || phase === 'preview') return 'warn';
-    if (phase === 'draining') return 'warn';
+function fifoPhaseLevel(series) {
+    if (series.phase === 'complete') return series.dropped > 0 ? 'fail' : 'pass';
+    if (series.phase === 'running' || series.phase === 'preview') return 'warn';
+    if (series.phase === 'draining') return 'warn';
     return 'neutral';
 }
 
@@ -1415,8 +1475,8 @@ function renderFifoHistory() {
         const points = orderedByDevice[id];
         const status = document.getElementById(`fifo_history_status_${id}`);
         const summary = document.getElementById(`fifo_history_summary_${id}`);
-        status.className = `metric-chip ${fifoPhaseLevel(series.phase)}`;
-        status.textContent = fifoPhaseLabel(series.phase);
+        status.className = `metric-chip ${fifoPhaseLevel(series)}`;
+        status.textContent = fifoPhaseLabel(series);
 
         const first = points[0];
         const last = points[points.length - 1];
@@ -1532,6 +1592,30 @@ function renderStepHistory() {
         dom.stepHistoryBody.appendChild(row);
     }
     stepHistoryDirty = false;
+}
+
+function renderStepPacketStatus() {
+    const now = Date.now();
+    if (!stepPacketDirty && !stepPacketDevices.some((monitor) => monitor.lastAt !== null && now - monitor.lastAt < 2000)) return;
+    for (const id of DEVICE_IDS) {
+        const monitor = stepPacketDevices[id];
+        const status = document.getElementById(`step_packet_status_${id}`);
+        const summary = document.getElementById(`step_packet_summary_${id}`);
+        if (!status || !summary) continue;
+        const age = monitor.lastAt === null ? null : now - monitor.lastAt;
+        status.className = `metric-chip ${monitor.packets > 0 ? 'pass' : 'neutral'}`;
+        status.textContent = monitor.packets === 0
+            ? 'Notify未受信'
+            : age < 2000 ? 'Notify受信中' : 'Notify受信済み';
+        const counts = STEP_PACKET_TYPES
+            .map((type) => `${type} ${monitor.typeCounts[type] || 0}`)
+            .join(' / ');
+        const last = monitor.lastPacket
+            ? ` / last ${monitor.lastPacket.type} step ${monitor.lastPacket.step_number}`
+            : '';
+        summary.textContent = `${monitor.packets} packets / ${counts} / completed ${monitor.completedRows}${last}`;
+    }
+    stepPacketDirty = stepPacketDevices.some((monitor) => monitor.lastAt !== null && now - monitor.lastAt < 2000);
 }
 
 function renderSerialMap(id, tracker, summary) {
@@ -2086,6 +2170,7 @@ for (const id of DEVICE_IDS) installDevice(id);
 renderExpectations();
 renderAttitude();
 renderFifoHistory();
+renderStepPacketStatus();
 renderStepHistory();
 renderHistory();
 renderDownloads();
@@ -2124,6 +2209,7 @@ function animationLoop(now) {
         }
         renderAttitude();
         renderFifoHistory();
+        renderStepPacketStatus();
         renderStepHistory();
         const newest = DEVICE_IDS
             .flatMap((id) => [

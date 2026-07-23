@@ -252,10 +252,9 @@ class InsoleToolkitSession {
 
         // Step-only へ切り替える場合も、先に STEP_ANALYSIS を購読してから
         // SENSOR_VALUES を止める。FWがactive状態を要求するため順序を逆にしない。
-        if (this.outputs.stepAnalysis) await this._startGait();
-        else await this._stopGait();
-
         if (!this.outputs.sensorValues) {
+            if (this.outputs.stepAnalysis) await this._startGait();
+            else await this._stopGait();
             await this._stopFifo();
             await this._stopSensorNotify();
             return;
@@ -263,10 +262,26 @@ class InsoleToolkitSession {
 
         await this._ensureSensorNotify();
         if (this.sensorDataMode === 'fifo') {
-            await this._startFifo();
+            const gaitWasActive = this.gaitActive;
+            const fifoStarted = await this._startFifo();
+            if (this.outputs.stepAnalysis) {
+                // FIFO read-modeへ切り替えるとFW側のSTEP_ANALYSIS配信が止まる機体がある。
+                // 既存購読はGATT上activeのままなので、FIFO開始後に明示的に再購読する。
+                if (fifoStarted && gaitWasActive) await this._refreshGait();
+                else await this._startGait();
+            } else {
+                await this._stopGait();
+            }
         } else {
-            await this._stopFifo();
+            const fifoStopped = await this._stopFifo();
             await this.insole.setDataStreamingMode(this.streamingMode);
+            if (this.outputs.stepAnalysis) {
+                // FIFO teardownのread-mode復帰後も同じ理由で通知を再確立する。
+                if (fifoStopped && this.gaitActive) await this._refreshGait();
+                else await this._startGait();
+            } else {
+                await this._stopGait();
+            }
         }
     }
 
@@ -284,7 +299,7 @@ class InsoleToolkitSession {
     }
 
     async _startFifo() {
-        if (this.fifoActive) return;
+        if (this.fifoActive) return false;
         if (!this.fifo) {
             const error = new Error('InsoleToolkit: FIFO requires InsoleFifo.js.');
             error.code = 'FIFO_UNAVAILABLE';
@@ -297,12 +312,14 @@ class InsoleToolkitSession {
             throw error;
         }
         this.fifoActive = true;
+        return true;
     }
 
     async _stopFifo() {
-        if (!this.fifo || !this.fifoActive) return;
+        if (!this.fifo || !this.fifoActive) return false;
         await this.fifo.stop();
         this.fifoActive = false;
+        return true;
     }
 
     async _startGait() {
@@ -319,6 +336,18 @@ class InsoleToolkitSession {
             throw error;
         }
         this.gaitActive = true;
+    }
+
+    async _refreshGait() {
+        if (!this.gait || !this.gaitActive) return this._startGait();
+        if (typeof this.gait.refreshSubscription !== 'function') return;
+        const refreshed = await this.gait.refreshSubscription();
+        this.gaitActive = !!refreshed;
+        if (!refreshed) {
+            const error = new Error('InsoleToolkit: failed to refresh Step Analysis after FIFO mode change.');
+            error.code = 'GAIT_REFRESH_FAILED';
+            throw error;
+        }
     }
 
     async _stopGait() {

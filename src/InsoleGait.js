@@ -310,6 +310,7 @@
       this._subscribed = false;    // 実際に STEP_ANALYSIS を購読中か
       this._startPromise = null;   // 進行中の start()（直列化用）
       this._stopPromise = null;    // 進行中の stop()（直列化用）
+      this._refreshPromise = null; // FIFO read-mode切替後の再購読（集約済みrowは維持）
       this._subscribePromise = null; // 現在の接続世代で進行中の購読処理
       this._currentSubscribeAttempt = null; // { connectionGeneration, lifecycleGeneration, sink, promise }
       this._lifecycleGeneration = 0; // stop→start をまたぐ古い Promise を識別
@@ -385,6 +386,50 @@
         this._releaseOwner();
       }
       return ok;
+    }
+
+    /**
+     * 現在のSTEP_ANALYSIS通知をいったん停止して再購読する。
+     * FIFO read-mode切替でFW側の通知が止まった場合に使い、aggregator/rowsは維持する。
+     * @returns {Promise<boolean>} 再購読できたら true
+     */
+    async refreshSubscription() {
+      if (this._refreshPromise) return this._refreshPromise;
+      const promise = this._doRefreshSubscription();
+      this._refreshPromise = promise;
+      try { return await promise; } finally {
+        if (this._refreshPromise === promise) this._refreshPromise = null;
+      }
+    }
+
+    async _doRefreshSubscription() {
+      if (!this._running) return false;
+      if (this._stopPromise) { try { await this._stopPromise; } catch { /* noop */ } }
+      if (!this._running || !this._canStart() || this.insole._gaitNotifyOwner !== this) return false;
+      if (this._startPromise) { try { await this._startPromise; } catch { /* noop */ } }
+      if (this._subscribePromise) { try { await this._subscribePromise; } catch { /* noop */ } }
+
+      const lifecycleGeneration = this._lifecycleGeneration;
+      const connectionGeneration = this._connectionGeneration;
+      const wasSubscribed = this._subscribed;
+      this._subscribed = false;
+      this._subscribePromise = null;
+      this._currentSubscribeAttempt = null;
+      this._clearSink();
+
+      try {
+        if (wasSubscribed && this.insole.isConnected && this.insole.isConnected()) {
+          await this.insole.stopNotify('STEP_ANALYSIS');
+        }
+      } catch (error) {
+        this._reportError(error);
+      }
+
+      if (!this._running ||
+        lifecycleGeneration !== this._lifecycleGeneration ||
+        connectionGeneration !== this._connectionGeneration ||
+        this.insole._gaitNotifyOwner !== this) return false;
+      return this._requestSubscribe(lifecycleGeneration);
     }
 
     _canStart() {
@@ -519,6 +564,7 @@
       this._lifecycleGeneration++;
       this._subscribed = false;
       this._startPromise = null;       // 古い start の finally は identity check で新しい start を消さない
+      this._refreshPromise = null;
       this._subscribePromise = null;   // 古い購読は継続するが、新しい lifecycle/接続を塞がない
       this._currentSubscribeAttempt = null;
       this._removeReconnectHook();
