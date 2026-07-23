@@ -41,6 +41,37 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
 }
 
 {
+    const arrivalSummary = {
+        first: 112,
+        last: 115,
+        expected: 4,
+        received: 4,
+        missing: 0,
+        missingRate: 0,
+        duplicates: 0,
+        outOfOrder: 0,
+    };
+    const checkpointSummary = {
+        available: true,
+        first: 110,
+        last: 115,
+        expected: 6,
+        received: 6,
+        missing: 0,
+        missingRate: 0,
+        dropped: 0,
+    };
+    assert.equal(
+        metrics.selectSerialSummary(metrics.PRESET_EXPECTATIONS.fifo, arrivalSummary, checkpointSummary),
+        checkpointSummary
+    );
+    assert.equal(
+        metrics.selectSerialSummary(metrics.PRESET_EXPECTATIONS.rt4, arrivalSummary, checkpointSummary),
+        arrivalSummary
+    );
+}
+
+{
     const arrivals = metrics.summarizeArrivals([1000, 1020, 1040, 1100]);
     assert.equal(arrivals.count, 4);
     assert.equal(arrivals.rateHz, 30);
@@ -194,6 +225,9 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.match(app, /function renderStepPacketStatus/);
     assert.match(app, /function renderStepHistory/);
     assert.match(app, /REALTIME_HEADER_BY_MODE/);
+    assert.match(app, /createCheckpoint/);
+    assert.match(app, /summarizeSince/);
+    assert.match(app, /realtimeWindowMs:\s*400/);
 }
 
 console.log('toolkit-mode-validation tests: ok');

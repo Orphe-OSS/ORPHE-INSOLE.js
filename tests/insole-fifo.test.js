@@ -525,6 +525,71 @@ function near(actual, expected, tol, label) {
     assert.equal(mock._fifoNotifySink, undefined, 'teardown で sink 解除');
   }
 
+  // ── 計測 checkpoint: preview と正式計測の到着順が混ざっても device serial 範囲で判定 ──
+  {
+    const fifo = new Fifo({
+      id: 0,
+      streaming_mode: 4,
+      isConnected: () => true,
+      write: async () => {},
+    });
+    for (let sn = 100; sn <= 109; sn++) {
+      fifo.state.rawStore.set(sn, null);
+      fifo.state.noteStored(sn);
+    }
+    fifo.state.lastSerial = 109;
+    const checkpoint = fifo.createCheckpoint();
+
+    // 112以降が先に届くとarrival windowだけでは110/111が一時欠損に見える。
+    // rawStoreへ後から110/111が回収されればcheckpoint範囲はlosslessでなければならない。
+    for (const sn of [112, 113, 114, 115, 110, 111]) {
+      fifo.state.rawStore.set(sn, null);
+      fifo.state.noteStored(sn);
+    }
+    fifo.state.lastSerial = 115;
+
+    assert.deepEqual(fifo.summarizeSince(checkpoint), {
+      available: true,
+      first: 110,
+      last: 115,
+      expected: 6,
+      received: 6,
+      missing: 0,
+      missingRate: 0,
+      dropped: 0,
+      reportedDroppedDelta: 0,
+      checkpoint,
+    });
+  }
+
+  // ── FIFO + Step互換窓: monitorを止めず一時Realtimeへ戻し、FIFOへ復帰する ──
+  {
+    const readModes = [];
+    const phases = [];
+    const fifo = new Fifo({
+      id: 0,
+      streaming_mode: 4,
+      isConnected: () => true,
+      async write(_uuid, bytes) {
+        const b = Array.from(bytes);
+        if (b[0] === 0x0D) readModes.push(b[1]);
+      },
+    }, {
+      realtimeWindowMs: 1,
+    });
+    fifo._running = true;
+    fifo._restoreMode = 4;
+    fifo.onRealtimeWindow = async (info) => {
+      phases.push(info.phase);
+    };
+
+    await fifo._runRealtimeWindow();
+
+    assert.deepEqual(readModes, [4, Fifo.READ_MODE_FIFO]);
+    assert.deepEqual(phases, ['open', 'closed']);
+    assert.equal(fifo.realtimeWindowActive, false);
+  }
+
   console.log('insole-fifo.test.js passed');
 })().catch((error) => {
   console.error(error);

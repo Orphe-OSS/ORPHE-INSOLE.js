@@ -54,10 +54,13 @@ class FakeInsole {
 }
 
 class FakeFifo {
-  constructor(insole) {
+  constructor(insole, options = {}) {
     this.insole = insole;
+    this.options = options;
     this.startResult = true;
     this.onStopped = null;
+    this.onRealtimeWindow = null;
+    this.realtimeWindowActive = false;
   }
 
   async start() {
@@ -180,9 +183,17 @@ async function main() {
     const { insole, session } = createSession({
       sensorDataMode: 'fifo',
       outputs: { sensorValues: true, stepAnalysis: true },
+      fifo: {
+        realtimeWindowMs: 400,
+      },
     });
     await session.connect();
     assert.deepEqual(insole.calls, ['begin:SENSOR_VALUES:4', 'fifo:start', 'gait:start']);
+
+    insole.calls.length = 0;
+    await session.fifo.onRealtimeWindow({ phase: 'open', windowMs: 400, sequence: 1 });
+    assert.deepEqual(insole.calls, ['gait:refresh']);
+
     insole.calls.length = 0;
     await session.disconnect();
     assert.deepEqual(insole.calls, ['fifo:stop', 'gait:stop', 'reset']);

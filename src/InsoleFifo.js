@@ -441,6 +441,11 @@
       this._tornDown = false;
       this._autoStopped = false;
       this._lastCurrentSerial = null; // 最後にポーリングで得た FW 側シリアル（停止時の通知用）
+      this._captureId = 0;
+      this._nextRealtimeWindowAt = null;
+      this._realtimeWindowSequence = 0;
+      this.realtimeWindowActive = false;
+      this.realtimeWindowEnabled = Number(options.realtimeWindowMs || 0) > 0;
       this.lag = 0;             // 現在の追従遅れ（未取得シリアル数）。バッファ容量に近づくと欠損の危険。
 
       // コールバック（ユーザが上書き）
@@ -449,6 +454,7 @@
       this.onAnomaly = null;    // (info) 欠損・再同期などの詳細
       this.onDataLoss = null;   // (info) 回復不能な欠損が起きたとき {reason, dropped, cumulative, currentSerial}
       this.onStopped = null;    // (info) 収集終了時 {reason:'manual'|'loss', dropped, collected}（自動停止の検知に使う）
+      this.onRealtimeWindow = null; // async (info) FIFO+Step互換用の一時Realtime窓
       this.onError = null;      // (error)
     }
 
@@ -456,6 +462,81 @@
     get collectedCount() { return this.state.rawStore.size; }
     /** 回復不能に失われた累計シリアル数（0 なら欠損なし） */
     get droppedCount() { return this.state.dropped; }
+
+    /**
+     * FIFO内部の要求境界を記録する。到着時刻ではなくdevice serial範囲で
+     * 後続区間の完全性を判定するため、preview後の正式計測開始時に使う。
+     */
+    createCheckpoint() {
+      return {
+        captureId: this._captureId,
+        serial: this.state.lastSerial,
+        dropped: this.state.dropped,
+        collected: this.state.rawStore.size,
+      };
+    }
+
+    /**
+     * checkpoint直後から現在の要求済みserialまでをrawStoreで再集計する。
+     * 遅延・再要求で到着順が前後しても、drain後の最終欠損を正しく返す。
+     */
+    summarizeSince(checkpoint) {
+      const start = checkpoint && Number.isInteger(checkpoint.serial) ? checkpoint.serial : null;
+      const end = this.state.lastSerial;
+      const sameCapture = checkpoint && checkpoint.captureId === this._captureId;
+      if (!sameCapture || start === null || !Number.isInteger(end)) {
+        return {
+          available: false,
+          first: null,
+          last: null,
+          expected: 0,
+          received: 0,
+          missing: 0,
+          missingRate: 0,
+          dropped: Math.max(0, this.state.dropped - Number(checkpoint?.dropped || 0)),
+          checkpoint,
+        };
+      }
+
+      const expected = serialDistance(start, end);
+      const received = this.serialsSince(checkpoint).length;
+      const missing = Math.max(0, expected - received);
+      return {
+        available: true,
+        first: expected > 0 ? (start + 1) % UINT16_MAX : null,
+        last: end,
+        expected,
+        received,
+        missing,
+        missingRate: expected > 0 ? missing / expected : 0,
+        // 累積droppedの差分にはcheckpoint以前のcarryOverが後から確定した分も混ざりうる。
+        // 正式区間のdroppedは、このdevice serial範囲で実際に未回収の件数を採用する。
+        dropped: missing,
+        reportedDroppedDelta: Math.max(0, this.state.dropped - Number(checkpoint.dropped || 0)),
+        checkpoint,
+      };
+    }
+
+    /** checkpoint範囲に含まれる回収済みdevice serialを返す。 */
+    serialsSince(checkpoint) {
+      const start = checkpoint && Number.isInteger(checkpoint.serial) ? checkpoint.serial : null;
+      const end = this.state.lastSerial;
+      if (!checkpoint || checkpoint.captureId !== this._captureId ||
+          start === null || !Number.isInteger(end)) return [];
+      const expected = serialDistance(start, end);
+      const serials = [];
+      for (const serial of this.state.rawStore.keys()) {
+        const distance = serialDistance(start, serial);
+        if (distance > 0 && distance <= expected) serials.push(serial);
+      }
+      return serials;
+    }
+
+    /** FIFO+Step互換用Realtime窓の有効/無効を切り替える。通常FIFOはfalseのまま。 */
+    setRealtimeWindowEnabled(enabled) {
+      this.realtimeWindowEnabled = !!enabled && Number(this.options.realtimeWindowMs || 0) > 0;
+      if (!this.realtimeWindowEnabled) this._nextRealtimeWindowAt = null;
+    }
 
     // ── 低レベルコマンド ──────────────────────────────────────────────
     _write(bytes) {
@@ -524,6 +605,7 @@
 
       // 収集直前の状態をクリア
       this.state = new FifoLoopState();
+      this._captureId += 1;
       this._restoreMode = this.insole.streaming_mode || 4;
 
       // notify をこのモジュールの queue へ横取り
@@ -549,6 +631,13 @@
       this._running = true;
       this._tornDown = false;
       this._autoStopped = false;
+      this._realtimeWindowSequence = 0;
+      const realtimeWindowIntervalMs = Math.max(0, Number(this.options.realtimeWindowIntervalMs || 2000));
+      const configuredInitialDelay = this.options.realtimeWindowInitialDelayMs;
+      const initialDelayMs = configuredInitialDelay != null
+        ? Math.max(0, Number(configuredInitialDelay))
+        : this.deviceId * Math.floor(realtimeWindowIntervalMs / 2);
+      this._nextRealtimeWindowAt = Date.now() + initialDelayMs;
       // ループがどんな理由で終わっても（stop() / stopOnLoss 自動停止 / 例外）
       // 必ず後片付け（モード復帰・sink解除）と onStopped 通知を1回だけ行う。
       this._loopPromise = this._runLoopWrapped();
@@ -692,6 +781,7 @@
         const [startSerial, requestSize] = state.calcRequestRange(currentSerial, accumulatedCount, maxNewRequest);
 
         if (requestSize <= 0 && carryOverToSend.length === 0) {
+          await this._maybeRunRealtimeWindow();
           await sleep(POLLING_INTERVAL_MS);
           continue;
         }
@@ -772,7 +862,74 @@
           }));
         }
 
+        await this._maybeRunRealtimeWindow();
         await sleep(POLLING_INTERVAL_MS);
+      }
+    }
+
+    async _maybeRunRealtimeWindow() {
+      if (!this._running || !this.realtimeWindowEnabled || this.realtimeWindowActive) return;
+      const windowMs = Math.max(0, Number(this.options.realtimeWindowMs || 0));
+      if (windowMs <= 0) return;
+      if (this._nextRealtimeWindowAt !== null && Date.now() < this._nextRealtimeWindowAt) return;
+
+      await this._runRealtimeWindow();
+      const intervalMs = Math.max(0, Number(this.options.realtimeWindowIntervalMs || 2000));
+      this._nextRealtimeWindowAt = Date.now() + intervalMs;
+    }
+
+    /**
+     * FW monitorは動かしたままread modeだけを短時間Realtimeへ戻す。
+     * STEP_ANALYSISを再購読する呼び出し側へopenを通知し、窓の終了後にFIFOへ復帰する。
+     * 通常FIFOではrealtimeWindowEnabled=falseのため実行されない。
+     */
+    async _runRealtimeWindow() {
+      const windowMs = Math.max(0, Number(this.options.realtimeWindowMs || 0));
+      if (!this._running || windowMs <= 0 || this.realtimeWindowActive) return;
+
+      const sequence = ++this._realtimeWindowSequence;
+      let restoredToFifo = false;
+      this.realtimeWindowActive = true;
+      try {
+        this._queue.drain();
+        await this._setReadMode(this._restoreMode || this.insole.streaming_mode || 4);
+        await this._emitRealtimeWindow({ phase: 'open', windowMs, sequence });
+        await sleep(windowMs);
+        if (this._running) {
+          this._queue.drain();
+          await this._setReadMode(READ_MODE_FIFO);
+          this._queue.drain();
+          restoredToFifo = true;
+        }
+      } catch (error) {
+        this._reportError(error);
+      } finally {
+        if (this._running && !restoredToFifo) {
+          try {
+            this._queue.drain();
+            await this._setReadMode(READ_MODE_FIFO);
+            this._queue.drain();
+            restoredToFifo = true;
+          } catch (error) {
+            this._reportError(error);
+          }
+        }
+        this.realtimeWindowActive = false;
+        await this._emitRealtimeWindow({
+          phase: 'closed',
+          windowMs,
+          sequence,
+          restoredToFifo,
+        });
+      }
+    }
+
+    async _emitRealtimeWindow(info) {
+      if (typeof this.onRealtimeWindow !== 'function') return;
+      try {
+        await this.onRealtimeWindow(info);
+      } catch (error) {
+        this._reportError(error);
       }
     }
 
@@ -845,6 +1002,8 @@
           }
         }
       } catch (_) { /* noop */ } finally {
+        this.realtimeWindowActive = false;
+        this._nextRealtimeWindowAt = null;
         if (this.insole && this.insole._fifoNotifySink) delete this.insole._fifoNotifySink;
       }
     }

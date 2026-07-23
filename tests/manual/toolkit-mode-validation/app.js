@@ -167,6 +167,7 @@ function createRunDevice(id) {
         fifoLag: 0,
         fifoLagMax: 0,
         fifoDropped: 0,
+        fifoDroppedBaseline: 0,
         fifoFinalizedDropped: 0,
         fifoCurrentDropped: 0,
         fifoDrainRecovered: 0,
@@ -175,6 +176,8 @@ function createRunDevice(id) {
         fifoStopReason: null,
         fifoDrainError: null,
         fifoAnomalies: 0,
+        fifoCheckpoint: null,
+        fifoRealtimeWindows: 0,
         lastProgressLogAt: 0,
         reconnectStart: {
             disconnects: reconnectStats[id].disconnects,
@@ -612,6 +615,21 @@ async function startRun() {
         devices: Object.fromEntries(activeIds.map((id) => [id, createRunDevice(id)])),
     };
     if (preset.acquisition === 'fifo') {
+        for (const id of activeIds) {
+            const fifo = sessions[id]?.fifo;
+            const checkpoint = typeof fifo?.createCheckpoint === 'function'
+                ? fifo.createCheckpoint()
+                : null;
+            currentRun.devices[id].fifoCheckpoint = checkpoint;
+            currentRun.devices[id].fifoDroppedBaseline = Number(checkpoint?.dropped || 0);
+            logEvent(
+                id,
+                checkpoint?.serial == null
+                    ? 'FIFO正式計測checkpoint: serial未確定（arrival集計へfallback）'
+                    : `FIFO正式計測checkpoint: serial=${checkpoint.serial} collected=${checkpoint.collected} dropped=${checkpoint.dropped}`,
+                checkpoint?.serial == null ? 'warn' : 'success'
+            );
+        }
         resetFifoHistory(`${preset.label}の正式計測区間`);
         for (const id of activeIds) fifoPlotDevices[id].phase = 'running';
     }
@@ -986,7 +1004,10 @@ function handleFifoProgress(id, info) {
     device.fifoLag = Number(info.lag || 0);
     device.fifoLagMax = Math.max(device.fifoLagMax, device.fifoLag);
     if (Number.isFinite(Number(info.dropped))) {
-        device.fifoCurrentDropped = Number(info.dropped);
+        device.fifoCurrentDropped = Math.max(
+            0,
+            Number(info.dropped) - Number(device.fifoDroppedBaseline || 0)
+        );
         device.fifoDropped = device.fifoFinalizedDropped + device.fifoCurrentDropped;
     }
     if (info.draining) logEvent(id, `drain進行: lag ${device.fifoLag}`, 'warn');
@@ -996,7 +1017,10 @@ function handleFifoDataLoss(id, info) {
     fifoPlotDevices[id].dropped = Number(info.cumulative ?? info.dropped ?? 0);
     const device = runDeviceFor(id);
     if (device) {
-        device.fifoCurrentDropped = Number(info.cumulative ?? info.dropped ?? 0);
+        device.fifoCurrentDropped = Math.max(
+            0,
+            Number(info.cumulative ?? info.dropped ?? 0) - Number(device.fifoDroppedBaseline || 0)
+        );
         device.fifoDropped = device.fifoFinalizedDropped + device.fifoCurrentDropped;
     } else if (!currentRun) {
         previewDevices[id].fifoDropped = Number(info.cumulative ?? info.dropped ?? 0);
@@ -1011,7 +1035,10 @@ function handleFifoStopped(id, info) {
     plot.phase = 'complete';
     const device = runDeviceFor(id);
     if (device) {
-        device.fifoCurrentDropped = Number(info.dropped || 0);
+        device.fifoCurrentDropped = Math.max(
+            0,
+            Number(info.dropped || 0) - Number(device.fifoDroppedBaseline || 0)
+        );
         device.fifoDropped = device.fifoFinalizedDropped + device.fifoCurrentDropped;
         device.fifoFinalizedDropped = device.fifoDropped;
         device.fifoCurrentDropped = 0;
@@ -1026,6 +1053,18 @@ function handleFifoStopped(id, info) {
         `FIFO停止: collected ${info.collected}, dropped ${info.dropped}, drain recovered ${info.drainRecovered || 0}`,
         info.dropped > 0 ? 'warn' : 'success'
     );
+}
+
+function handleFifoRealtimeWindow(id, info) {
+    const device = runDeviceFor(id);
+    if (info.phase === 'open') {
+        if (device) device.fifoRealtimeWindows += 1;
+        logEvent(
+            id,
+            `FIFO+Step互換窓 ${info.sequence}: Realtime ${info.windowMs}ms / Step notify再購読`,
+            'warn'
+        );
+    }
 }
 
 function handleStepRaw(id, packet) {
@@ -1089,11 +1128,52 @@ function handleFifoAnomaly(id, info) {
     logEvent(id, `FIFO anomaly: expected ${info.expected}, received ${info.received}, no-data ${info.noData}`, 'warn');
 }
 
+function summarizeRunSerial(run, id, device) {
+    const arrival = Metrics.summarizeSerialTracker(device.serialTracker);
+    if (run.preset.acquisition !== 'fifo') {
+        return {
+            serial: arrival,
+            serialTracker: device.serialTracker,
+            arrival,
+            fifoCheckpoint: null,
+            source: 'arrival',
+        };
+    }
+
+    const fifo = sessions[id]?.fifo;
+    const checkpointSummary = typeof fifo?.summarizeSince === 'function'
+        ? fifo.summarizeSince(device.fifoCheckpoint)
+        : null;
+    const selected = Metrics.selectSerialSummary(run.preset, arrival, checkpointSummary);
+    if (!checkpointSummary?.available || typeof fifo?.serialsSince !== 'function') {
+        return {
+            serial: selected,
+            serialTracker: device.serialTracker,
+            arrival,
+            fifoCheckpoint: checkpointSummary,
+            source: 'arrival-fallback',
+        };
+    }
+
+    const checkpointTracker = Metrics.createSerialTracker();
+    for (const serial of fifo.serialsSince(device.fifoCheckpoint)) {
+        Metrics.recordSerial(checkpointTracker, serial);
+    }
+    return {
+        serial: selected,
+        serialTracker: checkpointTracker,
+        arrival,
+        fifoCheckpoint: checkpointSummary,
+        source: 'fifo-checkpoint',
+    };
+}
+
 function finalizeDeviceResult(run, id) {
     const device = run.devices[id];
     const endedAt = run.windowEndedAt || performance.now();
     const durationSec = Math.max(0.001, (endedAt - run.startedAt) / 1000);
-    const serial = Metrics.summarizeSerialTracker(device.serialTracker);
+    const serialSummary = summarizeRunSerial(run, id, device);
+    const serial = serialSummary.serial;
     const batchGaps = Metrics.summarizeValues(device.batchGaps);
     const delivery = Metrics.summarizeValues(device.deliveryAges);
     const reconnect = reconnectStats[id];
@@ -1122,15 +1202,21 @@ function finalizeDeviceResult(run, id) {
         deliveryAgeP95Ms: delivery.p95,
         fieldCounts: { ...device.fieldCounts },
         serial,
-        serialTracker: device.serialTracker,
+        serialTracker: serialSummary.serialTracker,
+        serialSource: serialSummary.source,
+        arrivalSerial: serialSummary.arrival,
+        fifoCheckpointSerial: serialSummary.fifoCheckpoint,
         fifoLagMax: device.fifoLagMax,
-        fifoDropped: device.fifoDropped,
+        fifoDropped: serialSummary.fifoCheckpoint?.available
+            ? serialSummary.fifoCheckpoint.dropped
+            : device.fifoDropped,
         fifoDrainRecovered: device.fifoDrainRecovered,
         fifoDrainMs: device.fifoDrainMs,
         fifoStopped: device.fifoStopped,
         fifoStopReason: device.fifoStopReason,
         fifoDrainError: device.fifoDrainError,
         fifoAnomalies: device.fifoAnomalies,
+        fifoRealtimeWindows: device.fifoRealtimeWindows,
         stepPackets: device.stepPackets,
         stepTypeCounts: { ...device.stepTypeCounts },
         stepPacketHz: device.stepPackets / durationSec,
@@ -1167,10 +1253,12 @@ function formatResultLog(result) {
         `packets=${result.rawPackets}`,
         `packetHz=${formatNumber(result.packetHz, 1)}`,
         `serial=${result.serial.missing}/${result.serial.expected} missing`,
+        `serialSource=${result.serialSource}`,
         `p95Gap=${formatNumber(result.p95GapMs, 0)}ms`,
         `age=${formatNumber(result.deliveryAgeMedianMs, 0)}ms`,
         `fifoDropped=${result.fifoDropped}`,
         `drainRecovered=${result.fifoDrainRecovered}`,
+        `compatWindows=${result.fifoRealtimeWindows}`,
         `stepPackets=${result.stepPackets}`,
         `stepTypes=${STEP_PACKET_TYPES.map((type) => `${type}:${result.stepTypeCounts?.[type] || 0}`).join(',')}`,
         `stepRows=${result.completedSteps}`,
@@ -1186,7 +1274,7 @@ function logRunProgress(now) {
         if (now - device.lastProgressLogAt < RUN_PROGRESS_LOG_INTERVAL_MS) continue;
         device.lastProgressLogAt = now;
         const durationSec = Math.max(0.001, (now - currentRun.startedAt) / 1000);
-        const serial = Metrics.summarizeSerialTracker(device.serialTracker);
+        const serial = summarizeRunSerial(currentRun, id, device).serial;
         const p95Gap = Metrics.percentile(device.batchGaps, 0.95);
         logEvent(
             id,
@@ -1218,6 +1306,7 @@ function liveResult(id) {
     if (!currentRun || !currentRun.devices[id]) return lastResults[id];
     const device = currentRun.devices[id];
     const durationSec = Math.max(0.001, ((currentRun.windowEndedAt || performance.now()) - currentRun.startedAt) / 1000);
+    const serialSummary = summarizeRunSerial(currentRun, id, device);
     const result = {
         id,
         presetId: currentRun.presetId,
@@ -1237,8 +1326,11 @@ function liveResult(id) {
         maxGapMs: device.batchGaps.length ? Math.max(...device.batchGaps) : null,
         deliveryAgeMedianMs: Metrics.percentile(device.deliveryAges, 0.5),
         fieldCounts: device.fieldCounts,
-        serial: Metrics.summarizeSerialTracker(device.serialTracker),
-        serialTracker: device.serialTracker,
+        serial: serialSummary.serial,
+        serialTracker: serialSummary.serialTracker,
+        serialSource: serialSummary.source,
+        arrivalSerial: serialSummary.arrival,
+        fifoCheckpointSerial: serialSummary.fifoCheckpoint,
         fifoLagMax: device.fifoLagMax,
         fifoDropped: device.fifoDropped,
         fifoDrainRecovered: device.fifoDrainRecovered,
@@ -1246,6 +1338,7 @@ function liveResult(id) {
         fifoStopped: device.fifoStopped,
         fifoStopReason: device.fifoStopReason,
         fifoDrainError: device.fifoDrainError,
+        fifoRealtimeWindows: device.fifoRealtimeWindows,
         stepPackets: device.stepPackets,
         stepTypeCounts: { ...device.stepTypeCounts },
         completedSteps: device.completedSteps,
@@ -2115,6 +2208,10 @@ function installDevice(id) {
             fifo: {
                 startupDelayMs: 800,
                 drainTimeoutMs: 5000,
+                // FIFO read-mode中に停止するSTEP_ANALYSIS配信を観測するため、
+                // 複合プリセット時だけ短いRealtime窓を開く（Toolkitが有効/無効を制御）。
+                realtimeWindowMs: 400,
+                realtimeWindowIntervalMs: 2000,
                 onSamples(deviceId, samples) {
                     handleFifoSamples(deviceId, samples);
                 },
@@ -2129,6 +2226,9 @@ function installDevice(id) {
                 },
                 onStopped(info) {
                     handleFifoStopped(id, info);
+                },
+                onRealtimeWindow(info) {
+                    handleFifoRealtimeWindow(id, info);
                 },
                 onError(error) {
                     logEvent(id, `FIFO error: ${error.message || error}`, 'error');

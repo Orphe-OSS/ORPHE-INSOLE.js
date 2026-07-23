@@ -87,8 +87,11 @@ globalThis.buildInsoleToolkit(document.createElement('div'), 'ADVANCED', 1, {
     outputs: { sensorValues: true, stepAnalysis: true },
     fifo: {
         startupDelayMs: 500,
+        realtimeWindowMs: 400,
+        realtimeWindowIntervalMs: 2000,
         onSamples(deviceId, samples) { void deviceId; void samples[0]?.press.values; },
         onDataLoss(info) { void info.dropped; },
+        onRealtimeWindow(info) { void info.phase; },
     },
     gait: {
         onGait(deviceId, row) { void deviceId; void row.step_number; },
@@ -185,6 +188,12 @@ fifo.onSamples = (deviceId, samples) => {
     void gyroX;
 };
 fifo.onProgress = (info) => { const c: number = info.collected; void c; };
+const fifoCheckpoint = fifo.createCheckpoint();
+const fifoCheckpointSummary = fifo.summarizeSince(fifoCheckpoint);
+const fifoWindowSerials: number[] = fifo.serialsSince(fifoCheckpoint);
+void fifoCheckpointSummary.missing;
+void fifoWindowSerials;
+fifo.setRealtimeWindowEnabled(true);
 async function runFifo() {
     const started: boolean = await fifo.start();
     void started;

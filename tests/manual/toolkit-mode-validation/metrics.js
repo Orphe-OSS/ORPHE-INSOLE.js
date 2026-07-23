@@ -158,6 +158,13 @@
         };
     }
 
+    function selectSerialSummary(preset, arrivalSummary, fifoCheckpointSummary) {
+        if (preset?.acquisition === 'fifo' && fifoCheckpointSummary?.available) {
+            return fifoCheckpointSummary;
+        }
+        return arrivalSummary;
+    }
+
     function percentile(values, q) {
         if (!values || values.length === 0) return null;
         const sorted = values.slice().sort((a, b) => a - b);
@@ -309,10 +316,19 @@
             add(
                 serial.missing === 0 ? 'pass' : 'warn',
                 'serial continuity',
-                `${serial.missing} missing / ${serial.expected} expected`
+                `${serial.missing} missing / ${serial.expected} expected` +
+                    (stats.serialSource === 'fifo-checkpoint' ? ' (device checkpoint)' : '')
             );
 
             if (preset.acquisition === 'fifo') {
+                if (stats.serialSource === 'fifo-checkpoint' &&
+                    (stats.arrivalSerial?.missing || 0) !== serial.missing) {
+                    add(
+                        'pass',
+                        'FIFO計測境界',
+                        `arrival ${stats.arrivalSerial.missing} → checkpoint ${serial.missing}`
+                    );
+                }
                 add(
                     (stats.fifoDropped || 0) === 0 ? 'pass' : 'warn',
                     'FIFO dropped',
@@ -348,6 +364,13 @@
                         hasLoss ? 'warn' : 'pass',
                         '単体FIFO baseline',
                         hasLoss ? '単体でも欠損あり。デバイス/リンクを確認' : '最終欠損なし'
+                    );
+                }
+                if (preset.step && stats.finished && stats.fifoRealtimeWindows != null) {
+                    add(
+                        stats.fifoRealtimeWindows > 0 ? 'pass' : 'warn',
+                        'Step互換窓',
+                        `${stats.fifoRealtimeWindows || 0} windows`
                     );
                 }
             }
@@ -387,6 +410,7 @@
         createSerialTracker,
         recordSerial,
         summarizeSerialTracker,
+        selectSerialSummary,
         percentile,
         summarizeValues,
         summarizeArrivals,

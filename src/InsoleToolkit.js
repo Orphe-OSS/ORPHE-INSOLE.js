@@ -1,5 +1,5 @@
 var insoleToolkit_version_date = `
-Last modified: 2026/07/23 00:00:00
+Last modified: 2026/07/24 00:00:00
 `;
 // insoleToolkit_version_dateから改行を削除
 insoleToolkit_version_date = insoleToolkit_version_date.replace(/\n/g, '');
@@ -101,6 +101,7 @@ class InsoleToolkitSession {
             outputs: { ...this.outputs },
             sensorNotifyActive: this.sensorNotifyActive,
             fifoActive: this.fifoActive,
+            fifoRealtimeWindowActive: !!(this.fifo && this.fifo.realtimeWindowActive),
             gaitActive: this.gaitActive,
             supportsFifo: this.supportsFifo,
             supportsStepAnalysis: this.supportsStepAnalysis,
@@ -262,6 +263,7 @@ class InsoleToolkitSession {
 
         await this._ensureSensorNotify();
         if (this.sensorDataMode === 'fifo') {
+            this._configureFifoRealtimeWindow(this.outputs.stepAnalysis);
             const gaitWasActive = this.gaitActive;
             const fifoStarted = await this._startFifo();
             if (this.outputs.stepAnalysis) {
@@ -273,6 +275,7 @@ class InsoleToolkitSession {
                 await this._stopGait();
             }
         } else {
+            this._configureFifoRealtimeWindow(false);
             const fifoStopped = await this._stopFifo();
             await this.insole.setDataStreamingMode(this.streamingMode);
             if (this.outputs.stepAnalysis) {
@@ -313,6 +316,11 @@ class InsoleToolkitSession {
         }
         this.fifoActive = true;
         return true;
+    }
+
+    _configureFifoRealtimeWindow(enabled) {
+        if (!this.fifo || typeof this.fifo.setRealtimeWindowEnabled !== 'function') return;
+        this.fifo.setRealtimeWindowEnabled(enabled);
     }
 
     async _stopFifo() {
@@ -387,6 +395,13 @@ class InsoleToolkitSession {
                 this._emitState();
                 this._callModuleCallback(this._fifoCallbacks, 'onStopped', [info]);
             };
+            this.fifo.onRealtimeWindow = async (info) => {
+                if (info?.phase === 'open' && this.outputs.stepAnalysis && this.gaitActive) {
+                    await this._refreshGait();
+                }
+                this._emitState();
+                await this._callModuleCallbackAsync(this._fifoCallbacks, 'onRealtimeWindow', [info]);
+            };
             this.fifo.onError = (error) => {
                 this._callModuleCallback(this._fifoCallbacks, 'onError', [error]);
                 this._reportError(error);
@@ -407,6 +422,12 @@ class InsoleToolkitSession {
         const callback = callbacks && callbacks[name];
         if (typeof callback !== 'function') return;
         try { callback(...args); } catch (error) { this._reportError(error); }
+    }
+
+    async _callModuleCallbackAsync(callbacks, name, args) {
+        const callback = callbacks && callbacks[name];
+        if (typeof callback !== 'function') return;
+        try { await callback(...args); } catch (error) { this._reportError(error); }
     }
 
     _syncOptions() {
