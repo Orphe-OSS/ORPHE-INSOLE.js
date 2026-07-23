@@ -83,15 +83,12 @@ void hz;
 globalThis.buildInsoleToolkit(document.createElement('div'), 'INSOLE 01', 0, { streamingMode: 4 });
 globalThis.buildInsoleToolkit(document.createElement('div'), 'ADVANCED', 1, {
     streamingMode: 3,
-    sensorDataMode: 'fifo',
+    sensorDataMode: 'realtime',
     outputs: { sensorValues: true, stepAnalysis: true },
     fifo: {
         startupDelayMs: 500,
-        realtimeWindowMs: 400,
-        realtimeWindowIntervalMs: 2000,
         onSamples(deviceId, samples) { void deviceId; void samples[0]?.press.values; },
         onDataLoss(info) { void info.dropped; },
-        onRealtimeWindow(info) { void info.phase; },
     },
     gait: {
         onGait(deviceId, row) { void deviceId; void row.step_number; },
@@ -193,7 +190,6 @@ const fifoCheckpointSummary = fifo.summarizeSince(fifoCheckpoint);
 const fifoWindowSerials: number[] = fifo.serialsSince(fifoCheckpoint);
 void fifoCheckpointSummary.missing;
 void fifoWindowSerials;
-fifo.setRealtimeWindowEnabled(true);
 async function runFifo() {
     const started: boolean = await fifo.start();
     void started;

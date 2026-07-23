@@ -438,15 +438,6 @@ export interface InsoleFifoOptions {
      * stopOnLoss 自動停止・切断・例外では発動しない。
      */
     drainTimeoutMs?: number;
-    /**
-     * FIFO monitorを止めずread modeだけを一時Realtimeへ戻す互換窓[ms]。
-     * 0/未指定なら無効。ToolkitではFIFO + Step選択時だけ有効になる。
-     */
-    realtimeWindowMs?: number;
-    /** 互換窓終了から次の互換窓までの間隔[ms]（既定 2000） */
-    realtimeWindowIntervalMs?: number;
-    /** 最初の互換窓までの遅延[ms]（未指定時はdevice idでstagger） */
-    realtimeWindowInitialDelayMs?: number;
 }
 
 export interface InsoleFifoCheckpoint {
@@ -468,13 +459,6 @@ export interface InsoleFifoCheckpointSummary {
     /** FIFO全体の累積dropped差分（checkpoint以前のcarryOver確定分を含みうる） */
     reportedDroppedDelta?: number;
     checkpoint: InsoleFifoCheckpoint | null;
-}
-
-export interface InsoleFifoRealtimeWindow {
-    phase: 'open' | 'closed';
-    windowMs: number;
-    sequence: number;
-    restoredToFifo?: boolean;
 }
 
 export interface InsoleFifoProgress {
@@ -527,8 +511,6 @@ export declare class OrpheInsoleFifo {
     lag: number;
     /** 回復不能な欠損が発生した時点で収録を自動停止するか */
     stopOnLoss: boolean;
-    /** FIFO + Step互換窓が現在開いているか */
-    readonly realtimeWindowActive: boolean;
     /** 収集したパケットのデコード結果（ライブ可視化用） */
     onSamples: ((deviceId: number, samples: InsoleFifoSample[]) => void) | null;
     onProgress: ((info: InsoleFifoProgress) => void) | null;
@@ -540,8 +522,6 @@ export declare class OrpheInsoleFifo {
      * drainRecovered は stop() 後の回収フェーズ（drain）で救えたシリアル数。
      */
     onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void) | null;
-    /** FIFO + Step互換用の一時Realtime窓が開閉したとき呼ばれる */
-    onRealtimeWindow: ((info: InsoleFifoRealtimeWindow) => void | Promise<void>) | null;
     onError: ((error: unknown) => void) | null;
     /** 現在のFIFO要求境界を記録 */
     createCheckpoint(): InsoleFifoCheckpoint;
@@ -549,8 +529,6 @@ export declare class OrpheInsoleFifo {
     summarizeSince(checkpoint: InsoleFifoCheckpoint): InsoleFifoCheckpointSummary;
     /** checkpoint範囲で回収済みのdevice serial */
     serialsSince(checkpoint: InsoleFifoCheckpoint): number[];
-    /** 互換窓を有効/無効化 */
-    setRealtimeWindowEnabled(enabled: boolean): void;
     /** FIFO 収集を開始（SENSOR_VALUES 通知は begin() 済みであること） */
     start(): Promise<boolean>;
     /** 収集を停止し、直前のリアルタイムモードへ復帰。収集した raw ストアを返す */
@@ -712,7 +690,6 @@ export interface InsoleToolkitFifoOptions extends InsoleFifoOptions {
     onAnomaly?: (info: InsoleFifoAnomaly) => void;
     onDataLoss?: (info: InsoleFifoDataLoss) => void;
     onStopped?: (info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void;
-    onRealtimeWindow?: (info: InsoleFifoRealtimeWindow) => void | Promise<void>;
     onError?: (error: unknown) => void;
 }
 
@@ -731,7 +708,6 @@ export interface InsoleToolkitSessionState {
     outputs: Required<InsoleToolkitOutputs>;
     sensorNotifyActive: boolean;
     fifoActive: boolean;
-    fifoRealtimeWindowActive: boolean;
     gaitActive: boolean;
     supportsFifo: boolean;
     supportsStepAnalysis: boolean;

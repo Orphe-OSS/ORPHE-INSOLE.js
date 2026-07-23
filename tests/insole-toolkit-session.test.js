@@ -59,8 +59,6 @@ class FakeFifo {
     this.options = options;
     this.startResult = true;
     this.onStopped = null;
-    this.onRealtimeWindow = null;
-    this.realtimeWindowActive = false;
   }
 
   async start() {
@@ -148,19 +146,27 @@ async function main() {
 
     insole.calls.length = 0;
     await session.setSensorDataMode('fifo');
-    await session.setOutputs({ sensorValues: true, stepAnalysis: true });
+    await assert.rejects(
+      () => session.setOutputs({ sensorValues: true, stepAnalysis: true }),
+      (error) => error.code === 'FIFO_STEP_INCOMPATIBLE'
+    );
+    assert.deepEqual(session.outputs, { sensorValues: false, stepAnalysis: true });
+    assert.equal(session.fifoActive, false);
+    assert.deepEqual(insole.calls, []);
+
+    await session.setOutputs({ sensorValues: true, stepAnalysis: false });
     assert.equal(session.fifoActive, true);
     assert.deepEqual(insole.calls, [
       'mode:4',
       'notify:start:SENSOR_VALUES',
       'fifo:start',
-      'gait:refresh',
+      'gait:stop',
     ]);
 
     insole.calls.length = 0;
     await session.setSensorDataMode('realtime');
     assert.equal(session.fifoActive, false);
-    assert.deepEqual(insole.calls, ['fifo:stop', 'mode:4', 'gait:refresh']);
+    assert.deepEqual(insole.calls, ['fifo:stop', 'mode:4']);
   }
 
   {
@@ -169,34 +175,26 @@ async function main() {
     await session.setOutputs({ sensorValues: true, stepAnalysis: true });
     insole.calls.length = 0;
 
-    await session.setSensorDataMode('fifo');
-    assert.equal(session.fifoActive, true);
+    await assert.rejects(
+      () => session.setSensorDataMode('fifo'),
+      (error) => error.code === 'FIFO_STEP_INCOMPATIBLE'
+    );
+    assert.equal(session.sensorDataMode, 'realtime');
+    assert.equal(session.fifoActive, false);
     assert.equal(session.gaitActive, true);
-    assert.deepEqual(insole.calls, ['fifo:start', 'gait:refresh']);
-
-    insole.calls.length = 0;
-    await session.setSensorDataMode('realtime');
-    assert.deepEqual(insole.calls, ['fifo:stop', 'mode:4', 'gait:refresh']);
+    assert.deepEqual(insole.calls, ['mode:4']);
   }
 
   {
     const { insole, session } = createSession({
       sensorDataMode: 'fifo',
       outputs: { sensorValues: true, stepAnalysis: true },
-      fifo: {
-        realtimeWindowMs: 400,
-      },
     });
-    await session.connect();
-    assert.deepEqual(insole.calls, ['begin:SENSOR_VALUES:4', 'fifo:start', 'gait:start']);
-
-    insole.calls.length = 0;
-    await session.fifo.onRealtimeWindow({ phase: 'open', windowMs: 400, sequence: 1 });
-    assert.deepEqual(insole.calls, ['gait:refresh']);
-
-    insole.calls.length = 0;
-    await session.disconnect();
-    assert.deepEqual(insole.calls, ['fifo:stop', 'gait:stop', 'reset']);
+    await assert.rejects(
+      () => session.connect(),
+      (error) => error.code === 'FIFO_STEP_INCOMPATIBLE'
+    );
+    assert.deepEqual(insole.calls, ['begin:SENSOR_VALUES:4', 'reset']);
     assert.equal(session.connected, false);
   }
 

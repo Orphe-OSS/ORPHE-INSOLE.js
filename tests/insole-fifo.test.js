@@ -562,34 +562,6 @@ function near(actual, expected, tol, label) {
     });
   }
 
-  // ── FIFO + Step互換窓: monitorを止めず一時Realtimeへ戻し、FIFOへ復帰する ──
-  {
-    const readModes = [];
-    const phases = [];
-    const fifo = new Fifo({
-      id: 0,
-      streaming_mode: 4,
-      isConnected: () => true,
-      async write(_uuid, bytes) {
-        const b = Array.from(bytes);
-        if (b[0] === 0x0D) readModes.push(b[1]);
-      },
-    }, {
-      realtimeWindowMs: 1,
-    });
-    fifo._running = true;
-    fifo._restoreMode = 4;
-    fifo.onRealtimeWindow = async (info) => {
-      phases.push(info.phase);
-    };
-
-    await fifo._runRealtimeWindow();
-
-    assert.deepEqual(readModes, [4, Fifo.READ_MODE_FIFO]);
-    assert.deepEqual(phases, ['open', 'closed']);
-    assert.equal(fifo.realtimeWindowActive, false);
-  }
-
   console.log('insole-fifo.test.js passed');
 })().catch((error) => {
   console.error(error);

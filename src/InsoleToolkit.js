@@ -101,7 +101,6 @@ class InsoleToolkitSession {
             outputs: { ...this.outputs },
             sensorNotifyActive: this.sensorNotifyActive,
             fifoActive: this.fifoActive,
-            fifoRealtimeWindowActive: !!(this.fifo && this.fifo.realtimeWindowActive),
             gaitActive: this.gaitActive,
             supportsFifo: this.supportsFifo,
             supportsStepAnalysis: this.supportsStepAnalysis,
@@ -251,6 +250,16 @@ class InsoleToolkitSession {
     async _applyDesiredState() {
         if (!this.connected) return;
 
+        if (this.sensorDataMode === 'fifo' &&
+            this.outputs.sensorValues &&
+            this.outputs.stepAnalysis) {
+            const error = new Error(
+                'InsoleToolkit: lossless FIFO Raw and Step Analysis cannot run simultaneously on the current firmware. Use sequential modes.'
+            );
+            error.code = 'FIFO_STEP_INCOMPATIBLE';
+            throw error;
+        }
+
         // Step-only へ切り替える場合も、先に STEP_ANALYSIS を購読してから
         // SENSOR_VALUES を止める。FWがactive状態を要求するため順序を逆にしない。
         if (!this.outputs.sensorValues) {
@@ -263,19 +272,9 @@ class InsoleToolkitSession {
 
         await this._ensureSensorNotify();
         if (this.sensorDataMode === 'fifo') {
-            this._configureFifoRealtimeWindow(this.outputs.stepAnalysis);
-            const gaitWasActive = this.gaitActive;
-            const fifoStarted = await this._startFifo();
-            if (this.outputs.stepAnalysis) {
-                // FIFO read-modeへ切り替えるとFW側のSTEP_ANALYSIS配信が止まる機体がある。
-                // 既存購読はGATT上activeのままなので、FIFO開始後に明示的に再購読する。
-                if (fifoStarted && gaitWasActive) await this._refreshGait();
-                else await this._startGait();
-            } else {
-                await this._stopGait();
-            }
+            await this._startFifo();
+            await this._stopGait();
         } else {
-            this._configureFifoRealtimeWindow(false);
             const fifoStopped = await this._stopFifo();
             await this.insole.setDataStreamingMode(this.streamingMode);
             if (this.outputs.stepAnalysis) {
@@ -316,11 +315,6 @@ class InsoleToolkitSession {
         }
         this.fifoActive = true;
         return true;
-    }
-
-    _configureFifoRealtimeWindow(enabled) {
-        if (!this.fifo || typeof this.fifo.setRealtimeWindowEnabled !== 'function') return;
-        this.fifo.setRealtimeWindowEnabled(enabled);
     }
 
     async _stopFifo() {
@@ -395,13 +389,6 @@ class InsoleToolkitSession {
                 this._emitState();
                 this._callModuleCallback(this._fifoCallbacks, 'onStopped', [info]);
             };
-            this.fifo.onRealtimeWindow = async (info) => {
-                if (info?.phase === 'open' && this.outputs.stepAnalysis && this.gaitActive) {
-                    await this._refreshGait();
-                }
-                this._emitState();
-                await this._callModuleCallbackAsync(this._fifoCallbacks, 'onRealtimeWindow', [info]);
-            };
             this.fifo.onError = (error) => {
                 this._callModuleCallback(this._fifoCallbacks, 'onError', [error]);
                 this._reportError(error);
@@ -422,12 +409,6 @@ class InsoleToolkitSession {
         const callback = callbacks && callbacks[name];
         if (typeof callback !== 'function') return;
         try { callback(...args); } catch (error) { this._reportError(error); }
-    }
-
-    async _callModuleCallbackAsync(callbacks, name, args) {
-        const callback = callbacks && callbacks[name];
-        if (typeof callback !== 'function') return;
-        try { await callback(...args); } catch (error) { this._reportError(error); }
     }
 
     _syncOptions() {
@@ -604,7 +585,7 @@ function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) 
   </div>
   <div id="toolkit_mode_status${insole_id}" class="small text-muted mt-2" role="status"></div>
   <div id="toolkit_mode_note${insole_id}" class="small text-muted mt-1">
-    FIFO applies only to Raw Sensor Data. Step Analysis uses its dedicated realtime characteristic.
+    Realtime Raw and Step Analysis can run together. FIFO is lossless Raw recording and runs alone.
   </div>
   <div class="row mt-3 small text-muted">
     <div class="col-6">Accelerometer Range: <span id="info_acc_range${insole_id}">-</span> g</div>
@@ -849,14 +830,24 @@ function syncInsoleToolkitControls(no) {
     }
     if (stepAnalysis) {
         if (!state.transitioning) stepAnalysis.checked = state.outputs.stepAnalysis;
-        stepAnalysis.disabled = !state.supportsStepAnalysis;
-        stepAnalysis.title = state.supportsStepAnalysis ? '' : 'Load InsoleGait.js to enable Step Analysis.';
+        const fifoSelected = state.outputs.sensorValues && state.sensorDataMode === 'fifo';
+        stepAnalysis.disabled = state.transitioning || !state.supportsStepAnalysis || fifoSelected;
+        stepAnalysis.title = !state.supportsStepAnalysis
+            ? 'Load InsoleGait.js to enable Step Analysis.'
+            : fifoSelected
+                ? 'Step Analysis is available with Realtime Raw, not FIFO.'
+                : '';
     }
     if (sensorDataMode) {
         if (!state.transitioning) sensorDataMode.value = state.sensorDataMode;
         sensorDataMode.disabled = state.transitioning || !state.outputs.sensorValues;
         const fifoOption = Array.from(sensorDataMode.options).find((option) => option.value === 'fifo');
-        if (fifoOption) fifoOption.disabled = !state.supportsFifo;
+        if (fifoOption) {
+            fifoOption.disabled = !state.supportsFifo || state.outputs.stepAnalysis;
+            fifoOption.title = state.outputs.stepAnalysis
+                ? 'Turn off Step Analysis before selecting FIFO.'
+                : '';
+        }
     }
     if (streamingMode) {
         if (!state.transitioning) streamingMode.value = String(state.streamingMode);
@@ -887,7 +878,7 @@ function syncInsoleToolkitControls(no) {
         if (!state.supportsStepAnalysis) unavailable.push('Load InsoleGait.js for Step Analysis.');
         note.innerText = unavailable.length
             ? unavailable.join(' ')
-            : 'FIFO applies only to Raw Sensor Data. Step Analysis uses its dedicated realtime characteristic.';
+            : 'Realtime Raw and Step Analysis can run together. FIFO is lossless Raw recording and runs alone.';
     }
 }
 

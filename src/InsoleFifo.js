@@ -442,10 +442,6 @@
       this._autoStopped = false;
       this._lastCurrentSerial = null; // 最後にポーリングで得た FW 側シリアル（停止時の通知用）
       this._captureId = 0;
-      this._nextRealtimeWindowAt = null;
-      this._realtimeWindowSequence = 0;
-      this.realtimeWindowActive = false;
-      this.realtimeWindowEnabled = Number(options.realtimeWindowMs || 0) > 0;
       this.lag = 0;             // 現在の追従遅れ（未取得シリアル数）。バッファ容量に近づくと欠損の危険。
 
       // コールバック（ユーザが上書き）
@@ -454,7 +450,6 @@
       this.onAnomaly = null;    // (info) 欠損・再同期などの詳細
       this.onDataLoss = null;   // (info) 回復不能な欠損が起きたとき {reason, dropped, cumulative, currentSerial}
       this.onStopped = null;    // (info) 収集終了時 {reason:'manual'|'loss', dropped, collected}（自動停止の検知に使う）
-      this.onRealtimeWindow = null; // async (info) FIFO+Step互換用の一時Realtime窓
       this.onError = null;      // (error)
     }
 
@@ -530,12 +525,6 @@
         if (distance > 0 && distance <= expected) serials.push(serial);
       }
       return serials;
-    }
-
-    /** FIFO+Step互換用Realtime窓の有効/無効を切り替える。通常FIFOはfalseのまま。 */
-    setRealtimeWindowEnabled(enabled) {
-      this.realtimeWindowEnabled = !!enabled && Number(this.options.realtimeWindowMs || 0) > 0;
-      if (!this.realtimeWindowEnabled) this._nextRealtimeWindowAt = null;
     }
 
     // ── 低レベルコマンド ──────────────────────────────────────────────
@@ -631,13 +620,6 @@
       this._running = true;
       this._tornDown = false;
       this._autoStopped = false;
-      this._realtimeWindowSequence = 0;
-      const realtimeWindowIntervalMs = Math.max(0, Number(this.options.realtimeWindowIntervalMs || 2000));
-      const configuredInitialDelay = this.options.realtimeWindowInitialDelayMs;
-      const initialDelayMs = configuredInitialDelay != null
-        ? Math.max(0, Number(configuredInitialDelay))
-        : this.deviceId * Math.floor(realtimeWindowIntervalMs / 2);
-      this._nextRealtimeWindowAt = Date.now() + initialDelayMs;
       // ループがどんな理由で終わっても（stop() / stopOnLoss 自動停止 / 例外）
       // 必ず後片付け（モード復帰・sink解除）と onStopped 通知を1回だけ行う。
       this._loopPromise = this._runLoopWrapped();
@@ -781,7 +763,6 @@
         const [startSerial, requestSize] = state.calcRequestRange(currentSerial, accumulatedCount, maxNewRequest);
 
         if (requestSize <= 0 && carryOverToSend.length === 0) {
-          await this._maybeRunRealtimeWindow();
           await sleep(POLLING_INTERVAL_MS);
           continue;
         }
@@ -862,74 +843,7 @@
           }));
         }
 
-        await this._maybeRunRealtimeWindow();
         await sleep(POLLING_INTERVAL_MS);
-      }
-    }
-
-    async _maybeRunRealtimeWindow() {
-      if (!this._running || !this.realtimeWindowEnabled || this.realtimeWindowActive) return;
-      const windowMs = Math.max(0, Number(this.options.realtimeWindowMs || 0));
-      if (windowMs <= 0) return;
-      if (this._nextRealtimeWindowAt !== null && Date.now() < this._nextRealtimeWindowAt) return;
-
-      await this._runRealtimeWindow();
-      const intervalMs = Math.max(0, Number(this.options.realtimeWindowIntervalMs || 2000));
-      this._nextRealtimeWindowAt = Date.now() + intervalMs;
-    }
-
-    /**
-     * FW monitorは動かしたままread modeだけを短時間Realtimeへ戻す。
-     * STEP_ANALYSISを再購読する呼び出し側へopenを通知し、窓の終了後にFIFOへ復帰する。
-     * 通常FIFOではrealtimeWindowEnabled=falseのため実行されない。
-     */
-    async _runRealtimeWindow() {
-      const windowMs = Math.max(0, Number(this.options.realtimeWindowMs || 0));
-      if (!this._running || windowMs <= 0 || this.realtimeWindowActive) return;
-
-      const sequence = ++this._realtimeWindowSequence;
-      let restoredToFifo = false;
-      this.realtimeWindowActive = true;
-      try {
-        this._queue.drain();
-        await this._setReadMode(this._restoreMode || this.insole.streaming_mode || 4);
-        await this._emitRealtimeWindow({ phase: 'open', windowMs, sequence });
-        await sleep(windowMs);
-        if (this._running) {
-          this._queue.drain();
-          await this._setReadMode(READ_MODE_FIFO);
-          this._queue.drain();
-          restoredToFifo = true;
-        }
-      } catch (error) {
-        this._reportError(error);
-      } finally {
-        if (this._running && !restoredToFifo) {
-          try {
-            this._queue.drain();
-            await this._setReadMode(READ_MODE_FIFO);
-            this._queue.drain();
-            restoredToFifo = true;
-          } catch (error) {
-            this._reportError(error);
-          }
-        }
-        this.realtimeWindowActive = false;
-        await this._emitRealtimeWindow({
-          phase: 'closed',
-          windowMs,
-          sequence,
-          restoredToFifo,
-        });
-      }
-    }
-
-    async _emitRealtimeWindow(info) {
-      if (typeof this.onRealtimeWindow !== 'function') return;
-      try {
-        await this.onRealtimeWindow(info);
-      } catch (error) {
-        this._reportError(error);
       }
     }
 
@@ -1002,8 +916,6 @@
           }
         }
       } catch (_) { /* noop */ } finally {
-        this.realtimeWindowActive = false;
-        this._nextRealtimeWindowAt = null;
         if (this.insole && this.insole._fifoNotifySink) delete this.insole._fifoNotifySink;
       }
     }

@@ -177,7 +177,6 @@ function createRunDevice(id) {
         fifoDrainError: null,
         fifoAnomalies: 0,
         fifoCheckpoint: null,
-        fifoRealtimeWindows: 0,
         lastProgressLogAt: 0,
         reconnectStart: {
             disconnects: reconnectStats[id].disconnects,
@@ -1055,18 +1054,6 @@ function handleFifoStopped(id, info) {
     );
 }
 
-function handleFifoRealtimeWindow(id, info) {
-    const device = runDeviceFor(id);
-    if (info.phase === 'open') {
-        if (device) device.fifoRealtimeWindows += 1;
-        logEvent(
-            id,
-            `FIFO+Step互換窓 ${info.sequence}: Realtime ${info.windowMs}ms / Step notify再購読`,
-            'warn'
-        );
-    }
-}
-
 function handleStepRaw(id, packet) {
     if (!currentRun) {
         const preview = previewDevices[id];
@@ -1216,7 +1203,6 @@ function finalizeDeviceResult(run, id) {
         fifoStopReason: device.fifoStopReason,
         fifoDrainError: device.fifoDrainError,
         fifoAnomalies: device.fifoAnomalies,
-        fifoRealtimeWindows: device.fifoRealtimeWindows,
         stepPackets: device.stepPackets,
         stepTypeCounts: { ...device.stepTypeCounts },
         stepPacketHz: device.stepPackets / durationSec,
@@ -1258,7 +1244,6 @@ function formatResultLog(result) {
         `age=${formatNumber(result.deliveryAgeMedianMs, 0)}ms`,
         `fifoDropped=${result.fifoDropped}`,
         `drainRecovered=${result.fifoDrainRecovered}`,
-        `compatWindows=${result.fifoRealtimeWindows}`,
         `stepPackets=${result.stepPackets}`,
         `stepTypes=${STEP_PACKET_TYPES.map((type) => `${type}:${result.stepTypeCounts?.[type] || 0}`).join(',')}`,
         `stepRows=${result.completedSteps}`,
@@ -1338,7 +1323,6 @@ function liveResult(id) {
         fifoStopped: device.fifoStopped,
         fifoStopReason: device.fifoStopReason,
         fifoDrainError: device.fifoDrainError,
-        fifoRealtimeWindows: device.fifoRealtimeWindows,
         stepPackets: device.stepPackets,
         stepTypeCounts: { ...device.stepTypeCounts },
         completedSteps: device.completedSteps,
@@ -2208,10 +2192,6 @@ function installDevice(id) {
             fifo: {
                 startupDelayMs: 800,
                 drainTimeoutMs: 5000,
-                // FIFO read-mode中に停止するSTEP_ANALYSIS配信を観測するため、
-                // 複合プリセット時だけ短いRealtime窓を開く（Toolkitが有効/無効を制御）。
-                realtimeWindowMs: 400,
-                realtimeWindowIntervalMs: 2000,
                 onSamples(deviceId, samples) {
                     handleFifoSamples(deviceId, samples);
                 },
@@ -2226,9 +2206,6 @@ function installDevice(id) {
                 },
                 onStopped(info) {
                     handleFifoStopped(id, info);
-                },
-                onRealtimeWindow(info) {
-                    handleFifoRealtimeWindow(id, info);
                 },
                 onError(error) {
                     logEvent(id, `FIFO error: ${error.message || error}`, 'error');

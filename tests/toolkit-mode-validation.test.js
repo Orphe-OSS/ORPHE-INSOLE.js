@@ -130,6 +130,20 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
 }
 
 {
+    const evaluation = metrics.evaluateDeviceRun({
+        durationSec: 10,
+        rawPackets: 500,
+        rawSamples: 1000,
+        fieldCounts: { acc: 1000, gyro: 1000, press: 1000, quat: 1000 },
+        serial: { missing: 0, expected: 500 },
+        fifoDropped: 0,
+        stepPackets: 100,
+        completedSteps: 4,
+    }, metrics.PRESET_EXPECTATIONS['rt4-step']);
+    assert.equal(evaluation.level, 'pass');
+}
+
+{
     assert.deepEqual(metrics.classifyRunProfile(metrics.PRESET_EXPECTATIONS.rt4, 2), {
         id: 'standard',
         label: '2台 通常計測',
@@ -227,7 +241,8 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.match(app, /REALTIME_HEADER_BY_MODE/);
     assert.match(app, /createCheckpoint/);
     assert.match(app, /summarizeSince/);
-    assert.match(app, /realtimeWindowMs:\s*400/);
+    assert.match(html, /data-preset="rt4-step"/);
+    assert.doesNotMatch(html, /data-preset="fifo-step"/);
 }
 
 console.log('toolkit-mode-validation tests: ok');

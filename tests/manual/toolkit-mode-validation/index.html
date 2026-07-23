@@ -31,7 +31,7 @@
       <div>
         <h2 class="h5 mb-2">設定を変えた結果を、同じ指標で比較します</h2>
         <p class="mb-0 text-secondary">
-          Realtime Format 1 / 3 / 4、FIFO、Step-only、FIFO + Stepを左右それぞれ計測し、
+          Realtime Format 1 / 3 / 4、FIFO、Step-only、Realtime + Stepを左右それぞれ計測し、
           周期・到着間隔・serial continuity・FIFO drain・Step notify・再接続を可視化します。
         </p>
       </div>
@@ -110,7 +110,7 @@
           <span class="preset-index">F</span>
           <strong>FIFO Raw</strong>
           <span>gyro + acc + press</span>
-          <small>再要求 / lag / drainを確認</small>
+          <small>lossless計測用 / Stepと排他</small>
         </button>
         <button type="button" class="preset-card" data-preset="step">
           <span class="preset-index">S</span>
@@ -118,11 +118,11 @@
           <span>STEP_ANALYSIS notify</span>
           <small>SENSOR_VALUES停止を確認</small>
         </button>
-        <button type="button" class="preset-card" data-preset="fifo-step">
-          <span class="preset-index">F+S</span>
-          <strong>FIFO + Step</strong>
-          <span>FIFO monitor + Step互換窓</span>
-          <small>400ms Realtime窓で配信を診断</small>
+        <button type="button" class="preset-card" data-preset="rt4-step">
+          <span class="preset-index">R4+S</span>
+          <strong>Realtime 4 + Step</strong>
+          <span>RawとStepを同時取得</span>
+          <small>アプリ向け併用モード</small>
         </button>
       </div>
 

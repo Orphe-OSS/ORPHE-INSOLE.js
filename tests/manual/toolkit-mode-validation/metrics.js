@@ -55,15 +55,15 @@
             nominalSampleHz: null,
             fields: { acc: false, gyro: false, press: false, quat: false },
         },
-        'fifo-step': {
-            id: 'fifo-step',
-            label: 'FIFO Raw + Step Analysis',
-            acquisition: 'fifo',
+        'rt4-step': {
+            id: 'rt4-step',
+            label: 'Realtime Format 4 + Step Analysis',
+            acquisition: 'realtime',
             streamingMode: 4,
             raw: true,
             step: true,
-            nominalSampleHz: 200,
-            fields: { acc: true, gyro: true, press: true, quat: false },
+            nominalSampleHz: 100,
+            fields: { acc: true, gyro: true, press: true, quat: true },
         },
     };
 
@@ -364,13 +364,6 @@
                         hasLoss ? 'warn' : 'pass',
                         '単体FIFO baseline',
                         hasLoss ? '単体でも欠損あり。デバイス/リンクを確認' : '最終欠損なし'
-                    );
-                }
-                if (preset.step && stats.finished && stats.fifoRealtimeWindows != null) {
-                    add(
-                        stats.fifoRealtimeWindows > 0 ? 'pass' : 'warn',
-                        'Step互換窓',
-                        `${stats.fifoRealtimeWindows || 0} windows`
                     );
                 }
             }
