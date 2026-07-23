@@ -43,3 +43,6 @@ FIFO lag/dropped/drainを分けて確認します。Step Analysisはnotify packe
 自動判定のsample Hzはnominal値の60〜135%を通常範囲として扱います。電波環境やブラウザ負荷の
 影響を受けるため、`要確認`は即時の機能不良判定ではなく、左右差・繰り返し結果・保存データを
 確認するための目印です。
+
+結果JSONはページ上の全runを保持します。FIFO / Step CSVは各モジュールの直近セッションを
+保存するため、再接続を含むrunの区間横断比較には結果JSONと画面のserial履歴を併用してください。
