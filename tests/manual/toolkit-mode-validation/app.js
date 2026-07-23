@@ -13,6 +13,7 @@ const MAX_FIFO_PLOT_SAMPLES = 60000;
 const MAX_STEP_HISTORY_ROWS = 500;
 const REALTIME_HEADER_BY_MODE = { 1: 50, 3: 55, 4: 56 };
 const STEP_PACKET_TYPES = ['motion', 'overview', 'stride', 'pronation'];
+const HOST_LABEL_STORAGE_KEY = 'orphe-toolkit-validation-host-label';
 
 let selectedPresetId = 'rt4';
 let runState = 'idle'; // idle | switching | running | draining
@@ -43,6 +44,7 @@ const dom = {
     bluetoothWarning: document.getElementById('bluetooth_warning'),
     selectedPreset: document.getElementById('selected_preset_badge'),
     expectations: document.getElementById('expectation_chips'),
+    hostLabel: document.getElementById('host_label_input'),
     duration: document.getElementById('duration_select'),
     start: document.getElementById('start_button'),
     stop: document.getElementById('stop_button'),
@@ -61,6 +63,11 @@ const dom = {
     stepHistoryBody: document.getElementById('step_history_body'),
     stepHistoryCount: document.getElementById('step_history_count'),
     clearStepHistory: document.getElementById('clear_step_history_button'),
+    fifoLoadContext: document.getElementById('fifo_load_context'),
+    fifoLoadMessage: document.getElementById('fifo_load_message'),
+    fifoProfileBadge: document.getElementById('fifo_profile_badge'),
+    fifoBaseline: DEVICE_IDS.map((id) => document.getElementById(`fifo_baseline_${id}`)),
+    fifoDualStatus: document.getElementById('fifo_dual_status'),
     resetReconnect: document.getElementById('reset_reconnect_button'),
     downloadJson: document.getElementById('download_json_button'),
     downloadFifo: document.getElementById('download_fifo_button'),
@@ -240,14 +247,24 @@ function noteSessionState(id, snapshot) {
 }
 
 function formatEventLogText() {
+    const connected = connectedIds();
+    const profile = Metrics.classifyRunProfile(PRESETS[selectedPresetId], connected.length);
     const lines = [
         'Toolkit Data Mode Validation Event Log',
         `exportedAt=${new Date().toISOString()}`,
         `page=${window.location.href}`,
         `secureContext=${window.isSecureContext}`,
         `webBluetooth=${Boolean(navigator.bluetooth)}`,
+        `hostLabel=${currentHostLabel()}`,
+        `platform=${navigator.platform || 'unknown'}`,
+        `hardwareConcurrency=${navigator.hardwareConcurrency || 'unknown'}`,
+        `userAgent=${navigator.userAgent}`,
         `selectedPreset=${selectedPresetId}`,
         `runState=${runState}`,
+        `connectedDevices=${connected.map((id) => id + 1).join(',') || 'none'}`,
+        `measurementProfile=${currentRun?.runProfile?.id || profile.id}`,
+        ...DEVICE_IDS.map((id) => `fifoSingleBaseline ${deviceLabel(id)}=${formatFifoBaselineLog(id)}`),
+        `fifoDualMacStress=${formatFifoDualLog()}`,
         ...DEVICE_IDS.map((id) => `${deviceLabel(id)} ${formatSessionState(sessions[id]?.snapshot())}`),
         ...DEVICE_IDS.map((id) => {
             const fifo = fifoPlotDevices[id];
@@ -315,6 +332,75 @@ function connectedIds() {
     return DEVICE_IDS.filter((id) => isConnected(id));
 }
 
+function currentHostLabel() {
+    return dom.hostLabel?.value.trim() || 'Host未設定';
+}
+
+function fifoProfileResults(profileId, id = null, hostLabel = currentHostLabel()) {
+    return runHistory.filter((result) => (
+        result.runProfile?.id === profileId
+        && (id === null || result.id === id)
+        && (result.hostLabel || 'Host未設定') === hostLabel
+    ));
+}
+
+function fifoResultHasLoss(result) {
+    return Boolean(result && (
+        (result.fifoDropped || 0) > 0
+        || (result.serial?.missing || 0) > 0
+        || result.fifoDrainError
+    ));
+}
+
+function latestFifoProfileResult(profileId, id = null) {
+    return fifoProfileResults(profileId, id)[0] || null;
+}
+
+function formatFifoBaselineLog(id) {
+    const result = latestFifoProfileResult('fifo-single-baseline', id);
+    if (!result) return 'not-run';
+    return fifoResultHasLoss(result)
+        ? `loss serial=${result.serial?.missing || 0} dropped=${result.fifoDropped || 0}`
+        : 'lossless';
+}
+
+function formatFifoDualLog() {
+    const results = fifoProfileResults('fifo-dual-host-stress');
+    if (results.length === 0) return 'not-run';
+    return results.some(fifoResultHasLoss) ? 'loss-observed' : 'lossless';
+}
+
+function renderFifoLoadContext() {
+    const preset = PRESETS[selectedPresetId];
+    const ids = connectedIds();
+    const hostLabel = currentHostLabel();
+    const profile = Metrics.classifyRunProfile(preset, ids.length);
+    dom.fifoLoadContext.hidden = preset.acquisition !== 'fifo';
+    if (preset.acquisition !== 'fifo') return;
+
+    dom.fifoProfileBadge.className = `metric-chip ${profile.dualHostStress ? 'warn' : ids.length === 1 ? 'pass' : 'neutral'}`;
+    dom.fifoProfileBadge.textContent = ids.length === 0 ? '接続待ち' : profile.label;
+    dom.fifoLoadMessage.textContent = ids.length === 0
+        ? 'まず片方だけ接続して単体baselineを取得してください。'
+        : ids.length === 1
+            ? `${deviceLabel(ids[0])}だけ接続中。${hostLabel}の単体baselineとして保存します。`
+            : `2台同時接続中。${hostLabel}のBLE負荷試験として記録し、単体baselineと分けて判定します。`;
+
+    for (const id of DEVICE_IDS) {
+        const result = latestFifoProfileResult('fifo-single-baseline', id);
+        const target = dom.fifoBaseline[id];
+        target.className = `metric-chip ${!result ? 'neutral' : fifoResultHasLoss(result) ? 'warn' : 'pass'}`;
+        target.textContent = !result
+            ? `${deviceLabel(id)} 単体: 未計測`
+            : `${deviceLabel(id)} 単体: ${fifoResultHasLoss(result) ? '欠損あり' : '欠損なし'}`;
+    }
+    const dualResults = fifoProfileResults('fifo-dual-host-stress');
+    dom.fifoDualStatus.className = `metric-chip ${dualResults.length === 0 ? 'neutral' : dualResults.some(fifoResultHasLoss) ? 'warn' : 'pass'}`;
+    dom.fifoDualStatus.textContent = dualResults.length === 0
+        ? '2台同時: 未計測'
+        : `2台同時: ${dualResults.some(fifoResultHasLoss) ? '欠損観測（既知条件）' : '欠損なし'}`;
+}
+
 function formatNumber(value, digits = 1, fallback = '—') {
     return Number.isFinite(value) ? Number(value).toFixed(digits) : fallback;
 }
@@ -354,13 +440,18 @@ function updateControls() {
     dom.stop.disabled = !(runState === 'running');
     dom.clear.disabled = runState !== 'idle';
     dom.duration.disabled = runState !== 'idle';
+    dom.hostLabel.disabled = runState !== 'idle';
     document.querySelectorAll('.preset-card').forEach((button) => {
         button.disabled = runState !== 'idle';
     });
     if (runState === 'idle' && count === 0) dom.runMessage.textContent = '① INSOLEを接続してください';
     if (runState === 'idle' && count > 0 && !finishingPromise) {
-        dom.runMessage.textContent = `${count}台接続中。③「計測開始」を押すと正式な集計を開始します`;
+        const profile = Metrics.classifyRunProfile(PRESETS[selectedPresetId], count);
+        dom.runMessage.textContent = profile.dualHostStress
+            ? `${count}台同時FIFOは${currentHostLabel()}のHost負荷試験として記録します。単体baselineとの比較が前提です`
+            : `${count}台接続中。③「計測開始」を押すと正式な集計を開始します`;
     }
+    renderFifoLoadContext();
 }
 
 function resetLivePreview(reason) {
@@ -445,6 +536,7 @@ function renderExpectations() {
     if (preset.nominalSampleHz) {
         dom.expectations.append(chip(`nominal ${preset.nominalSampleHz} sample/s`));
     }
+    renderFifoLoadContext();
 }
 
 async function applyPresetToDevice(id, preset) {
@@ -480,9 +572,10 @@ async function startRun() {
     const ids = connectedIds();
     if (ids.length === 0) return;
     const preset = PRESETS[selectedPresetId];
+    const requestedProfile = Metrics.classifyRunProfile(preset, ids.length);
     logEvent(
         null,
-        `計測開始要求: preset=${preset.label} duration=${Number(dom.duration.value) / 1000}s devices=${ids.map((id) => id + 1).join(',')}`,
+        `計測開始要求: host=${currentHostLabel()} preset=${preset.label} profile=${requestedProfile.id} duration=${Number(dom.duration.value) / 1000}s devices=${ids.map((id) => id + 1).join(',')}`,
         'success'
     );
     setRunState('switching', `${preset.label}へ切り替えています…`);
@@ -500,11 +593,17 @@ async function startRun() {
 
     await new Promise((resolve) => setTimeout(resolve, 700));
     const startedAt = performance.now();
+    const runProfile = Metrics.classifyRunProfile(preset, activeIds.length);
     currentRun = {
         id: `run-${Date.now()}`,
         presetId: preset.id,
         preset,
         activeIds,
+        activeDeviceCount: activeIds.length,
+        connectedIdsAtStart: ids.slice(),
+        runProfile,
+        hostLabel: currentHostLabel(),
+        platform: navigator.platform || 'unknown',
         startedAt,
         endsAt: startedAt + Number(dom.duration.value),
         requestedDurationMs: Number(dom.duration.value),
@@ -522,7 +621,7 @@ async function startRun() {
         currentRun.devices[id].lastProgressLogAt = startedAt;
         document.getElementById(`device_card_${id}`).classList.add('active');
     }
-    logEvent(null, `${preset.label} / ${activeIds.length}台 / ${Number(dom.duration.value) / 1000}秒 を開始`, 'success');
+    logEvent(null, `${preset.label} / ${runProfile.label} / ${Number(dom.duration.value) / 1000}秒 を開始`, 'success');
     setRunState('running', `${preset.label}を計測中`);
 }
 
@@ -1004,6 +1103,10 @@ function finalizeDeviceResult(run, id) {
         id,
         presetId: run.presetId,
         presetLabel: run.preset.label,
+        hostLabel: run.hostLabel,
+        platform: run.platform,
+        activeDeviceCount: run.activeDeviceCount,
+        runProfile: { ...run.runProfile },
         durationSec,
         rawPackets: device.windowRawPackets,
         rawSamples: device.windowRawSamples,
@@ -1055,7 +1158,9 @@ function formatResultLog(result) {
         .join('; ');
     return [
         `RESULT ${result.evaluation.level.toUpperCase()}`,
+        `host=${result.hostLabel}`,
         `preset=${result.presetLabel}`,
+        `profile=${result.runProfile?.id || 'standard'}`,
         `duration=${formatNumber(result.durationSec, 1)}s`,
         `samples=${result.rawSamples}`,
         `sampleHz=${formatNumber(result.sampleHz, 1)}`,
@@ -1087,7 +1192,9 @@ function logRunProgress(now) {
             id,
             [
                 'PROGRESS',
+                `host=${currentRun.hostLabel}`,
                 `preset=${currentRun.preset.label}`,
+                `profile=${currentRun.runProfile.id}`,
                 `elapsed=${formatNumber(durationSec, 1)}s`,
                 `samples=${device.windowRawSamples}`,
                 `sampleHz=${formatNumber(device.windowRawSamples / durationSec, 1)}`,
@@ -1115,6 +1222,10 @@ function liveResult(id) {
         id,
         presetId: currentRun.presetId,
         presetLabel: currentRun.preset.label,
+        hostLabel: currentRun.hostLabel,
+        platform: currentRun.platform,
+        activeDeviceCount: currentRun.activeDeviceCount,
+        runProfile: { ...currentRun.runProfile },
         durationSec,
         rawPackets: device.windowRawPackets,
         rawSamples: device.windowRawSamples,
@@ -1873,7 +1984,7 @@ function renderHistory() {
     if (runHistory.length === 0) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
-        cell.colSpan = 12;
+        cell.colSpan = 14;
         cell.className = 'empty-row';
         cell.textContent = '計測完了後に設定別の結果が並びます';
         row.appendChild(cell);
@@ -1894,7 +2005,9 @@ function renderHistory() {
             : result.reconnect.disconnects > 0 ? `${result.reconnect.disconnects} disconnect` : '—';
         const values = [
             new Date(result.timestamp).toLocaleTimeString('ja-JP', { hour12: false }),
+            result.hostLabel || 'Host未設定',
             result.presetLabel,
+            result.runProfile?.label || `${result.activeDeviceCount || 1}台 通常計測`,
             `0${result.id + 1}`,
             verdictLabel(result.evaluation.level, false),
             formatNumber(result.sampleHz, 1),
@@ -1907,8 +2020,8 @@ function renderHistory() {
             reconnect,
         ];
         values.forEach((value, index) => {
-            const cell = document.createElement(index === 2 ? 'th' : 'td');
-            if (index === 3) cell.appendChild(chip(String(value), result.evaluation.level));
+            const cell = document.createElement(index === 4 ? 'th' : 'td');
+            if (index === 5) cell.appendChild(chip(String(value), result.evaluation.level));
             else cell.textContent = String(value);
             row.appendChild(cell);
         });
@@ -2129,6 +2242,18 @@ dom.clearFifoHistory.addEventListener('click', () => resetFifoHistory('手動ク
 dom.clearStepHistory.addEventListener('click', () => resetStepHistory('手動クリア'));
 dom.resetReconnect.addEventListener('click', resetReconnectLogs);
 dom.copyLog.addEventListener('click', copyEventLog);
+dom.hostLabel.addEventListener('change', () => {
+    const label = currentHostLabel();
+    try {
+        if (label === 'Host未設定') localStorage.removeItem(HOST_LABEL_STORAGE_KEY);
+        else localStorage.setItem(HOST_LABEL_STORAGE_KEY, label);
+    } catch {
+        // private mode等でlocalStorageが無効でも、この計測中の入力値は利用できる。
+    }
+    logEvent(null, `Hostラベル設定: ${label}`, 'success');
+    renderFifoLoadContext();
+    updateControls();
+});
 dom.resetAttitude.addEventListener('click', () => {
     if (typeof AttitudeViz !== 'undefined') AttitudeViz.reset();
     logEvent(null, '3D姿勢の基準を現在向きへリセット', 'success');
@@ -2137,6 +2262,12 @@ dom.downloadJson.addEventListener('click', () => {
     const payload = {
         exportedAt: new Date().toISOString(),
         page: 'toolkit-mode-validation',
+        host: {
+            label: currentHostLabel(),
+            platform: navigator.platform || 'unknown',
+            hardwareConcurrency: navigator.hardwareConcurrency || null,
+            userAgent: navigator.userAgent,
+        },
         results: runHistory.map(serializableResult),
         events: eventEntries.slice(),
     };
@@ -2166,6 +2297,12 @@ if (!window.isSecureContext || !navigator.bluetooth) {
     dom.secureContext.textContent = 'Secure context / Web Bluetooth OK';
 }
 
+try {
+    dom.hostLabel.value = localStorage.getItem(HOST_LABEL_STORAGE_KEY) || '';
+} catch {
+    dom.hostLabel.value = '';
+}
+
 for (const id of DEVICE_IDS) installDevice(id);
 renderExpectations();
 renderAttitude();
@@ -2178,7 +2315,7 @@ updateControls();
 logEvent(null, '検証ダッシュボードを初期化', 'success');
 logEvent(
     null,
-    `Environment: secureContext=${window.isSecureContext} webBluetooth=${Boolean(navigator.bluetooth)} preset=${PRESETS[selectedPresetId].label}`,
+    `Environment: host=${currentHostLabel()} platform=${navigator.platform || 'unknown'} secureContext=${window.isSecureContext} webBluetooth=${Boolean(navigator.bluetooth)} preset=${PRESETS[selectedPresetId].label}`,
     window.isSecureContext && navigator.bluetooth ? 'success' : 'error'
 );
 logEvent(null, '操作手順: ①接続 → ②プリセット選択 → ③計測開始。接続直後はライブプレビューのみ表示', 'success');

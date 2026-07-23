@@ -127,6 +127,11 @@
       </div>
 
       <div class="control-bar mt-4">
+        <label class="control-field host-field">
+          <span>Hostラベル</span>
+          <input id="host_label_input" class="form-control form-control-sm" type="text"
+            maxlength="40" placeholder="例: Mac A / Mac B">
+        </label>
         <label class="control-field">
           <span>計測時間</span>
           <select id="duration_select" class="form-select form-select-sm">
@@ -151,6 +156,25 @@
       <div class="measurement-tip mt-3">
         <i class="bi bi-info-circle"></i>
         <span>接続直後はRaw/Stepのライブ受信だけを表示します。Hz・欠損・FIFO・履歴の正式な集計は、上の緑色の「計測開始」を押した区間が対象です。</span>
+      </div>
+
+      <div id="fifo_load_context" class="fifo-load-context mt-3" hidden>
+        <div class="fifo-load-heading">
+          <div>
+            <strong>FIFOは単体baselineと2台同時負荷を分けて判定</strong>
+            <p id="fifo_load_message" class="mb-0"></p>
+          </div>
+          <span id="fifo_profile_badge" class="metric-chip warn">接続待ち</span>
+        </div>
+        <div class="fifo-baseline-status">
+          <span id="fifo_baseline_0" class="metric-chip neutral">INSOLE 01 単体: 未計測</span>
+          <span id="fifo_baseline_1" class="metric-chip neutral">INSOLE 02 単体: 未計測</span>
+          <span id="fifo_dual_status" class="metric-chip neutral">2台同時: 未計測</span>
+        </div>
+        <small>
+          推奨順序: ①INSOLE 01だけ接続して計測 → ②INSOLE 02だけ接続して計測 →
+          ③両方を接続してMac/Web Bluetooth負荷試験。2台同時だけの欠損はToolkit単体不具合と直結させません。
+        </small>
       </div>
 
       <div class="expectation-strip mt-3">
@@ -474,13 +498,13 @@
         <table class="table history-table align-middle">
           <thead>
             <tr>
-              <th>Time</th><th>Preset</th><th>Device</th><th>Result</th>
+              <th>Time</th><th>Host</th><th>Preset</th><th>構成</th><th>Device</th><th>Result</th>
               <th>Sample Hz</th><th>Packet Hz</th><th>P95 gap</th><th>Age</th>
               <th>Serial</th><th>FIFO</th><th>Step</th><th>Reconnect</th>
             </tr>
           </thead>
           <tbody id="history_body">
-            <tr><td colspan="12" class="empty-row">計測完了後に設定別の結果が並びます</td></tr>
+            <tr><td colspan="14" class="empty-row">計測完了後に設定別の結果が並びます</td></tr>
           </tbody>
         </table>
       </div>

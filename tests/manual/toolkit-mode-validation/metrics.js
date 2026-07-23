@@ -235,6 +235,35 @@
         };
     }
 
+    /**
+     * FIFOはホスト側の同時BLE要求数で結果が変わるため、単体baselineと2台負荷試験を分ける。
+     */
+    function classifyRunProfile(preset, activeDeviceCount) {
+        const count = Math.max(0, Number(activeDeviceCount) || 0);
+        if (!preset || preset.acquisition !== 'fifo') {
+            return {
+                id: 'standard',
+                label: `${count}台 通常計測`,
+                fifo: false,
+                dualHostStress: false,
+            };
+        }
+        if (count <= 1) {
+            return {
+                id: 'fifo-single-baseline',
+                label: 'FIFO単体 baseline',
+                fifo: true,
+                dualHostStress: false,
+            };
+        }
+        return {
+            id: 'fifo-dual-host-stress',
+            label: `FIFO ${count}台同時 Host負荷試験`,
+            fifo: true,
+            dualHostStress: true,
+        };
+    }
+
     function evaluateDeviceRun(stats, preset) {
         const checks = [];
         const add = (level, label, detail) => checks.push({ level, label, detail });
@@ -304,6 +333,23 @@
                             : stats.fifoDrainError || 'onStopped未確認'
                     );
                 }
+                const profile = stats.runProfile || classifyRunProfile(preset, stats.activeDeviceCount || 1);
+                const hasLoss = serial.missing > 0 || (stats.fifoDropped || 0) > 0;
+                if (profile.dualHostStress) {
+                    add(
+                        hasLoss ? 'warn' : 'pass',
+                        '2台同時FIFO条件',
+                        hasLoss
+                            ? 'このMac/Web Bluetoothの既知負荷条件。単体baselineと比較'
+                            : '同時負荷でも最終欠損なし'
+                    );
+                } else {
+                    add(
+                        hasLoss ? 'warn' : 'pass',
+                        '単体FIFO baseline',
+                        hasLoss ? '単体でも欠損あり。デバイス/リンクを確認' : '最終欠損なし'
+                    );
+                }
             }
         } else {
             add(
@@ -347,6 +393,7 @@
         deviceTimestampToEpoch,
         sampleHasField,
         safeOutputBridge,
+        classifyRunProfile,
         evaluateDeviceRun,
     };
 

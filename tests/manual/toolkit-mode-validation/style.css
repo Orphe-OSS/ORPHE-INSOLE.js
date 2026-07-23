@@ -323,6 +323,10 @@ body {
   width: 7rem;
 }
 
+.control-field.host-field .form-control {
+  width: 10rem;
+}
+
 .run-message {
   margin-left: auto;
   color: var(--muted);
@@ -344,6 +348,36 @@ body {
 .measurement-tip i {
   flex: 0 0 auto;
   color: var(--green);
+}
+
+.fifo-load-context {
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 209, 102, 0.38);
+  border-radius: 12px;
+  color: #f0dfae;
+  background: rgba(255, 209, 102, 0.07);
+}
+
+.fifo-load-heading,
+.fifo-baseline-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.fifo-load-heading {
+  justify-content: space-between;
+}
+
+.fifo-load-heading p,
+.fifo-load-context small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.fifo-baseline-status {
+  margin: 0.75rem 0;
 }
 
 .expectation-strip {

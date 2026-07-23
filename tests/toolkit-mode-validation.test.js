@@ -99,6 +99,23 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
 }
 
 {
+    assert.deepEqual(metrics.classifyRunProfile(metrics.PRESET_EXPECTATIONS.rt4, 2), {
+        id: 'standard',
+        label: '2台 通常計測',
+        fifo: false,
+        dualHostStress: false,
+    });
+    assert.equal(
+        metrics.classifyRunProfile(metrics.PRESET_EXPECTATIONS.fifo, 1).id,
+        'fifo-single-baseline'
+    );
+    assert.equal(
+        metrics.classifyRunProfile(metrics.PRESET_EXPECTATIONS.fifo, 2).id,
+        'fifo-dual-host-stress'
+    );
+}
+
+{
     const evaluation = metrics.evaluateDeviceRun({
         durationSec: 10,
         rawPackets: 500,
@@ -165,7 +182,12 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.match(html, /id="step_history_body"/);
     assert.match(html, /id="step_packet_summary_0"/);
     assert.match(html, /id="step_packet_summary_1"/);
+    assert.match(html, /id="fifo_load_context"/);
+    assert.match(html, /id="host_label_input"/);
+    assert.match(html, /id="fifo_baseline_0"/);
+    assert.match(html, /id="fifo_dual_status"/);
     assert.match(app, /function appendFifoHistory/);
+    assert.match(app, /function renderFifoLoadContext/);
     assert.match(app, /function renderFifoHistory/);
     assert.match(app, /function recordStepHistory/);
     assert.match(app, /function recordStepPacket/);
