@@ -161,6 +161,13 @@ const metrics = require('./manual/toolkit-mode-validation/metrics.js');
     assert.doesNotMatch(app, /sensorValues:\s*false,\s*stepAnalysis:\s*false/);
     assert.match(html, /id="validation_canvas3d"/);
     assert.match(html, /attitude-viz\.js/);
+    assert.match(html, /id="fifo_history_chart"/);
+    assert.match(html, /id="step_history_body"/);
+    assert.match(app, /function appendFifoHistory/);
+    assert.match(app, /function renderFifoHistory/);
+    assert.match(app, /function recordStepHistory/);
+    assert.match(app, /function renderStepHistory/);
+    assert.match(app, /REALTIME_HEADER_BY_MODE/);
 }
 
 console.log('toolkit-mode-validation tests: ok');

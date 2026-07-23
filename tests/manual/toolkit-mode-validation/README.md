@@ -26,6 +26,12 @@ Realtime/FIFOの通信品質は、各実機についてpacket/sample周期、到
 FIFO lag/dropped/drainを分けて確認します。Step Analysisはnotify packetと完成step rowを分けて表示します。
 切断・再接続は、計測中に実機を通信圏外へ移動して観測します。
 
+FIFO callbackは複数sampleをまとめて返すため、直近12秒のライブグラフとは別に、
+受信した全sampleをデバイスタイムスタンプ順へ並べ直した「FIFO回収データ」グラフを表示します。
+このグラフは停止後のdrain分も含み、Realtime/Step-onlyへ切り替えても明示的にクリアするまで残ります。
+Step Analysisは完成した歩を新しい順に最大500行表示し、stride、時間、速度、接地、
+pronationなどを画面上で比較できます。全行の保存にはStep CSVを使います。
+
 ## 実機確認の流れ
 
 1. INSOLE 01 / 02を接続し、L/Rバッジとデバイス名が別々であることを確認する。
@@ -37,8 +43,10 @@ FIFO lag/dropped/drainを分けて確認します。Step Analysisはnotify packe
    Format 1 / 4ではQuaternion値と3D靴モデルが動き、Format 3では「Quaternionなし」になることも確認する。
 4. FIFO Rawを30秒以上計測して停止する。停止時に自動でRealtimeへ戻るまで待ち、
    `FIFO stop / drain`、`dropped`、`drain recovered`、serial continuityを確認する。
+   「FIFO回収データ」で全区間の波形、sample/serial数、回収時間、batch数も左右別に確認する。
 5. Step Analysis onlyを選び、数歩動かしてStep notifyと完成step rowを確認する。
    settle後にSENSOR_VALUESが届いた場合は`Raw停止`が警告になる。
+   「Step Analysis受信履歴」でstride、stance/swing、foot strike、pronation等が歩ごとに追加されることを確認する。
 6. FIFO + Stepを選び、Rawの連続性とStep notifyが同じ計測区間で継続することを確認する。
 7. 各プリセットの計測中に片方ずつ通信圏外へ移動し、戻した後の再接続成功、
    Toolkit設定復元、最初の期待データまでの時間を確認する。

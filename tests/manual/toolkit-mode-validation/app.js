@@ -9,6 +9,9 @@ const CHART_WINDOW_MS = 12000;
 const MAX_EVENT_ROWS = 240;
 const MAX_EVENT_ENTRIES = 5000;
 const RUN_PROGRESS_LOG_INTERVAL_MS = 5000;
+const MAX_FIFO_PLOT_SAMPLES = 60000;
+const MAX_STEP_HISTORY_ROWS = 500;
+const REALTIME_HEADER_BY_MODE = { 1: 50, 3: 55, 4: 56 };
 
 let selectedPresetId = 'rt4';
 let runState = 'idle'; // idle | switching | running | draining
@@ -23,6 +26,9 @@ const eventEntries = [];
 const previewDevices = DEVICE_IDS.map((id) => createPreviewDevice(id));
 const lastSessionStateSignatures = [null, null];
 const pendingConnectPresetApply = [false, false];
+const fifoPlotDevices = DEVICE_IDS.map((id) => createFifoPlotDevice(id));
+let stepHistory = [];
+let stepHistoryDirty = true;
 
 const reconnectStats = DEVICE_IDS.map(() => createReconnectStats());
 
@@ -47,6 +53,11 @@ const dom = {
     copyLog: document.getElementById('copy_event_log_button'),
     resetAttitude: document.getElementById('reset_attitude_button'),
     attitudeMode: document.getElementById('attitude_mode_badge'),
+    fifoHistoryChart: document.getElementById('fifo_history_chart'),
+    clearFifoHistory: document.getElementById('clear_fifo_history_button'),
+    stepHistoryBody: document.getElementById('step_history_body'),
+    stepHistoryCount: document.getElementById('step_history_count'),
+    clearStepHistory: document.getElementById('clear_step_history_button'),
     resetReconnect: document.getElementById('reset_reconnect_button'),
     downloadJson: document.getElementById('download_json_button'),
     downloadFifo: document.getElementById('download_fifo_button'),
@@ -89,6 +100,24 @@ function createPreviewDevice(id) {
         fifoLagMax: 0,
         fifoDropped: 0,
         unexpectedRealtimePackets: 0,
+        staleHeaderPackets: 0,
+    };
+}
+
+function createFifoPlotDevice(id) {
+    return {
+        id,
+        samples: [],
+        orderedSamples: [],
+        serials: new Set(),
+        batches: 0,
+        truncated: 0,
+        lag: 0,
+        lagMax: 0,
+        dropped: 0,
+        drainRecovered: 0,
+        phase: 'idle',
+        dirty: true,
     };
 }
 
@@ -322,6 +351,19 @@ function resetLivePreview(reason) {
     if (reason) logEvent(null, `ライブプレビューをリセット: ${reason}`);
 }
 
+function resetFifoHistory(reason = '') {
+    for (const id of DEVICE_IDS) fifoPlotDevices[id] = createFifoPlotDevice(id);
+    renderFifoHistory();
+    if (reason) logEvent(null, `FIFO再構成グラフをリセット: ${reason}`);
+}
+
+function resetStepHistory(reason = '') {
+    stepHistory = [];
+    stepHistoryDirty = true;
+    renderStepHistory();
+    if (reason) logEvent(null, `Step Analysis履歴をリセット: ${reason}`);
+}
+
 async function selectPreset(id) {
     if (!PRESETS[id] || runState !== 'idle') return;
     selectedPresetId = id;
@@ -331,6 +373,7 @@ async function selectPreset(id) {
     dom.selectedPreset.textContent = PRESETS[id].label;
     renderExpectations();
     logEvent(null, `プリセット選択: ${PRESETS[id].label}`, 'success');
+    if (PRESETS[id].acquisition === 'fifo') resetFifoHistory(`${PRESETS[id].label}の新規取得`);
     resetLivePreview(`${PRESETS[id].label}へ切替`);
 
     const ids = connectedIds();
@@ -441,6 +484,10 @@ async function startRun() {
         drainStartedAt: null,
         devices: Object.fromEntries(activeIds.map((id) => [id, createRunDevice(id)])),
     };
+    if (preset.acquisition === 'fifo') {
+        resetFifoHistory(`${preset.label}の正式計測区間`);
+        for (const id of activeIds) fifoPlotDevices[id].phase = 'running';
+    }
     signalPoints.length = 0;
     timingPoints.length = 0;
     for (const id of activeIds) {
@@ -462,6 +509,7 @@ async function finishRun(reason = 'manual') {
             setRunState('draining', 'FIFOを停止し、未回収serialをdrainしています…');
             run.drainStartedAt = performance.now();
             for (const id of run.activeIds) {
+                fifoPlotDevices[id].phase = 'draining';
                 run.devices[id].fifoStopped = false;
                 run.devices[id].fifoStopReason = null;
                 run.devices[id].fifoDrainError = null;
@@ -603,6 +651,44 @@ function recordSample(device, sample, source, phase) {
     if (inWindow || inDrain || inPreview) noteReconnectData(device.id);
 }
 
+function appendFifoHistory(id, samples) {
+    if (!Array.isArray(samples) || samples.length === 0) return;
+    const series = fifoPlotDevices[id];
+    series.batches += 1;
+    if (series.phase === 'idle') series.phase = currentRun ? runState : 'preview';
+    for (const sample of samples) {
+        const acc = sample.converted_acc || sample.acc || null;
+        const pressureValues = sample.press?.values || null;
+        const deviceEpoch = Metrics.deviceTimestampToEpoch(sample.t ?? sample.timestamp);
+        series.samples.push({
+            time: deviceEpoch ?? Number(sample.t ?? sample.timestamp ?? series.samples.length),
+            serial: Number(sample.serial_number) & 0xffff,
+            packet: Number(sample.packet_number || 0),
+            accNorm: acc ? Math.hypot(acc.x, acc.y, acc.z) : null,
+            pressureTotal: pressureValues
+                ? pressureValues.reduce((sum, value) => sum + Number(value || 0), 0)
+                : null,
+        });
+        series.serials.add(Number(sample.serial_number) & 0xffff);
+    }
+    if (series.samples.length > MAX_FIFO_PLOT_SAMPLES) {
+        const overflow = series.samples.length - MAX_FIFO_PLOT_SAMPLES;
+        series.samples.splice(0, overflow);
+        series.truncated += overflow;
+    }
+    series.dirty = true;
+}
+
+function recordStepHistory(id, row) {
+    stepHistory.unshift({
+        ...row,
+        receivedAt: new Date().toISOString(),
+        id,
+    });
+    if (stepHistory.length > MAX_STEP_HISTORY_ROWS) stepHistory.length = MAX_STEP_HISTORY_ROWS;
+    stepHistoryDirty = true;
+}
+
 function handleRealtimePacket(id, data, uuid) {
     if (uuid !== 'SENSOR_VALUES') return;
     if (![50, 55, 56].includes(data.getUint8(0))) return;
@@ -614,8 +700,8 @@ function handleRealtimePacket(id, data, uuid) {
     if (!currentRun) {
         const preview = previewDevices[id];
         const state = sessions[id]?.snapshot();
+        if (state?.transitioning) return;
         const expected = state?.connected
-            && !state.transitioning
             && state.sensorDataMode === 'realtime'
             && state.outputs.sensorValues;
         if (!expected) {
@@ -624,6 +710,18 @@ function handleRealtimePacket(id, data, uuid) {
                 logEvent(
                     id,
                     `選択中モードではRealtime Rawを表示対象外にしました: ${formatSessionState(state)}`,
+                    'warn'
+                );
+            }
+            return;
+        }
+        const expectedHeader = REALTIME_HEADER_BY_MODE[state.streamingMode];
+        if (parsed.header !== expectedHeader) {
+            preview.staleHeaderPackets += 1;
+            if (preview.staleHeaderPackets === 1) {
+                logEvent(
+                    id,
+                    `Realtime format反映待ち: expected header=${expectedHeader}, received header=${parsed.header}（旧formatはグラフ対象外）`,
                     'warn'
                 );
             }
@@ -679,6 +777,7 @@ function handleFifoSamples(id, samples) {
             && state.sensorDataMode === 'fifo'
             && state.outputs.sensorValues;
         if (!expected) return;
+        appendFifoHistory(id, samples);
         notePreviewBatchArrival(preview, performance.now());
         const firstBatch = preview.rawPackets === 0;
         const serials = new Set(samples.map((sample) => sample.serial_number));
@@ -698,6 +797,7 @@ function handleFifoSamples(id, samples) {
     if (runState !== 'running' && runState !== 'draining') return;
     const device = runDeviceFor(id);
     if (!device) return;
+    appendFifoHistory(id, samples);
     const now = performance.now();
     noteBatchArrival(device, now);
     const serials = new Set();
@@ -724,10 +824,15 @@ function handleFifoSamples(id, samples) {
 }
 
 function handleFifoProgress(id, info) {
+    const plot = fifoPlotDevices[id];
+    plot.lag = Number(info.lag || 0);
+    plot.lagMax = Math.max(plot.lagMax, plot.lag);
+    if (Number.isFinite(Number(info.dropped))) plot.dropped = Number(info.dropped);
+    if (info.draining) plot.phase = 'draining';
     const device = runDeviceFor(id);
     if (!device && !currentRun) {
         const preview = previewDevices[id];
-        preview.fifoLag = Number(info.lag || 0);
+        preview.fifoLag = plot.lag;
         preview.fifoLagMax = Math.max(preview.fifoLagMax, preview.fifoLag);
         if (Number.isFinite(Number(info.dropped))) preview.fifoDropped = Number(info.dropped);
         return;
@@ -743,6 +848,7 @@ function handleFifoProgress(id, info) {
 }
 
 function handleFifoDataLoss(id, info) {
+    fifoPlotDevices[id].dropped = Number(info.cumulative ?? info.dropped ?? 0);
     const device = runDeviceFor(id);
     if (device) {
         device.fifoCurrentDropped = Number(info.cumulative ?? info.dropped ?? 0);
@@ -754,6 +860,10 @@ function handleFifoDataLoss(id, info) {
 }
 
 function handleFifoStopped(id, info) {
+    const plot = fifoPlotDevices[id];
+    plot.dropped = Number(info.dropped || 0);
+    plot.drainRecovered += Number(info.drainRecovered || 0);
+    plot.phase = 'complete';
     const device = runDeviceFor(id);
     if (device) {
         device.fifoCurrentDropped = Number(info.dropped || 0);
@@ -802,6 +912,7 @@ function handleStepRow(id, row) {
         const preview = previewDevices[id];
         const state = sessions[id]?.snapshot();
         if (!state?.outputs.stepAnalysis || !state.gaitActive) return;
+        recordStepHistory(id, row);
         preview.completedSteps += 1;
         preview.latestStep = row;
         signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
@@ -811,6 +922,7 @@ function handleStepRow(id, row) {
     if (runState !== 'running' || !currentRun.preset.step) return;
     const device = runDeviceFor(id);
     if (!device) return;
+    recordStepHistory(id, row);
     device.completedSteps += 1;
     device.latestStep = row;
     signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
@@ -1185,6 +1297,243 @@ function prepareCanvas(canvas) {
     return { context, width, height };
 }
 
+function orderedFifoSamples(series) {
+    if (series.dirty) {
+        series.orderedSamples = series.samples.slice().sort((a, b) => (
+            a.time - b.time
+            || a.serial - b.serial
+            || a.packet - b.packet
+        ));
+        series.dirty = false;
+    }
+    return series.orderedSamples;
+}
+
+function fifoPhaseLabel(phase) {
+    return {
+        idle: '未取得',
+        preview: 'プレビュー収集中',
+        running: '正式計測中',
+        draining: 'drain中',
+        complete: '回収完了',
+    }[phase] || phase;
+}
+
+function fifoPhaseLevel(phase) {
+    if (phase === 'complete') return 'pass';
+    if (phase === 'running' || phase === 'preview') return 'warn';
+    if (phase === 'draining') return 'warn';
+    return 'neutral';
+}
+
+function drawFifoTimelineLine(context, points, options) {
+    const {
+        key,
+        max,
+        color,
+        minTime,
+        duration,
+        width,
+        laneTop,
+        laneHeight,
+    } = options;
+    if (!Number.isFinite(max) || max <= 0) return;
+    const maxDrawPoints = Math.max(1, Math.floor(width * 2));
+    const stride = Math.max(1, Math.ceil(points.length / maxDrawPoints));
+    const plotTop = laneTop + 28;
+    const plotHeight = Math.max(10, laneHeight - 42);
+    let started = false;
+    context.strokeStyle = color;
+    context.lineWidth = 1.35;
+    context.beginPath();
+    for (let index = 0; index < points.length; index += stride) {
+        const point = points[index];
+        const value = point[key];
+        if (!Number.isFinite(point.time) || !Number.isFinite(value)) continue;
+        const x = ((point.time - minTime) / duration) * width;
+        const y = plotTop + plotHeight - (Math.max(0, value) / max) * plotHeight;
+        if (!started) {
+            context.moveTo(x, y);
+            started = true;
+        } else {
+            context.lineTo(x, y);
+        }
+    }
+    const finalPoint = points[points.length - 1];
+    if (
+        finalPoint
+        && Number.isFinite(finalPoint.time)
+        && Number.isFinite(finalPoint[key])
+        && (points.length - 1) % stride !== 0
+    ) {
+        const x = ((finalPoint.time - minTime) / duration) * width;
+        const y = plotTop + plotHeight - (Math.max(0, finalPoint[key]) / max) * plotHeight;
+        if (!started) context.moveTo(x, y);
+        else context.lineTo(x, y);
+        started = true;
+    }
+    if (started) context.stroke();
+}
+
+function renderFifoHistory() {
+    const { context, width, height } = prepareCanvas(dom.fifoHistoryChart);
+    const orderedByDevice = fifoPlotDevices.map(orderedFifoSamples);
+    let timeCount = 0;
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    for (const samples of orderedByDevice) {
+        for (const sample of samples) {
+            if (!Number.isFinite(sample.time)) continue;
+            timeCount += 1;
+            minTime = Math.min(minTime, sample.time);
+            maxTime = Math.max(maxTime, sample.time);
+        }
+    }
+    if (timeCount === 0) {
+        minTime = 0;
+        maxTime = 0;
+    }
+    const duration = Math.max(1, maxTime - minTime);
+    const laneHeight = height / DEVICE_IDS.length;
+
+    context.strokeStyle = 'rgba(38, 53, 65, 0.75)';
+    context.lineWidth = 1;
+    for (let division = 0; division <= 6; division += 1) {
+        const x = division / 6 * width;
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, height);
+        context.stroke();
+    }
+    context.beginPath();
+    context.moveTo(0, laneHeight);
+    context.lineTo(width, laneHeight);
+    context.stroke();
+
+    for (const id of DEVICE_IDS) {
+        const series = fifoPlotDevices[id];
+        const points = orderedByDevice[id];
+        const status = document.getElementById(`fifo_history_status_${id}`);
+        const summary = document.getElementById(`fifo_history_summary_${id}`);
+        status.className = `metric-chip ${fifoPhaseLevel(series.phase)}`;
+        status.textContent = fifoPhaseLabel(series.phase);
+
+        const first = points[0];
+        const last = points[points.length - 1];
+        const deviceDurationMs = first && last ? Math.max(0, last.time - first.time) : 0;
+        const storedSamples = series.samples.length;
+        const totalSamples = storedSamples + series.truncated;
+        const truncation = series.truncated > 0 ? ` / 表示上限超過 ${series.truncated}` : '';
+        summary.textContent = points.length
+            ? `${totalSamples.toLocaleString()} samples / ${series.serials.size.toLocaleString()} serials / ${(deviceDurationMs / 1000).toFixed(2)} s / ${series.batches} batches / lag max ${series.lagMax} / dropped ${series.dropped} / drain ${series.drainRecovered}${truncation}`
+            : 'FIFOデータ未取得';
+
+        const laneTop = id * laneHeight;
+        context.fillStyle = '#8fa2b2';
+        context.font = '11px sans-serif';
+        context.fillText(deviceLabel(id), 8, laneTop + 16);
+        if (points.length === 0) {
+            context.fillStyle = 'rgba(143, 162, 178, 0.7)';
+            context.font = '12px sans-serif';
+            context.fillText('FIFOデータ未取得', 8, laneTop + laneHeight / 2);
+            continue;
+        }
+
+        let maxAcc = 1;
+        let maxPress = 1;
+        for (const point of points) {
+            if (Number.isFinite(point.accNorm)) maxAcc = Math.max(maxAcc, point.accNorm);
+            if (Number.isFinite(point.pressureTotal)) maxPress = Math.max(maxPress, point.pressureTotal);
+        }
+        context.fillStyle = '#8fa2b2';
+        context.font = '10px sans-serif';
+        context.fillText(
+            `acc max ${formatNumber(maxAcc, 2)} G / pressure max ${Math.round(maxPress).toLocaleString()}`,
+            Math.max(8, width - 245),
+            laneTop + 16
+        );
+        drawFifoTimelineLine(context, points, {
+            key: 'accNorm',
+            max: maxAcc,
+            color: '#3dd7f0',
+            minTime,
+            duration,
+            width,
+            laneTop,
+            laneHeight,
+        });
+        drawFifoTimelineLine(context, points, {
+            key: 'pressureTotal',
+            max: maxPress,
+            color: '#ffad42',
+            minTime,
+            duration,
+            width,
+            laneTop,
+            laneHeight,
+        });
+    }
+
+    context.fillStyle = '#8fa2b2';
+    context.font = '10px sans-serif';
+    if (timeCount > 0) {
+        context.fillText('0 s', 8, height - 5);
+        const endLabel = `${(duration / 1000).toFixed(2)} s`;
+        context.fillText(endLabel, Math.max(8, width - context.measureText(endLabel).width - 8), height - 5);
+    }
+}
+
+function renderStepHistory() {
+    if (!stepHistoryDirty) return;
+    dom.stepHistoryBody.replaceChildren();
+    dom.stepHistoryCount.textContent = `${stepHistory.length} rows`;
+    if (stepHistory.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 18;
+        cell.className = 'empty-row';
+        cell.textContent = 'Step Analysisの3種パケットが揃うと、完成した1歩がここに追加されます';
+        row.appendChild(cell);
+        dom.stepHistoryBody.appendChild(row);
+        stepHistoryDirty = false;
+        return;
+    }
+
+    for (const step of stepHistory) {
+        const row = document.createElement('tr');
+        const values = [
+            new Date(step.receivedAt).toLocaleTimeString('ja-JP', { hour12: false }),
+            String(step.id + 1).padStart(2, '0'),
+            step.step_number ?? '—',
+            step.gait_type ?? '—',
+            step.stride_direction ?? '—',
+            Number.isFinite(step.stance_phase_s) ? `${formatNumber(step.stance_phase_s, 3)} s` : '—',
+            Number.isFinite(step.swing_phase_s) ? `${formatNumber(step.swing_phase_s, 3)} s` : '—',
+            Number.isFinite(step.duration_s) ? `${formatNumber(step.duration_s, 3)} s` : '—',
+            Number.isFinite(step.cadence_hz) ? `${formatNumber(step.cadence_hz, 2)} Hz` : '—',
+            Number.isFinite(step.stride_norm_m) ? `${formatNumber(step.stride_norm_m, 3)} m` : '—',
+            [step.stride_x_m, step.stride_y_m, step.stride_z_m]
+                .every(Number.isFinite)
+                ? `${formatNumber(step.stride_x_m, 3)} / ${formatNumber(step.stride_y_m, 3)} / ${formatNumber(step.stride_z_m, 3)}`
+                : '—',
+            Number.isFinite(step.distance_m) ? `${formatNumber(step.distance_m, 3)} m` : '—',
+            Number.isFinite(step.speed_mps) ? `${formatNumber(step.speed_mps, 3)} m/s` : '—',
+            Number.isFinite(step.foot_angle_deg) ? `${formatNumber(step.foot_angle_deg, 1)}°` : '—',
+            `${step.foot_strike ?? '—'} / ${Number.isFinite(step.strike_angle_deg) ? `${formatNumber(step.strike_angle_deg, 1)}°` : '—'}`,
+            `${Number.isFinite(step.pronation_deg) ? `${formatNumber(step.pronation_deg, 1)}°` : '—'} / ${step.pronation_type ?? '—'}`,
+            formatNumber(step.landing_force, 3),
+            formatNumber(step.calorie, 4),
+        ];
+        values.forEach((value, index) => {
+            const cell = document.createElement(index === 1 ? 'th' : 'td');
+            cell.textContent = String(value);
+            row.appendChild(cell);
+        });
+        dom.stepHistoryBody.appendChild(row);
+    }
+    stepHistoryDirty = false;
+}
+
 function renderSerialMap(id, tracker, summary) {
     const canvas = document.getElementById(`serial_map_${id}`);
     const { context, width, height } = prepareCanvas(canvas);
@@ -1540,6 +1889,8 @@ function clearDisplay() {
     }
     renderHistory();
     renderDownloads();
+    resetFifoHistory();
+    resetStepHistory();
     if (typeof AttitudeViz !== 'undefined') AttitudeViz.clearAll();
     renderAttitude();
     logEvent(null, '計測表示と履歴をクリア');
@@ -1690,6 +2041,8 @@ document.querySelectorAll('.preset-card').forEach((button) => {
 dom.start.addEventListener('click', startRun);
 dom.stop.addEventListener('click', () => finishRun('manual'));
 dom.clear.addEventListener('click', clearDisplay);
+dom.clearFifoHistory.addEventListener('click', () => resetFifoHistory('手動クリア'));
+dom.clearStepHistory.addEventListener('click', () => resetStepHistory('手動クリア'));
 dom.resetReconnect.addEventListener('click', resetReconnectLogs);
 dom.copyLog.addEventListener('click', copyEventLog);
 dom.resetAttitude.addEventListener('click', () => {
@@ -1732,6 +2085,8 @@ if (!window.isSecureContext || !navigator.bluetooth) {
 for (const id of DEVICE_IDS) installDevice(id);
 renderExpectations();
 renderAttitude();
+renderFifoHistory();
+renderStepHistory();
 renderHistory();
 renderDownloads();
 updateControls();
@@ -1768,6 +2123,8 @@ function animationLoop(now) {
             renderReconnect(id);
         }
         renderAttitude();
+        renderFifoHistory();
+        renderStepHistory();
         const newest = DEVICE_IDS
             .flatMap((id) => [
                 liveResult(id)?.latestRaw?.arrivedAt,

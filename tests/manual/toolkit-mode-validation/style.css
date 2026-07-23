@@ -437,6 +437,40 @@ body {
   height: 260px;
 }
 
+#fifo_history_chart {
+  height: 360px;
+}
+
+.fifo-history-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.fifo-history-device {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(5, 9, 13, 0.58);
+}
+
+.fifo-history-device > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.fifo-history-device p {
+  margin: 0.55rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .attitude-heading {
   display: flex;
   justify-content: space-between;
@@ -615,6 +649,31 @@ body {
   text-align: center;
 }
 
+.step-history-wrap {
+  max-height: 30rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.step-history-table {
+  margin-bottom: 0;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-history-table thead {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: #0d161e;
+}
+
+.step-history-table th,
+.step-history-table td {
+  padding: 0.55rem;
+}
+
 .event-log {
   max-height: 18rem;
   overflow: auto;
@@ -729,6 +788,14 @@ body {
 
   #timing_chart {
     height: 220px;
+  }
+
+  #fifo_history_chart {
+    height: 300px;
+  }
+
+  .fifo-history-summary {
+    grid-template-columns: 1fr;
   }
 }
 

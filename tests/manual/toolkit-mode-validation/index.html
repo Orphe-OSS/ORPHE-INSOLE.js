@@ -337,10 +337,76 @@
       </div>
     </section>
 
+    <section class="panel mb-4" aria-labelledby="fifo_history_heading">
+      <div class="panel-heading align-items-start">
+        <div>
+          <div class="section-number">06</div>
+          <h2 id="fifo_history_heading" class="h5 mb-1">FIFO回収データ（時系列再構成）</h2>
+          <p class="form-hint mb-0">
+            バーストで到着した全sampleをデバイスタイムスタンプ順に並べ直します。計測停止後のdrain分も加え、モードを切り替えてもクリアするまで残します。
+          </p>
+        </div>
+        <button id="clear_fifo_history_button" class="btn btn-outline-secondary btn-sm">FIFOグラフをクリア</button>
+      </div>
+      <div class="fifo-history-summary mb-3">
+        <article class="fifo-history-device">
+          <div><strong>INSOLE 01</strong><span id="fifo_history_status_0" class="metric-chip neutral">未取得</span></div>
+          <p id="fifo_history_summary_0">FIFOデータ未取得</p>
+        </article>
+        <article class="fifo-history-device">
+          <div><strong>INSOLE 02</strong><span id="fifo_history_status_1" class="metric-chip neutral">未取得</span></div>
+          <p id="fifo_history_summary_1">FIFOデータ未取得</p>
+        </article>
+      </div>
+      <div class="chart-heading">
+        <div>
+          <strong>回収区間全体</strong>
+          <span>左右を同一時間軸に揃え、各デバイス内でacc normとpressure totalを別々に正規化しています。</span>
+        </div>
+        <div class="legend-inline">
+          <span><i class="legend-line acc"></i>acc norm</span>
+          <span><i class="legend-line press"></i>pressure total</span>
+        </div>
+      </div>
+      <canvas id="fifo_history_chart" class="chart-canvas" height="360" aria-label="FIFO回収データ全区間チャート"></canvas>
+    </section>
+
+    <section class="panel mb-4" aria-labelledby="step_history_heading">
+      <div class="panel-heading align-items-start">
+        <div>
+          <div class="section-number">07</div>
+          <h2 id="step_history_heading" class="h5 mb-1">Step Analysis受信履歴</h2>
+          <p class="form-hint mb-0">
+            overview・stride・pronationが揃った完成stepを新しい順に最大500行表示します。欠損値は「—」です。
+          </p>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span id="step_history_count" class="metric-chip neutral">0 rows</span>
+          <button id="clear_step_history_button" class="btn btn-outline-secondary btn-sm">Step一覧をクリア</button>
+        </div>
+      </div>
+      <div class="table-responsive step-history-wrap">
+        <table class="table history-table step-history-table align-middle">
+          <thead>
+            <tr>
+              <th>Received</th><th>Device</th><th>Step</th><th>Gait</th><th>Direction</th>
+              <th>Stance</th><th>Swing</th><th>Duration</th><th>Cadence</th>
+              <th>Stride norm</th><th>Stride X / Y / Z [m]</th><th>Distance</th><th>Speed</th>
+              <th>Foot angle</th><th>Foot strike / angle</th><th>Pronation</th>
+              <th>Landing force</th><th>Calorie</th>
+            </tr>
+          </thead>
+          <tbody id="step_history_body">
+            <tr><td colspan="18" class="empty-row">Step Analysisの3種パケットが揃うと、完成した1歩がここに追加されます</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel mb-4" aria-labelledby="reconnect_heading">
       <div class="panel-heading">
         <div>
-          <div class="section-number">06</div>
+          <div class="section-number">08</div>
           <h2 id="reconnect_heading" class="h5 mb-1">切断・再接続の観測</h2>
           <p class="form-hint mb-0">計測中に実機を通信圏外へ移動し、戻して自動再接続を確認します。</p>
         </div>
@@ -379,7 +445,7 @@
     <section class="panel mb-4" aria-labelledby="history_heading">
       <div class="panel-heading">
         <div>
-          <div class="section-number">07</div>
+          <div class="section-number">09</div>
           <h2 id="history_heading" class="h5 mb-0">設定別の計測履歴</h2>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -413,7 +479,7 @@
     <section class="panel mb-4" aria-labelledby="log_heading">
       <div class="panel-heading compact">
         <div>
-          <div class="section-number">08</div>
+          <div class="section-number">10</div>
           <h2 id="log_heading" class="h5 mb-0">イベントログ</h2>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2">
