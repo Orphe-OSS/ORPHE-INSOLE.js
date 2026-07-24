@@ -49,85 +49,86 @@ function freezeInsoleToolkitProfile(profile) {
 /**
  * 実機検証済みの計測プロファイル。
  * アプリは低レベル設定を順番に変更せず、applyProfile(id)で原子的に切り替える。
+ * Public labels and guidance use engineering-oriented English terminology.
  */
 var INSOLE_TOOLKIT_PROFILES = Object.freeze({
     'realtime-orientation': freezeInsoleToolkitProfile({
         id: 'realtime-orientation',
         label: 'Realtime Orientation',
-        shortLabel: '姿勢を高速表示',
+        shortLabel: 'Realtime orientation stream',
         streamingMode: 1,
         sensorDataMode: 'realtime',
         outputs: { sensorValues: true, stepAnalysis: false },
         transport: 'notify',
         sampleHz: 200,
         fields: { acc: true, gyro: true, press: false, quat: true, step: false },
-        recommendedFor: ['姿勢・回転の可視化', 'インタラクション'],
-        cautions: ['圧力は含まれません', 'RealtimeはBLE取りこぼしを再取得しません'],
+        recommendedFor: ['orientation visualization', 'low-latency interaction'],
+        cautions: ['press is not included', 'missed Realtime notifications cannot be retransmitted'],
     }),
     'realtime-pressure': freezeInsoleToolkitProfile({
         id: 'realtime-pressure',
         label: 'Realtime Pressure + IMU',
-        shortLabel: '圧力を高速表示',
+        shortLabel: 'Realtime pressure and IMU stream',
         streamingMode: 3,
         sensorDataMode: 'realtime',
         outputs: { sensorValues: true, stepAnalysis: false },
         transport: 'notify',
         sampleHz: 200,
         fields: { acc: true, gyro: true, press: true, quat: false, step: false },
-        recommendedFor: ['接地・リズム検出', '圧力の高速可視化'],
-        cautions: ['Quaternionは含まれません', 'RealtimeはBLE取りこぼしを再取得しません'],
+        recommendedFor: ['contact and rhythm detection', 'high-rate pressure visualization'],
+        cautions: ['quat is not included', 'missed Realtime notifications cannot be retransmitted'],
     }),
     'realtime-full': freezeInsoleToolkitProfile({
         id: 'realtime-full',
         label: 'Realtime Full Sensor',
-        shortLabel: 'まず試す',
+        shortLabel: 'Realtime full-sensor stream',
         streamingMode: 4,
         sensorDataMode: 'realtime',
         outputs: { sensorValues: true, stepAnalysis: false },
         transport: 'notify',
         sampleHz: 100,
         fields: { acc: true, gyro: true, press: true, quat: true, step: false },
-        recommendedFor: ['初めての可視化', '圧力と姿勢の同時利用'],
-        cautions: ['RealtimeはBLE取りこぼしを再取得しません'],
+        recommendedFor: ['full-sensor visualization', 'concurrent pressure and orientation'],
+        cautions: ['missed Realtime notifications cannot be retransmitted'],
     }),
     'realtime-full-step': freezeInsoleToolkitProfile({
         id: 'realtime-full-step',
         label: 'Realtime Full + Step Analysis',
-        shortLabel: 'RawとStepを同時利用',
+        shortLabel: 'Concurrent Realtime and STEP_ANALYSIS',
         streamingMode: 4,
         sensorDataMode: 'realtime',
         outputs: { sensorValues: true, stepAnalysis: true },
         transport: 'notify',
         sampleHz: 100,
         fields: { acc: true, gyro: true, press: true, quat: true, step: true },
-        recommendedFor: ['ライブ表示＋歩行イベント', '可視化アプリ'],
-        cautions: ['通知負荷が増えます', 'Realtime Rawはlosslessではありません'],
+        recommendedFor: ['live Raw visualization with gait events', 'interactive applications'],
+        cautions: ['two Notification streams increase BLE load', 'Realtime Raw continuity is not guaranteed'],
     }),
     'step-analysis': freezeInsoleToolkitProfile({
         id: 'step-analysis',
         label: 'Step Analysis',
-        shortLabel: '歩行指標だけ取得',
+        shortLabel: 'STEP_ANALYSIS Notification only',
         streamingMode: 4,
         sensorDataMode: 'realtime',
         outputs: { sensorValues: false, stepAnalysis: true },
         transport: 'notify',
         sampleHz: null,
         fields: { acc: false, gyro: false, press: false, quat: false, step: true },
-        recommendedFor: ['歩数・ストライド・接地パターン', '通信量をRawより抑えたいアプリ'],
-        cautions: ['FWが算出するStep Analysisです', 'SENSOR_VALUES Rawは停止します'],
+        recommendedFor: ['firmware-derived step, stride, and pronation events', 'applications that do not require Raw Sensor Values'],
+        cautions: ['values are derived by device firmware', 'SENSOR_VALUES Notification is disabled'],
     }),
     'fifo-recording': freezeInsoleToolkitProfile({
         id: 'fifo-recording',
-        label: 'FIFO Lossless Recording',
-        shortLabel: '欠損なく記録',
+        label: 'FIFO Buffered Recording',
+        shortLabel: 'Buffered Raw acquisition with continuity checks',
         streamingMode: 4,
         sensorDataMode: 'fifo',
         outputs: { sensorValues: true, stepAnalysis: false },
         transport: 'request-response',
         sampleHz: 200,
         fields: { acc: true, gyro: true, press: true, quat: false, step: false },
-        recommendedFor: ['研究・後解析用の保存', 'Rawデータの完全性を優先'],
-        cautions: ['到着はバースト状で遅延します', 'QuaternionとStep Analysisは併用できません'],
+        recommendedFor: ['Raw recording for offline analysis', 'acquisition with post-drain continuity validation'],
+        cautions: ['Host delivery is bursty and delayed', 'quat and STEP_ANALYSIS are unavailable'],
     }),
 });
 
@@ -1100,7 +1101,7 @@ function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) 
     input.setAttribute('role', 'switch');
     input.setAttribute('id', `switch_ble${insole_id}`);
     input.setAttribute('value', `${insole_id}`);
-    input.setAttribute('aria-label', `${title}を接続`);
+    input.setAttribute('aria-label', `Connect ${title}`);
     input.dataset.version = `${insoleToolkit_version_date}; ${orphe_js_version_date}`;
     input.addEventListener('change', function () {
         toggleInsoleModule(this, options);

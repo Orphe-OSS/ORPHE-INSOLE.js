@@ -8,7 +8,7 @@
         rt1: {
             id: 'rt1',
             profileId: 'realtime-orientation',
-            label: 'Realtime Format 1',
+            label: 'Realtime / streamingMode=1',
             acquisition: 'realtime',
             streamingMode: 1,
             raw: true,
@@ -19,7 +19,7 @@
         rt3: {
             id: 'rt3',
             profileId: 'realtime-pressure',
-            label: 'Realtime Format 3',
+            label: 'Realtime / streamingMode=3',
             acquisition: 'realtime',
             streamingMode: 3,
             raw: true,
@@ -30,7 +30,7 @@
         rt4: {
             id: 'rt4',
             profileId: 'realtime-full',
-            label: 'Realtime Format 4',
+            label: 'Realtime / streamingMode=4',
             acquisition: 'realtime',
             streamingMode: 4,
             raw: true,
@@ -41,7 +41,7 @@
         fifo: {
             id: 'fifo',
             profileId: 'fifo-recording',
-            label: 'FIFO Raw',
+            label: 'FIFO / buffered Raw',
             acquisition: 'fifo',
             streamingMode: 4,
             raw: true,
@@ -52,7 +52,7 @@
         step: {
             id: 'step',
             profileId: 'step-analysis',
-            label: 'Step Analysis only',
+            label: 'STEP_ANALYSIS only',
             acquisition: 'realtime',
             streamingMode: 4,
             raw: false,
@@ -63,7 +63,7 @@
         'rt4-step': {
             id: 'rt4-step',
             profileId: 'realtime-full-step',
-            label: 'Realtime Format 4 + Step Analysis',
+            label: 'Realtime / streamingMode=4 + STEP_ANALYSIS',
             acquisition: 'realtime',
             streamingMode: 4,
             raw: true,
@@ -186,13 +186,20 @@
         if (!values || values.length === 0) {
             return { count: 0, min: null, median: null, p95: null, max: null, mean: null };
         }
-        const sum = values.reduce((total, value) => total + value, 0);
+        let sum = 0;
+        let min = Infinity;
+        let max = -Infinity;
+        for (const value of values) {
+            sum += value;
+            if (value < min) min = value;
+            if (value > max) max = value;
+        }
         return {
             count: values.length,
-            min: Math.min(...values),
+            min,
             median: percentile(values, 0.5),
             p95: percentile(values, 0.95),
-            max: Math.max(...values),
+            max,
             mean: sum / values.length,
         };
     }
@@ -238,8 +245,9 @@
     }
 
     /**
-     * ToolkitはRaw/Stepの同時OFFを許可しないため、設定切替中だけ使う安全な中間出力。
-     * Rawを維持し、現在または切替先で必要なStepを先に購読してから最終出力へ移る。
+     * The Toolkit rejects a state where Raw and Step outputs are both disabled.
+     * Keep Raw active and subscribe to any required Step output before committing
+     * the final target state.
      */
     function safeOutputBridge(currentOutputs = {}, targetOutputs = {}) {
         return {
@@ -249,14 +257,15 @@
     }
 
     /**
-     * FIFOはホスト側の同時BLE要求数で結果が変わるため、単体baselineと2台負荷試験を分ける。
+     * Classify FIFO baselines separately from dual-device Host-load runs because
+     * concurrent request volume can change Web Bluetooth delivery behavior.
      */
     function classifyRunProfile(preset, activeDeviceCount) {
         const count = Math.max(0, Number(activeDeviceCount) || 0);
         if (!preset || preset.acquisition !== 'fifo') {
             return {
                 id: 'standard',
-                label: `${count}台 通常計測`,
+                label: `${count}-device standard run`,
                 fifo: false,
                 dualHostStress: false,
             };
@@ -264,14 +273,14 @@
         if (count <= 1) {
             return {
                 id: 'fifo-single-baseline',
-                label: 'FIFO単体 baseline',
+                label: 'FIFO single-device baseline',
                 fifo: true,
                 dualHostStress: false,
             };
         }
         return {
             id: 'fifo-dual-host-stress',
-            label: `FIFO ${count}台同時 Host負荷試験`,
+            label: `FIFO ${count}-device Host-load run`,
             fifo: true,
             dualHostStress: true,
         };
@@ -288,7 +297,7 @@
             add(
                 rawPackets > 0 ? 'pass' : 'fail',
                 'Raw packet',
-                rawPackets > 0 ? `${rawPackets} packets` : '受信なし'
+                rawPackets > 0 ? `${rawPackets} packets` : 'no packets'
             );
             for (const field of ['acc', 'gyro', 'press', 'quat']) {
                 const expected = preset.fields[field];
@@ -302,7 +311,7 @@
                 } else {
                     add(
                         ratio <= 0.01 ? 'pass' : 'warn',
-                        `${field}なし`,
+                        `no ${field}`,
                         `${(ratio * 100).toFixed(1)}% samples`
                     );
                 }
@@ -313,7 +322,7 @@
                 const ratio = effectiveHz / preset.nominalSampleHz;
                 add(
                     ratio >= 0.6 && ratio <= 1.35 ? 'pass' : 'warn',
-                    '実効sample Hz',
+                    'effective sample rate',
                     `${effectiveHz.toFixed(1)} / nominal ${preset.nominalSampleHz}`
                 );
             }
@@ -331,7 +340,7 @@
                     (stats.arrivalSerial?.missing || 0) !== serial.missing) {
                     add(
                         'pass',
-                        'FIFO計測境界',
+                        'FIFO measurement boundary',
                         `arrival ${stats.arrivalSerial.missing} → checkpoint ${serial.missing}`
                     );
                 }
@@ -342,7 +351,7 @@
                 );
                 add(
                     (stats.unexpectedRealtimePackets || 0) === 0 ? 'pass' : 'warn',
-                    'Realtime notify停止',
+                    'Realtime Notification stopped',
                     `${stats.unexpectedRealtimePackets || 0} packets after settle`
                 );
                 if (stats.finished) {
@@ -352,7 +361,7 @@
                         'FIFO stop / drain',
                         drainOk
                             ? `recovered ${stats.fifoDrainRecovered || 0}, ${Math.round(stats.fifoDrainMs || 0)} ms`
-                            : stats.fifoDrainError || 'onStopped未確認'
+                            : stats.fifoDrainError || 'onStopped not observed'
                     );
                 }
                 const profile = stats.runProfile || classifyRunProfile(preset, stats.activeDeviceCount || 1);
@@ -360,23 +369,23 @@
                 if (profile.dualHostStress) {
                     add(
                         hasLoss ? 'warn' : 'pass',
-                        '2台同時FIFO条件',
+                        'dual-device FIFO condition',
                         hasLoss
-                            ? 'このMac/Web Bluetoothの既知負荷条件。単体baselineと比較'
-                            : '同時負荷でも最終欠損なし'
+                            ? 'Host/Web Bluetooth load condition; compare with single-device baselines'
+                            : 'no final serial gaps under concurrent load'
                     );
                 } else {
                     add(
                         hasLoss ? 'warn' : 'pass',
-                        '単体FIFO baseline',
-                        hasLoss ? '単体でも欠損あり。デバイス/リンクを確認' : '最終欠損なし'
+                        'single-device FIFO baseline',
+                        hasLoss ? 'gap observed in baseline; inspect device and link' : 'no final serial gaps'
                     );
                 }
             }
         } else {
             add(
                 (stats.unexpectedRealtimePackets || 0) === 0 ? 'pass' : 'warn',
-                'Raw停止',
+                'Raw output disabled',
                 (stats.unexpectedRealtimePackets || 0) === 0
                     ? 'SENSOR_VALUES 0 packets'
                     : `${stats.unexpectedRealtimePackets} packets after settle`
@@ -391,7 +400,7 @@
             );
             add(
                 (stats.completedSteps || 0) > 0 ? 'pass' : 'warn',
-                '完成step',
+                'completed step rows',
                 `${stats.completedSteps || 0} rows`
             );
         }

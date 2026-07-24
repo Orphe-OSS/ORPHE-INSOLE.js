@@ -16,7 +16,6 @@
 | [balance-tuner](./balance-tuner/) | 左右バランスの可聴化 | INSOLE ×2 | **デモモード内蔵**（既定でON） | Web Audio、荷重→音マッピング |
 | [hula-motion-sonifier](./hula-motion-sonifier/) | フラダンス動作の検出と可聴化 | INSOLE ×2 | 一部（検出ロジックは Node テストあり） | 状態遷移発音、IMU+圧力の複合判定 |
 | [device-test](./device-test/) | **リリース前の実機チェックリスト** | INSOLE ×1 | ―（実機検証が目的） | 通知中read/write、モード切替、自動判定 |
-| [data-modes](./data-modes/) | **通信方式・計測モードのガイドとレコーダー** | INSOLE ×1〜2 | ―（実機推奨） | 名前付きprofile、Realtime/FIFO/Step、計測区間CSV |
 | [quaternion-validation](./quaternion-validation/) | **quat修正の長時間実機検証** | INSOLE ×1〜2 | `?sim=1` | norm・yaw drift・欠損率、CSV逐次保存、数値レポート |
 | [terminal](./terminal/) | 生データ（gotData）のデバッグ | INSOLE ×1 | ― | プロトコル解析 |
 

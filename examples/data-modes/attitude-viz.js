@@ -5,8 +5,8 @@ createVector, model, push, pop, translate, PI, toxi
 */
 
 /**
- * showcaseのQuaternion→3D靴モデル表示を、data-modes example用に切り出したもの。
- * 各モードでQuaternionが実際に配信されているかを左右同時に確認する。
+ * Extracted from showcase for the data-modes engineering harness.
+ * Verifies simultaneous Quaternion delivery and 3D orientation for two devices.
  */
 const AttitudeViz = (() => {
     const quats = [null, null];

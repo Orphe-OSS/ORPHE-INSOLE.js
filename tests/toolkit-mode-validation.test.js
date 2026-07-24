@@ -81,6 +81,15 @@ const metrics = require('../examples/data-modes/metrics.js');
 }
 
 {
+    const values = Array.from({ length: 200000 }, (_, index) => index % 100);
+    const summary = metrics.summarizeValues(values);
+    assert.equal(summary.count, 200000);
+    assert.equal(summary.min, 0);
+    assert.equal(summary.max, 99);
+    assert.equal(summary.mean, 49.5);
+}
+
+{
     const now = new Date(2026, 6, 23, 0, 0, 0, 100).getTime();
     const previousDayMs = 23 * 3600000 + 59 * 60000 + 59900;
     assert.equal(metrics.deviceTimestampToEpoch(previousDayMs, now), now - 200);
@@ -146,7 +155,7 @@ const metrics = require('../examples/data-modes/metrics.js');
 {
     assert.deepEqual(metrics.classifyRunProfile(metrics.PRESET_EXPECTATIONS.rt4, 2), {
         id: 'standard',
-        label: '2台 通常計測',
+        label: '2-device standard run',
         fifo: false,
         dualHostStress: false,
     });
@@ -214,19 +223,20 @@ const metrics = require('../examples/data-modes/metrics.js');
     const html = fs.readFileSync(path.join(pageRoot, 'index.html'), 'utf8');
     const app = fs.readFileSync(path.join(pageRoot, 'app.js'), 'utf8');
     const attitude = fs.readFileSync(path.join(pageRoot, 'attitude-viz.js'), 'utf8');
+    const examplesIndex = fs.readFileSync(path.join(__dirname, '..', 'examples', 'README.md'), 'utf8');
     const legacy = fs.readFileSync(
         path.join(__dirname, 'manual', 'toolkit-mode-validation', 'index.html'),
         'utf8'
     );
     assert.match(html, /id="copy_event_log_button"/);
-    assert.match(html, /STEP 3 計測・記録を開始/);
-    assert.match(html, /3つの通信経路の違い/);
+    assert.match(html, /STEP 3 Start measurement/);
+    assert.match(html, /Delivery, continuity, and concurrency/);
     assert.match(html, /data-guide-preset="fifo"/);
     assert.match(html, /id="profile_code"/);
     assert.match(app, /dom\.copyLog\.addEventListener\('click', copyEventLog\)/);
     assert.match(app, /RUN_PROGRESS_LOG_INTERVAL_MS = 5000/);
     assert.match(app, /events: eventEntries\.slice\(\)/);
-    assert.match(app, /Rawライブプレビュー受信開始/);
+    assert.match(app, /Raw live preview started/);
     assert.match(app, /session\.applyProfile\(preset\.profileId\)/);
     assert.match(app, /sessions\[id\]\.startMeasurement/);
     assert.match(app, /sessions\[id\]\.stopMeasurement/);
@@ -255,6 +265,7 @@ const metrics = require('../examples/data-modes/metrics.js');
     assert.match(app, /summarizeSince/);
     assert.match(html, /data-preset="rt4-step"/);
     assert.doesNotMatch(html, /data-preset="fifo-step"/);
+    assert.doesNotMatch(examplesIndex, /\[data-modes\]/);
     assert.match(legacy, /examples\/data-modes/);
 }
 

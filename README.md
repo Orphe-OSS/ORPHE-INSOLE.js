@@ -19,8 +19,6 @@ Happy hacking for ORPHE INSOLE module on javascript.
 
 INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-shoe](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe) へ（クリック/キーボードでも試奏できます。ジェスチャ収録ツール [GESTURE LAB](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe/lab.html) 付き）。
 
-通信方式と計測モードを目的から選び、実機で可視化・記録まで試す場合は
-[data-modes](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/data-modes/) を開いてください。
 通常モード（リアルタイム通知）と FIFO（ロスレス収録）だけを比較する旧サンプルは
 [fifo-vs-realtime](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/fifo-vs-realtime) に残しています。
 
@@ -99,7 +97,6 @@ const stepCsv = insoleToolkitMeasurementToCSV(result, 'step');
 `realtime-pressure`（圧力+IMU 200 Hz）、`realtime-full-step`、`step-analysis`、
 `fifo-recording`です。FIFOの`stopMeasurement()`は未回収データのdrain完了まで待ちます。
 計測中のprofile変更は拒否されるため、正式計測区間のデータ形式を一定に保てます。
-詳しい選び方と実機可視化は[`examples/data-modes/`](./examples/data-modes/)を参照してください。
 
 ### Tutorial
   * https://github.com/Orphe-OSS/ORPHE-INSOLE.js/wiki

@@ -11,6 +11,7 @@ const MAX_EVENT_ENTRIES = 5000;
 const RUN_PROGRESS_LOG_INTERVAL_MS = 5000;
 const MAX_FIFO_PLOT_SAMPLES = 60000;
 const MAX_STEP_HISTORY_ROWS = 500;
+const MAX_PREVIEW_METRIC_VALUES = 5000;
 const REALTIME_HEADER_BY_MODE = { 1: 50, 3: 55, 4: 56 };
 const STEP_PACKET_TYPES = ['motion', 'overview', 'stride', 'pronation'];
 const HOST_LABEL_STORAGE_KEY = 'orphe-toolkit-validation-host-label';
@@ -254,7 +255,7 @@ function formatEventLogText() {
     const connected = connectedIds();
     const profile = Metrics.classifyRunProfile(PRESETS[selectedPresetId], connected.length);
     const lines = [
-        'Toolkit Data Mode Validation Event Log',
+        'ORPHE INSOLE Data Mode Inspector Event Log',
         `exportedAt=${new Date().toISOString()}`,
         `page=${window.location.href}`,
         `secureContext=${window.isSecureContext}`,
@@ -311,11 +312,11 @@ async function copyEventLog() {
     try {
         const text = formatEventLogText();
         await writeClipboardText(text);
-        dom.copyLog.textContent = `コピー済み (${eventEntries.length}件)`;
-        logEvent(null, `イベントログをクリップボードへコピー: ${eventEntries.length} entries`, 'success');
+        dom.copyLog.textContent = `Copied (${eventEntries.length} entries)`;
+        logEvent(null, `Event Log copied to clipboard: ${eventEntries.length} entries`, 'success');
     } catch (error) {
-        dom.copyLog.textContent = 'コピー失敗';
-        logEvent(null, `イベントログのコピー失敗: ${error.message || error}`, 'error');
+        dom.copyLog.textContent = 'Copy failed';
+        logEvent(null, `Event Log copy failed: ${error.message || error}`, 'error');
     } finally {
         setTimeout(() => {
             dom.copyLog.innerHTML = originalHtml;
@@ -337,14 +338,14 @@ function connectedIds() {
 }
 
 function currentHostLabel() {
-    return dom.hostLabel?.value.trim() || 'Host未設定';
+    return dom.hostLabel?.value.trim() || 'Host unspecified';
 }
 
 function fifoProfileResults(profileId, id = null, hostLabel = currentHostLabel()) {
     return runHistory.filter((result) => (
         result.runProfile?.id === profileId
         && (id === null || result.id === id)
-        && (result.hostLabel || 'Host未設定') === hostLabel
+        && (result.hostLabel || 'Host unspecified') === hostLabel
     ));
 }
 
@@ -365,13 +366,13 @@ function formatFifoBaselineLog(id) {
     if (!result) return 'not-run';
     return fifoResultHasLoss(result)
         ? `loss serial=${result.serial?.missing || 0} dropped=${result.fifoDropped || 0}`
-        : 'lossless';
+        : 'continuous';
 }
 
 function formatFifoDualLog() {
     const results = fifoProfileResults('fifo-dual-host-stress');
     if (results.length === 0) return 'not-run';
-    return results.some(fifoResultHasLoss) ? 'loss-observed' : 'lossless';
+    return results.some(fifoResultHasLoss) ? 'gap-observed' : 'continuous';
 }
 
 function renderFifoLoadContext() {
@@ -383,26 +384,26 @@ function renderFifoLoadContext() {
     if (preset.acquisition !== 'fifo') return;
 
     dom.fifoProfileBadge.className = `metric-chip ${profile.dualHostStress ? 'warn' : ids.length === 1 ? 'pass' : 'neutral'}`;
-    dom.fifoProfileBadge.textContent = ids.length === 0 ? '接続待ち' : profile.label;
+    dom.fifoProfileBadge.textContent = ids.length === 0 ? 'Awaiting device' : profile.label;
     dom.fifoLoadMessage.textContent = ids.length === 0
-        ? 'まず片方だけ接続して単体baselineを取得してください。'
+        ? 'Connect one device to capture a single-device baseline.'
         : ids.length === 1
-            ? `${deviceLabel(ids[0])}だけ接続中。${hostLabel}の単体baselineとして保存します。`
-            : `2台同時接続中。${hostLabel}のBLE負荷試験として記録し、単体baselineと分けて判定します。`;
+            ? `${deviceLabel(ids[0])} is connected. This run will be stored as a single-device baseline for ${hostLabel}.`
+            : `Two devices are connected. This run will be classified as a BLE Host-load run for ${hostLabel}, separately from single-device baselines.`;
 
     for (const id of DEVICE_IDS) {
         const result = latestFifoProfileResult('fifo-single-baseline', id);
         const target = dom.fifoBaseline[id];
         target.className = `metric-chip ${!result ? 'neutral' : fifoResultHasLoss(result) ? 'warn' : 'pass'}`;
         target.textContent = !result
-            ? `${deviceLabel(id)} 単体: 未計測`
-            : `${deviceLabel(id)} 単体: ${fifoResultHasLoss(result) ? '欠損あり' : '欠損なし'}`;
+            ? `${deviceLabel(id)} baseline: not run`
+            : `${deviceLabel(id)} baseline: ${fifoResultHasLoss(result) ? 'gap observed' : 'continuous'}`;
     }
     const dualResults = fifoProfileResults('fifo-dual-host-stress');
     dom.fifoDualStatus.className = `metric-chip ${dualResults.length === 0 ? 'neutral' : dualResults.some(fifoResultHasLoss) ? 'warn' : 'pass'}`;
     dom.fifoDualStatus.textContent = dualResults.length === 0
-        ? '2台同時: 未計測'
-        : `2台同時: ${dualResults.some(fifoResultHasLoss) ? '欠損観測（既知条件）' : '欠損なし'}`;
+        ? 'Dual-device run: not run'
+        : `Dual-device run: ${dualResults.some(fifoResultHasLoss) ? 'gap observed under Host load' : 'continuous'}`;
 }
 
 function formatNumber(value, digits = 1, fallback = '—') {
@@ -428,12 +429,12 @@ function setRunState(next, message) {
     runState = next;
     dom.globalStateDot.className = `state-dot ${next === 'running' ? 'running' : next === 'idle' ? 'idle' : 'switching'}`;
     dom.globalState.textContent = next === 'running'
-        ? `${PRESETS[selectedPresetId].label} 計測中`
+        ? `${PRESETS[selectedPresetId].label} running`
         : next === 'draining'
-            ? 'FIFO drain中'
+            ? 'FIFO draining'
             : next === 'switching'
-                ? '設定切替中'
-                : connectedIds().length > 0 ? '計測待機' : '接続待ち';
+                ? 'Applying profile'
+                : connectedIds().length > 0 ? 'Ready' : 'Awaiting device';
     updateControls();
     if (message) dom.runMessage.textContent = message;
 }
@@ -448,12 +449,12 @@ function updateControls() {
     document.querySelectorAll('.preset-card').forEach((button) => {
         button.disabled = runState !== 'idle';
     });
-    if (runState === 'idle' && count === 0) dom.runMessage.textContent = '① INSOLEを接続してください';
+    if (runState === 'idle' && count === 0) dom.runMessage.textContent = 'Step 1: connect at least one INSOLE';
     if (runState === 'idle' && count > 0 && !finishingPromise) {
         const profile = Metrics.classifyRunProfile(PRESETS[selectedPresetId], count);
         dom.runMessage.textContent = profile.dualHostStress
-            ? `${count}台同時FIFOは${currentHostLabel()}のHost負荷試験として記録します。単体baselineとの比較が前提です`
-            : `${count}台接続中。③「計測開始」を押すと正式な集計を開始します`;
+            ? `The ${count}-device FIFO run will be classified as a Host-load test for ${currentHostLabel()}; compare it with single-device baselines`
+            : `${count} device(s) connected. Start measurement to open a formal measurement window`;
     }
     renderFifoLoadContext();
 }
@@ -468,13 +469,13 @@ function resetLivePreview(reason) {
     }
     if (typeof AttitudeViz !== 'undefined') AttitudeViz.clearAll();
     renderAttitude();
-    if (reason) logEvent(null, `ライブプレビューをリセット: ${reason}`);
+    if (reason) logEvent(null, `Live preview reset: ${reason}`);
 }
 
 function resetFifoHistory(reason = '') {
     for (const id of DEVICE_IDS) fifoPlotDevices[id] = createFifoPlotDevice(id);
     renderFifoHistory();
-    if (reason) logEvent(null, `FIFO再構成グラフをリセット: ${reason}`);
+    if (reason) logEvent(null, `FIFO timeline reset: ${reason}`);
 }
 
 function resetStepHistory(reason = '') {
@@ -484,7 +485,7 @@ function resetStepHistory(reason = '') {
     stepPacketDirty = true;
     renderStepPacketStatus();
     renderStepHistory();
-    if (reason) logEvent(null, `Step Analysis履歴をリセット: ${reason}`);
+    if (reason) logEvent(null, `STEP_ANALYSIS history reset: ${reason}`);
 }
 
 async function selectPreset(id) {
@@ -496,27 +497,27 @@ async function selectPreset(id) {
     dom.selectedPreset.textContent = PRESETS[id].label;
     renderExpectations();
     renderProfileCode();
-    logEvent(null, `プリセット選択: ${PRESETS[id].label}`, 'success');
-    if (PRESETS[id].acquisition === 'fifo') resetFifoHistory(`${PRESETS[id].label}の新規取得`);
-    resetLivePreview(`${PRESETS[id].label}へ切替`);
+    logEvent(null, `Profile selected: ${PRESETS[id].label}`, 'success');
+    if (PRESETS[id].acquisition === 'fifo') resetFifoHistory(`new ${PRESETS[id].label} acquisition`);
+    resetLivePreview(`switch to ${PRESETS[id].label}`);
 
     const ids = connectedIds();
     if (ids.length === 0) return;
-    setRunState('switching', `② ${PRESETS[id].label} を実機へ適用中…`);
+    setRunState('switching', `Applying ${PRESETS[id].label} to connected sessions…`);
     const settled = await Promise.allSettled(ids.map((deviceId) => applyPresetToDevice(deviceId, PRESETS[id])));
     let applied = 0;
     settled.forEach((result, index) => {
         if (result.status === 'fulfilled') {
             applied += 1;
         } else {
-            logEvent(ids[index], `プリセット即時適用失敗: ${result.reason?.message || result.reason}`, 'error');
+            logEvent(ids[index], `Immediate profile application failed: ${result.reason?.message || result.reason}`, 'error');
         }
     });
     setRunState(
         'idle',
         applied > 0
-            ? `${PRESETS[id].label} を${applied}台へ適用済み。ライブ表示を確認して③「計測開始」へ`
-            : '設定を適用できませんでした。イベントログを確認してください'
+            ? `${PRESETS[id].label} applied to ${applied} session(s). Verify live telemetry, then start measurement`
+            : 'Profile application failed. Inspect the Event Log'
     );
 }
 
@@ -526,7 +527,7 @@ function renderProfileCode() {
     dom.profileCode.textContent = [
         "buildInsoleToolkit(document.querySelector('#toolkit'), 'INSOLE 01', 0);",
         'const session = getInsoleToolkitSession(0);',
-        '// ユーザが接続スイッチから実機を選択した後:',
+        '// After the user selects a device through the Bluetooth chooser:',
         `await session.applyProfile('${preset.profileId}');`,
         "await session.startMeasurement({ metadata: { subject: 'P001' } });",
         'const result = await session.stopMeasurement();',
@@ -545,7 +546,7 @@ function renderExpectations() {
     const preset = PRESETS[selectedPresetId];
     dom.expectations.replaceChildren();
     dom.expectations.append(
-        chip(preset.acquisition === 'fifo' ? 'FIFO acquisition' : `Realtime format ${preset.streamingMode}`, 'pass'),
+        chip(preset.acquisition === 'fifo' ? 'FIFO acquisition' : `Realtime streamingMode=${preset.streamingMode}`, 'pass'),
         chip(preset.raw ? 'Raw ON' : 'Raw OFF', preset.raw ? 'pass' : 'warn'),
         chip(preset.step ? 'Step ON' : 'Step OFF', preset.step ? 'pass' : 'neutral')
     );
@@ -563,7 +564,7 @@ async function applyPresetToDevice(id, preset) {
     if (!session || !isConnected(id)) throw new Error(`${deviceLabel(id)} is not connected`);
     const before = session.snapshot();
     if (sessionMatchesPreset(before, preset)) {
-        logEvent(id, `${preset.label} は適用済み: ${formatSessionState(before)}`, 'success');
+        logEvent(id, `${preset.label} already applied: ${formatSessionState(before)}`, 'success');
         return;
     }
 
@@ -572,7 +573,7 @@ async function applyPresetToDevice(id, preset) {
     if (!sessionMatchesPreset(after, preset)) {
         throw new Error(`InsoleToolkit: preset state mismatch (${formatSessionState(after)})`);
     }
-    logEvent(id, `${preset.label} を適用完了: ${formatSessionState(after)}`, 'success');
+    logEvent(id, `${preset.label} applied: ${formatSessionState(after)}`, 'success');
 }
 
 async function startRun() {
@@ -583,19 +584,19 @@ async function startRun() {
     const requestedProfile = Metrics.classifyRunProfile(preset, ids.length);
     logEvent(
         null,
-        `計測開始要求: host=${currentHostLabel()} preset=${preset.label} profile=${requestedProfile.id} duration=${Number(dom.duration.value) / 1000}s devices=${ids.map((id) => id + 1).join(',')}`,
+        `Measurement requested: host=${currentHostLabel()} preset=${preset.label} profile=${requestedProfile.id} duration=${Number(dom.duration.value) / 1000}s devices=${ids.map((id) => id + 1).join(',')}`,
         'success'
     );
-    setRunState('switching', `${preset.label}へ切り替えています…`);
+    setRunState('switching', `Applying ${preset.label}…`);
     const settled = await Promise.allSettled(ids.map((id) => applyPresetToDevice(id, preset)));
     let activeIds = ids.filter((_, index) => settled[index].status === 'fulfilled');
     settled.forEach((result, index) => {
         if (result.status === 'rejected') {
-            logEvent(ids[index], `設定適用失敗: ${result.reason?.message || result.reason}`, 'error');
+            logEvent(ids[index], `Profile application failed: ${result.reason?.message || result.reason}`, 'error');
         }
     });
     if (activeIds.length === 0) {
-        setRunState('idle', '設定を適用できませんでした。接続状態を確認してください');
+        setRunState('idle', 'Profile application failed. Inspect connection state');
         return;
     }
 
@@ -613,12 +614,12 @@ async function startRun() {
         if (result.status !== 'rejected') return;
         logEvent(
             configuredIds[index],
-            `正式計測区間を開始できません: ${result.reason?.message || result.reason}`,
+            `Formal measurement window failed to start: ${result.reason?.message || result.reason}`,
             'error'
         );
     });
     if (activeIds.length === 0) {
-        setRunState('idle', '正式計測区間を開始できませんでした。イベントログを確認してください');
+        setRunState('idle', 'Formal measurement window failed to start. Inspect the Event Log');
         return;
     }
     for (const id of activeIds) latestMeasurements[id] = null;
@@ -652,12 +653,12 @@ async function startRun() {
             logEvent(
                 id,
                 checkpoint?.serial == null
-                    ? 'FIFO正式計測checkpoint: serial未確定（arrival集計へfallback）'
-                    : `FIFO正式計測checkpoint: serial=${checkpoint.serial} collected=${checkpoint.collected} dropped=${checkpoint.dropped}`,
+                    ? 'FIFO measurement checkpoint: serial unavailable; falling back to arrival tracking'
+                    : `FIFO measurement checkpoint: serial=${checkpoint.serial} collected=${checkpoint.collected} dropped=${checkpoint.dropped}`,
                 checkpoint?.serial == null ? 'warn' : 'success'
             );
         }
-        resetFifoHistory(`${preset.label}の正式計測区間`);
+        resetFifoHistory(`${preset.label} formal measurement window`);
         for (const id of activeIds) fifoPlotDevices[id].phase = 'running';
     }
     signalPoints.length = 0;
@@ -666,8 +667,8 @@ async function startRun() {
         currentRun.devices[id].lastProgressLogAt = startedAt;
         document.getElementById(`device_card_${id}`).classList.add('active');
     }
-    logEvent(null, `${preset.label} / ${runProfile.label} / ${Number(dom.duration.value) / 1000}秒 を開始`, 'success');
-    setRunState('running', `${preset.label}を計測中`);
+    logEvent(null, `${preset.label} / ${runProfile.label} / ${Number(dom.duration.value) / 1000}s started`, 'success');
+    setRunState('running', `${preset.label} measurement active`);
 }
 
 async function finishRun(reason = 'manual') {
@@ -678,7 +679,7 @@ async function finishRun(reason = 'manual') {
         dom.stop.disabled = true;
 
         if (run.preset.acquisition === 'fifo') {
-            setRunState('draining', 'FIFOを停止し、未回収serialをdrainしています…');
+            setRunState('draining', 'Stopping FIFO and draining unread serials…');
             run.drainStartedAt = performance.now();
             for (const id of run.activeIds) {
                 fifoPlotDevices[id].phase = 'draining';
@@ -699,10 +700,10 @@ async function finishRun(reason = 'manual') {
                 const id = run.activeIds[index];
                 const message = result.reason?.message || String(result.reason);
                 run.devices[id].fifoDrainError = message;
-                logEvent(id, `FIFO stop / drain失敗: ${message}`, 'error');
+                logEvent(id, `FIFO stop/drain failed: ${message}`, 'error');
             });
         } else {
-            setRunState('switching', '結果を集計しています…');
+            setRunState('switching', 'Finalizing measurement results…');
             const stopResults = await Promise.allSettled(run.activeIds.map((id) => (
                 sessions[id].stopMeasurement({ reason })
             )));
@@ -714,7 +715,7 @@ async function finishRun(reason = 'manual') {
                         ? sessions[id].snapshot().lastMeasurement
                         : null;
                 } else {
-                    logEvent(id, `正式計測区間の終了失敗: ${result.reason?.message || result.reason}`, 'error');
+                    logEvent(id, `Formal measurement window failed to stop: ${result.reason?.message || result.reason}`, 'error');
                 }
             });
         }
@@ -733,10 +734,10 @@ async function finishRun(reason = 'manual') {
         currentRun = null;
         renderHistory();
         renderDownloads();
-        logEvent(null, `${run.preset.label} を終了 (${reason})`, 'success');
+        logEvent(null, `${run.preset.label} stopped (${reason})`, 'success');
         setRunState('idle', run.preset.acquisition === 'fifo'
-            ? 'FIFO停止・drain完了。Raw acquisitionはRealtimeへ戻しました'
-            : '計測完了。結果を履歴へ追加しました');
+            ? 'FIFO stopped and drained. Raw acquisition returned to Realtime'
+            : 'Measurement completed and result appended to run history');
         return results;
     })().finally(() => {
         finishingPromise = null;
@@ -755,7 +756,7 @@ function noteReconnectData(id) {
     reconnect.firstDataAfterSuccessMs = performance.now() - reconnect.successAt;
     reconnect.pendingFirstData = false;
     renderReconnect(id);
-    logEvent(id, `再接続後の最初のデータ: ${Math.round(reconnect.firstDataAfterSuccessMs)} ms`, 'success');
+    logEvent(id, `First data after reconnect: ${Math.round(reconnect.firstDataAfterSuccessMs)} ms`, 'success');
 }
 
 function noteBatchArrival(device, now) {
@@ -767,11 +768,18 @@ function noteBatchArrival(device, now) {
     device.lastBatchArrival = now;
 }
 
+function pushPreviewMetric(values, value) {
+    values.push(value);
+    if (values.length > MAX_PREVIEW_METRIC_VALUES + 512) {
+        values.splice(0, values.length - MAX_PREVIEW_METRIC_VALUES);
+    }
+}
+
 function notePreviewBatchArrival(device, now) {
     if (device.startedAt === null) device.startedAt = now;
     if (device.lastBatchArrival !== null) {
         const gap = now - device.lastBatchArrival;
-        device.batchGaps.push(gap);
+        pushPreviewMetric(device.batchGaps, gap);
         timingPoints.push({ t: now, id: device.id, gap, lag: device.fifoLag });
     }
     device.lastBatchArrival = now;
@@ -812,7 +820,10 @@ function recordSample(device, sample, source, phase) {
     const deviceEpoch = Metrics.deviceTimestampToEpoch(sample.timestamp ?? sample.t);
     if ((inWindow || inDrain || inPreview) && deviceEpoch !== null) {
         const age = Date.now() - deviceEpoch;
-        if (age >= -2000 && age <= 120000) device.deliveryAges.push(Math.max(0, age));
+        if (age >= -2000 && age <= 120000) {
+            if (inPreview) pushPreviewMetric(device.deliveryAges, Math.max(0, age));
+            else device.deliveryAges.push(Math.max(0, age));
+        }
     }
 
     device.latestRaw = {
@@ -917,7 +928,7 @@ function handleRealtimePacket(id, data, uuid) {
             if (preview.unexpectedRealtimePackets === 1) {
                 logEvent(
                     id,
-                    `選択中モードではRealtime Rawを表示対象外にしました: ${formatSessionState(state)}`,
+                    `Realtime Raw excluded by the active profile: ${formatSessionState(state)}`,
                     'warn'
                 );
             }
@@ -929,7 +940,7 @@ function handleRealtimePacket(id, data, uuid) {
             if (preview.staleHeaderPackets === 1) {
                 logEvent(
                     id,
-                    `Realtime format反映待ち: expected header=${expectedHeader}, received header=${parsed.header}（旧formatはグラフ対象外）`,
+                    `Waiting for Realtime schema transition: expected header=${expectedHeader}, received header=${parsed.header}; stale-schema packets are excluded from charts`,
                     'warn'
                 );
             }
@@ -942,7 +953,7 @@ function handleRealtimePacket(id, data, uuid) {
         if (preview.rawPackets === 1) {
             logEvent(
                 id,
-                `Rawライブプレビュー受信開始: source=realtime header=${parsed.header} serial=${parsed.serial_number} samples=${parsed.samples.length} fields=${sampleFieldList(parsed.samples[0])}`,
+                `Raw live preview started: source=realtime header=${parsed.header} serial=${parsed.serial_number} samples=${parsed.samples.length} fields=${sampleFieldList(parsed.samples[0])}`,
                 'success'
             );
         }
@@ -967,11 +978,11 @@ function handleRealtimePacket(id, data, uuid) {
     if (firstPacket) {
         logEvent(
             id,
-            `Raw受信開始: source=realtime header=${parsed.header} serial=${parsed.serial_number} samples=${parsed.samples.length} fields=${sampleFieldList(parsed.samples[0])}`,
+            `Raw measurement data started: source=realtime header=${parsed.header} serial=${parsed.serial_number} samples=${parsed.samples.length} fields=${sampleFieldList(parsed.samples[0])}`,
             'success'
         );
     } else if (serialEvent.kind === 'gap' && device.serialTracker.gapEvents.length === 1) {
-        logEvent(id, `Realtime serial gapを検出: ${serialEvent.missing} missing（以降は進捗ログへ集約）`, 'warn');
+        logEvent(id, `Realtime serial gap detected: ${serialEvent.missing} missing; subsequent gaps are aggregated in progress logs`, 'warn');
     }
     for (const sample of parsed.samples) recordSample(device, sample, 'realtime', 'running');
 }
@@ -994,7 +1005,7 @@ function handleFifoSamples(id, samples) {
         if (firstBatch && samples.length > 0) {
             logEvent(
                 id,
-                `Rawライブプレビュー受信開始: source=fifo serial=${samples[0].serial_number} samples=${samples.length} fields=${sampleFieldList(samples[0])}`,
+                `Raw live preview started: source=fifo serial=${samples[0].serial_number} samples=${samples.length} fields=${sampleFieldList(samples[0])}`,
                 'success'
             );
         }
@@ -1025,7 +1036,7 @@ function handleFifoSamples(id, samples) {
     if (firstBatch && samples.length > 0) {
         logEvent(
             id,
-            `Raw受信開始: source=fifo serial=${samples[0].serial_number} packets=${serials.size} samples=${samples.length} fields=${sampleFieldList(samples[0])}`,
+            `Raw measurement data started: source=fifo serial=${samples[0].serial_number} packets=${serials.size} samples=${samples.length} fields=${sampleFieldList(samples[0])}`,
             'success'
         );
     }
@@ -1055,7 +1066,7 @@ function handleFifoProgress(id, info) {
         );
         device.fifoDropped = device.fifoFinalizedDropped + device.fifoCurrentDropped;
     }
-    if (info.draining) logEvent(id, `drain進行: lag ${device.fifoLag}`, 'warn');
+    if (info.draining) logEvent(id, `FIFO drain progress: lag=${device.fifoLag}`, 'warn');
 }
 
 function handleFifoDataLoss(id, info) {
@@ -1095,7 +1106,7 @@ function handleFifoStopped(id, info) {
     }
     logEvent(
         id,
-        `FIFO停止: collected ${info.collected}, dropped ${info.dropped}, drain recovered ${info.drainRecovered || 0}`,
+        `FIFO stopped: collected=${info.collected} dropped=${info.dropped} drainRecovered=${info.drainRecovered || 0}`,
         info.dropped > 0 ? 'warn' : 'success'
     );
 }
@@ -1111,7 +1122,7 @@ function handleStepRaw(id, packet) {
         if (typeCount === 1) {
             logEvent(
                 id,
-                `Stepライブプレビュー受信: type=${packet.type} step=${packet.step_number}`,
+                `STEP_ANALYSIS live preview: type=${packet.type} step=${packet.step_number}`,
                 'success'
             );
         }
@@ -1125,7 +1136,7 @@ function handleStepRaw(id, packet) {
     device.stepPackets += 1;
     const typeCount = noteStepType(device, packet);
     if (typeCount === 1) {
-        logEvent(id, `Step notify受信: type=${packet.type} step=${packet.step_number}`, 'success');
+        logEvent(id, `STEP_ANALYSIS measurement packet: type=${packet.type} step=${packet.step_number}`, 'success');
     }
     if (packet.type === 'motion') {
         device.latestMotion = packet;
@@ -1142,7 +1153,7 @@ function handleStepRow(id, row) {
         preview.completedSteps += 1;
         preview.latestStep = row;
         signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
-        logEvent(id, `Stepプレビュー ${row.step_number} 完成 (${row.gait_type})`, 'success');
+        logEvent(id, `STEP_ANALYSIS preview row completed: step=${row.step_number} gait=${row.gait_type}`, 'success');
         return;
     }
     if (runState !== 'running' || !currentRun.preset.step) return;
@@ -1152,7 +1163,7 @@ function handleStepRow(id, row) {
     device.completedSteps += 1;
     device.latestStep = row;
     signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
-    logEvent(id, `Step ${row.step_number} 完成 (${row.gait_type}, duration ${formatNumber(row.duration_s, 3)}s)`, 'success');
+    logEvent(id, `STEP_ANALYSIS row completed: step=${row.step_number} gait=${row.gait_type} duration=${formatNumber(row.duration_s, 3)}s`, 'success');
 }
 
 function handleFifoAnomaly(id, info) {
@@ -1382,11 +1393,11 @@ function liveResult(id) {
 }
 
 function verdictLabel(level, active) {
-    if (active && currentRun && performance.now() - currentRun.startedAt < 1800) return '計測開始';
-    if (level === 'pass') return active ? '取得中 OK' : 'OK';
-    if (level === 'warn') return '要確認';
-    if (level === 'fail') return 'データ不足';
-    return '未計測';
+    if (active && currentRun && performance.now() - currentRun.startedAt < 1800) return 'STARTING';
+    if (level === 'pass') return active ? 'RUNNING / PASS' : 'PASS';
+    if (level === 'warn') return 'WARN';
+    if (level === 'fail') return 'FAIL';
+    return 'NOT RUN';
 }
 
 function actualModeLabel(snapshot) {
@@ -1422,13 +1433,13 @@ function renderDevice(id) {
         const preview = previewDevices[id];
         const receiving = preview.rawPackets > 0 || preview.stepPackets > 0;
         verdict.className = `verdict ${receiving ? 'pass' : 'neutral'}`;
-        verdict.textContent = receiving ? 'ライブ受信' : '未計測';
+        verdict.textContent = receiving ? 'LIVE PREVIEW' : 'NOT RUN';
         const checks = document.getElementById(`checks_${id}`);
         checks.replaceChildren();
         const snapshot = sessions[id]?.snapshot();
-        checks.append(chip(`実機状態: ${actualModeLabel(snapshot)}`, snapshot?.connected ? 'pass' : 'neutral'));
-        if (receiving) checks.append(chip(`接続プレビュー: Raw ${preview.rawPackets} pkt / Step ${preview.stepPackets} pkt`, 'pass'));
-        checks.append(chip('正式な数値集計は「計測開始」後', 'neutral'));
+        checks.append(chip(`Session state: ${actualModeLabel(snapshot)}`, snapshot?.connected ? 'pass' : 'neutral'));
+        if (receiving) checks.append(chip(`Live preview: Raw ${preview.rawPackets} pkt / Step ${preview.stepPackets} pkt`, 'pass'));
+        checks.append(chip('Formal metrics begin at startMeasurement()', 'neutral'));
         renderPreviewMetrics(id, preview);
         renderLatestRaw(id, preview.latestRaw);
         renderLatestStep(id, preview.latestStep);
@@ -1484,7 +1495,7 @@ function renderAttitude() {
     dom.attitudeMode.className = `metric-chip ${preset.fields.quat ? 'pass' : 'warn'}`;
     dom.attitudeMode.textContent = preset.fields.quat
         ? `${preset.label}: Quaternion expected`
-        : `${preset.label}: Quaternionなし`;
+        : `${preset.label}: no Quaternion`;
 
     for (const id of DEVICE_IDS) {
         const latest = latestRawForDisplay(id);
@@ -1494,21 +1505,21 @@ function renderAttitude() {
         const eulerReadout = document.getElementById(`euler_readout_${id}`);
         if (!preset.fields.quat) {
             status.className = 'metric-chip warn';
-            status.textContent = 'このモードはQuatなし';
+            status.textContent = 'Quaternion not in schema';
             quatReadout.textContent = 'w — / x — / y — / z —';
             eulerReadout.textContent = 'pitch — / roll — / yaw —';
             continue;
         }
         if (!quat) {
             status.className = 'metric-chip neutral';
-            status.textContent = 'Quaternion受信待ち';
+            status.textContent = 'Awaiting Quaternion';
             quatReadout.textContent = 'w — / x — / y — / z —';
             eulerReadout.textContent = 'pitch — / roll — / yaw —';
             continue;
         }
         const euler = quatToEulerDegrees(quat);
         status.className = 'metric-chip pass';
-        status.textContent = 'Quaternion受信中';
+        status.textContent = 'Quaternion active';
         quatReadout.textContent = `w ${formatNumber(quat.w, 3)} / x ${formatNumber(quat.x, 3)} / y ${formatNumber(quat.y, 3)} / z ${formatNumber(quat.z, 3)}`;
         eulerReadout.textContent = `pitch ${formatNumber(euler.pitch, 1)}° / roll ${formatNumber(euler.roll, 1)}° / yaw ${formatNumber(euler.yaw, 1)}°`;
     }
@@ -1524,7 +1535,7 @@ function renderLatestRaw(id, latest) {
         const empty = document.createElement('td');
         empty.colSpan = 4;
         empty.className = 'text-secondary';
-        empty.textContent = '未受信';
+        empty.textContent = 'No data';
         row.appendChild(empty);
         return;
     }
@@ -1556,7 +1567,7 @@ function renderLatestStep(id, latest) {
         const empty = document.createElement('td');
         empty.colSpan = 5;
         empty.className = 'text-secondary';
-        empty.textContent = '未受信';
+        empty.textContent = 'No data';
         row.appendChild(empty);
         return;
     }
@@ -1603,13 +1614,13 @@ function orderedFifoSamples(series) {
 }
 
 function fifoPhaseLabel(series) {
-    if (series.phase === 'complete' && series.dropped > 0) return '回収完了・欠損あり';
+    if (series.phase === 'complete' && series.dropped > 0) return 'complete / dropped serials';
     return {
-        idle: '未取得',
-        preview: 'プレビュー収集中',
-        running: '正式計測中',
-        draining: 'drain中',
-        complete: '回収完了',
+        idle: 'idle',
+        preview: 'live preview',
+        running: 'measurement active',
+        draining: 'draining',
+        complete: 'complete',
     }[series.phase] || series.phase;
 }
 
@@ -1717,10 +1728,10 @@ function renderFifoHistory() {
         const deviceDurationMs = first && last ? Math.max(0, last.time - first.time) : 0;
         const storedSamples = series.samples.length;
         const totalSamples = storedSamples + series.truncated;
-        const truncation = series.truncated > 0 ? ` / 表示上限超過 ${series.truncated}` : '';
+        const truncation = series.truncated > 0 ? ` / plot limit exceeded by ${series.truncated}` : '';
         summary.textContent = points.length
             ? `${totalSamples.toLocaleString()} samples / ${series.serials.size.toLocaleString()} serials / ${(deviceDurationMs / 1000).toFixed(2)} s / ${series.batches} batches / lag max ${series.lagMax} / dropped ${series.dropped} / drain ${series.drainRecovered}${truncation}`
-            : 'FIFOデータ未取得';
+            : 'No FIFO samples';
 
         const laneTop = id * laneHeight;
         context.fillStyle = '#8fa2b2';
@@ -1729,7 +1740,7 @@ function renderFifoHistory() {
         if (points.length === 0) {
             context.fillStyle = 'rgba(143, 162, 178, 0.7)';
             context.font = '12px sans-serif';
-            context.fillText('FIFOデータ未取得', 8, laneTop + laneHeight / 2);
+            context.fillText('No FIFO samples', 8, laneTop + laneHeight / 2);
             continue;
         }
 
@@ -1786,7 +1797,7 @@ function renderStepHistory() {
         const cell = document.createElement('td');
         cell.colSpan = 18;
         cell.className = 'empty-row';
-        cell.textContent = 'Step Analysisの3種パケットが揃うと、完成した1歩がここに追加されます';
+        cell.textContent = 'A row appears after overview, stride, and pronation packets are joined by step number.';
         row.appendChild(cell);
         dom.stepHistoryBody.appendChild(row);
         stepHistoryDirty = false;
@@ -1839,8 +1850,8 @@ function renderStepPacketStatus() {
         const age = monitor.lastAt === null ? null : now - monitor.lastAt;
         status.className = `metric-chip ${monitor.packets > 0 ? 'pass' : 'neutral'}`;
         status.textContent = monitor.packets === 0
-            ? 'Notify未受信'
-            : age < 2000 ? 'Notify受信中' : 'Notify受信済み';
+            ? 'No Notification'
+            : age < 2000 ? 'Notification active' : 'Notification received';
         const counts = STEP_PACKET_TYPES
             .map((type) => `${type} ${monitor.typeCounts[type] || 0}`)
             .join(' / ');
@@ -1858,7 +1869,7 @@ function renderSerialMap(id, tracker, summary) {
     context.fillStyle = '#263541';
     context.fillRect(0, 0, width, height);
     if (!tracker || !summary || summary.expected === 0) {
-        setText(`serial_text_${id}`, '未計測');
+        setText(`serial_text_${id}`, 'not run');
         return;
     }
     const expected = summary.expected;
@@ -2005,7 +2016,7 @@ function renderConnectionState(id) {
     const stateElement = document.getElementById(`connection_state_${id}`);
     stateElement.textContent = state;
     stateElement.className = `metric-chip ${state === 'connected' ? 'pass' : state === 'reconnecting' ? 'warn' : 'neutral'}`;
-    const name = insole?.bluetoothDevice?.name || '未選択';
+    const name = insole?.bluetoothDevice?.name || 'No device selected';
     setText(`connection_name_${id}`, name);
     const mountPosition = insole?.device_information?.mount_position;
     if (typeof AttitudeViz !== 'undefined' && Number.isFinite(Number(mountPosition))) {
@@ -2018,19 +2029,19 @@ function renderReconnect(id) {
     const card = document.getElementById(`reconnect_${id}`);
     const badge = card.querySelector('.metric-chip');
     let badgeLevel = 'neutral';
-    let badgeText = '未観測';
+    let badgeText = 'not observed';
     if (state.failures > 0) {
         badgeLevel = 'fail';
-        badgeText = '再接続失敗';
+        badgeText = 'reconnect failed';
     } else if (state.successes > 0 && state.firstDataAfterSuccessMs !== null) {
         badgeLevel = 'pass';
-        badgeText = '再接続・データ復帰';
+        badgeText = 'reconnected / data resumed';
     } else if (state.attempts > 0) {
         badgeLevel = 'warn';
-        badgeText = '再接続中';
+        badgeText = 'reconnecting';
     } else if (state.disconnects > 0) {
         badgeLevel = 'warn';
-        badgeText = '切断検出';
+        badgeText = 'disconnect detected';
     }
     badge.className = `metric-chip ${badgeLevel}`;
     badge.textContent = badgeText;
@@ -2077,11 +2088,11 @@ function ensureSelectedPresetAfterConnect(id, snapshot) {
     pendingConnectPresetApply[id] = true;
     setTimeout(async () => {
         try {
-            logEvent(id, `接続後に選択プリセットを自動適用: ${PRESETS[selectedPresetId].label}`, 'success');
+            logEvent(id, `Applying selected profile after connect: ${PRESETS[selectedPresetId].label}`, 'success');
             await applyPresetToDevice(id, PRESETS[selectedPresetId]);
-            resetLivePreview(`${deviceLabel(id)} 接続後の設定適用`);
+            resetLivePreview(`${deviceLabel(id)} post-connect profile application`);
         } catch (error) {
-            logEvent(id, `接続後プリセット適用失敗: ${error.message || error}`, 'error');
+            logEvent(id, `Post-connect profile application failed: ${error.message || error}`, 'error');
         } finally {
             pendingConnectPresetApply[id] = false;
             updateControls();
@@ -2097,7 +2108,7 @@ function updateReconnectRestore() {
             reconnect.restoredAfterSuccessMs = performance.now() - reconnect.successAt;
             reconnect.pendingRestore = false;
             renderReconnect(id);
-            logEvent(id, `Toolkit選択状態を復元: ${Math.round(reconnect.restoredAfterSuccessMs)} ms`, 'success');
+            logEvent(id, `Toolkit profile restored: ${Math.round(reconnect.restoredAfterSuccessMs)} ms`, 'success');
         }
     }
 }
@@ -2109,7 +2120,7 @@ function renderHistory() {
         const cell = document.createElement('td');
         cell.colSpan = 14;
         cell.className = 'empty-row';
-        cell.textContent = '計測完了後に設定別の結果が並びます';
+        cell.textContent = 'Completed measurement results appear here.';
         row.appendChild(cell);
         dom.historyBody.appendChild(row);
         return;
@@ -2128,9 +2139,9 @@ function renderHistory() {
             : result.reconnect.disconnects > 0 ? `${result.reconnect.disconnects} disconnect` : '—';
         const values = [
             new Date(result.timestamp).toLocaleTimeString('ja-JP', { hour12: false }),
-            result.hostLabel || 'Host未設定',
+            result.hostLabel || 'Host unspecified',
             result.presetLabel,
-            result.runProfile?.label || `${result.activeDeviceCount || 1}台 通常計測`,
+            result.runProfile?.label || `${result.activeDeviceCount || 1}-device standard run`,
             `0${result.id + 1}`,
             verdictLabel(result.evaluation.level, false),
             formatNumber(result.sampleHz, 1),
@@ -2215,7 +2226,7 @@ function clearDisplay() {
     resetStepHistory();
     if (typeof AttitudeViz !== 'undefined') AttitudeViz.clearAll();
     renderAttitude();
-    logEvent(null, '計測表示と履歴をクリア');
+    logEvent(null, 'Run view and result history cleared');
 }
 
 function resetReconnectLogs() {
@@ -2223,7 +2234,7 @@ function resetReconnectLogs() {
         reconnectStats[id] = createReconnectStats();
         renderReconnect(id);
     }
-    logEvent(null, '再接続ログをリセット');
+    logEvent(null, 'Reconnect counters reset');
 }
 
 function installDevice(id) {
@@ -2280,7 +2291,7 @@ function installDevice(id) {
                 logEvent(
                     id,
                     cancelled
-                        ? 'Toolkit: Bluetooth chooserをキャンセル'
+                        ? 'Toolkit: Bluetooth chooser cancelled'
                         : `Toolkit error: ${error.message || error}`,
                     cancelled ? 'warn' : 'error'
                 );
@@ -2293,23 +2304,23 @@ function installDevice(id) {
         handleRealtimePacket(this.id, data, uuid);
     };
     insoles[id].onScan = function (deviceName) {
-        logEvent(this.id, `Bluetooth device選択: ${deviceName || 'name unavailable'}`, 'success');
+        logEvent(this.id, `Bluetooth device selected: ${deviceName || 'name unavailable'}`, 'success');
     };
     insoles[id].onConnect = function (uuid) {
-        logEvent(this.id, `GATT接続: ${uuid}`, 'success');
+        logEvent(this.id, `GATT connected: ${uuid}`, 'success');
     };
     insoles[id].onStartNotify = function (uuid) {
-        logEvent(this.id, `Notify開始: ${uuid}`, 'success');
+        logEvent(this.id, `Notification started: ${uuid}`, 'success');
     };
     insoles[id].onStopNotify = function (uuid) {
-        logEvent(this.id, `Notify停止: ${uuid}`, 'warn');
+        logEvent(this.id, `Notification stopped: ${uuid}`, 'warn');
     };
     insoles[id].onError = function (error) {
         const cancelled = error?.name === 'NotFoundError';
         logEvent(
             this.id,
             cancelled
-                ? 'Core: Bluetooth chooserをキャンセル（接続済みデバイスには影響なし）'
+                ? 'Core: Bluetooth chooser cancelled; existing connections are unchanged'
                 : `Core error: ${error?.message || error}`,
             cancelled ? 'warn' : 'error'
         );
@@ -2320,13 +2331,13 @@ function installDevice(id) {
         reconnect.disconnectedAt = performance.now();
         reconnect.pendingFirstData = false;
         reconnect.pendingRestore = false;
-        logEvent(this.id, '物理切断を検出', 'warn');
+        logEvent(this.id, 'Physical disconnect detected', 'warn');
         renderReconnect(this.id);
     };
     insoles[id].onReconnectAttempt = function (info) {
         const reconnect = reconnectStats[this.id];
         reconnect.attempts += 1;
-        logEvent(this.id, `再接続試行 ${info.attempt}/${info.maxAttempts}`, 'warn');
+        logEvent(this.id, `Reconnect attempt ${info.attempt}/${info.maxAttempts}`, 'warn');
         renderReconnect(this.id);
     };
     insoles[id].onReconnectSuccess = function (info) {
@@ -2338,7 +2349,7 @@ function installDevice(id) {
         reconnect.restoredAfterSuccessMs = null;
         reconnect.pendingFirstData = true;
         reconnect.pendingRestore = true;
-        logEvent(this.id, `再接続成功 (${info.elapsedMs} ms)`, 'success');
+        logEvent(this.id, `Reconnect succeeded (${info.elapsedMs} ms)`, 'success');
         renderReconnect(this.id);
     };
     insoles[id].onReconnectFailed = function (info) {
@@ -2347,7 +2358,7 @@ function installDevice(id) {
         reconnect.elapsedMs = info.elapsedMs;
         reconnect.pendingFirstData = false;
         reconnect.pendingRestore = false;
-        logEvent(this.id, `再接続失敗 (${info.elapsedMs} ms)`, 'error');
+        logEvent(this.id, `Reconnect failed (${info.elapsedMs} ms)`, 'error');
         renderReconnect(this.id);
     };
 }
@@ -2355,8 +2366,8 @@ function installDevice(id) {
 document.querySelectorAll('.preset-card').forEach((button) => {
     button.addEventListener('click', () => {
         selectPreset(button.dataset.preset).catch((error) => {
-            logEvent(null, `プリセット切替失敗: ${error.message || error}`, 'error');
-            setRunState('idle', 'プリセット切替に失敗しました。イベントログを確認してください');
+            logEvent(null, `Profile transition failed: ${error.message || error}`, 'error');
+            setRunState('idle', 'Profile transition failed. Inspect the Event Log');
         });
     });
 });
@@ -2366,32 +2377,32 @@ document.querySelectorAll('[data-guide-preset]').forEach((button) => {
         selectPreset(presetId).then(() => {
             document.getElementById('preset_heading').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }).catch((error) => {
-            logEvent(null, `計測モード選択失敗: ${error.message || error}`, 'error');
+            logEvent(null, `Acquisition-path selection failed: ${error.message || error}`, 'error');
         });
     });
 });
 dom.start.addEventListener('click', startRun);
 dom.stop.addEventListener('click', () => finishRun('manual'));
 dom.clear.addEventListener('click', clearDisplay);
-dom.clearFifoHistory.addEventListener('click', () => resetFifoHistory('手動クリア'));
-dom.clearStepHistory.addEventListener('click', () => resetStepHistory('手動クリア'));
+dom.clearFifoHistory.addEventListener('click', () => resetFifoHistory('manual clear'));
+dom.clearStepHistory.addEventListener('click', () => resetStepHistory('manual clear'));
 dom.resetReconnect.addEventListener('click', resetReconnectLogs);
 dom.copyLog.addEventListener('click', copyEventLog);
 dom.hostLabel.addEventListener('change', () => {
     const label = currentHostLabel();
     try {
-        if (label === 'Host未設定') localStorage.removeItem(HOST_LABEL_STORAGE_KEY);
+        if (label === 'Host unspecified') localStorage.removeItem(HOST_LABEL_STORAGE_KEY);
         else localStorage.setItem(HOST_LABEL_STORAGE_KEY, label);
     } catch {
-        // private mode等でlocalStorageが無効でも、この計測中の入力値は利用できる。
+        // Keep the in-memory label when localStorage is unavailable.
     }
-    logEvent(null, `Hostラベル設定: ${label}`, 'success');
+    logEvent(null, `Host label set: ${label}`, 'success');
     renderFifoLoadContext();
     updateControls();
 });
 dom.resetAttitude.addEventListener('click', () => {
     if (typeof AttitudeViz !== 'undefined') AttitudeViz.reset();
-    logEvent(null, '3D姿勢の基準を現在向きへリセット', 'success');
+    logEvent(null, '3D orientation zeroed at current pose', 'success');
 });
 dom.downloadJson.addEventListener('click', () => {
     const payload = {
@@ -2456,13 +2467,13 @@ renderStepHistory();
 renderHistory();
 renderDownloads();
 updateControls();
-logEvent(null, 'Data Modes exampleを初期化', 'success');
+logEvent(null, 'Data Mode Inspector initialized', 'success');
 logEvent(
     null,
     `Environment: host=${currentHostLabel()} platform=${navigator.platform || 'unknown'} secureContext=${window.isSecureContext} webBluetooth=${Boolean(navigator.bluetooth)} preset=${PRESETS[selectedPresetId].label}`,
     window.isSecureContext && navigator.bluetooth ? 'success' : 'error'
 );
-logEvent(null, '操作手順: ①接続 → ②プリセット選択 → ③計測開始。接続直後はライブプレビューのみ表示', 'success');
+logEvent(null, 'Workflow: connect device → apply profile → start measurement. Data received before start is live preview only', 'success');
 
 let lastUiRender = 0;
 function animationLoop(now) {
@@ -2475,7 +2486,7 @@ function animationLoop(now) {
         const elapsed = now - currentRun.startedAt;
         const remaining = Math.max(0, currentRun.endsAt - now);
         dom.timer.textContent = `${String(Math.floor(elapsed / 60000)).padStart(2, '0')}:${String(Math.floor((elapsed % 60000) / 1000)).padStart(2, '0')}.${Math.floor((elapsed % 1000) / 100)}`;
-        dom.runMessage.textContent = `${currentRun.preset.label} / ${currentRun.activeIds.length}台 / 残り ${(remaining / 1000).toFixed(1)}秒`;
+        dom.runMessage.textContent = `${currentRun.preset.label} / ${currentRun.activeIds.length} device(s) / ${(remaining / 1000).toFixed(1)} s remaining`;
         if (remaining <= 0 && !finishingPromise) finishRun('timer');
     } else if (!currentRun) {
         dom.timer.textContent = '00:00.0';

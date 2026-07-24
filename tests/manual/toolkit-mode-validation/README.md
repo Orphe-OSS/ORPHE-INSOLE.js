@@ -1,5 +1,5 @@
 # Toolkit mode validation compatibility path
 
-実機検証ページは、利用者向けexample
-[`examples/data-modes/`](../../../examples/data-modes/)
-へ昇格しました。このディレクトリの `index.html` は旧URLを維持するためのリダイレクトです。
+The physical-device validation harness now lives at
+[`examples/data-modes/`](../../../examples/data-modes/).
+This directory retains a redirect for compatibility with the original manual-test URL.

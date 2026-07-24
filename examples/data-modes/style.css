@@ -76,9 +76,11 @@ body {
 }
 
 .header-state {
+  flex: 0 0 auto;
   padding: 0.5rem 0.8rem;
   color: var(--muted);
   font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .state-dot {
@@ -100,6 +102,7 @@ body {
 }
 
 .timer-block {
+  flex: 0 0 auto;
   min-width: 9.5rem;
   justify-content: space-between;
   padding: 0.45rem 0.8rem;
@@ -199,7 +202,7 @@ body {
   border-radius: 999px;
   color: var(--green);
   font-size: 0.62rem;
-  content: "推奨";
+  content: "REFERENCE";
 }
 
 .purpose-number {
@@ -994,9 +997,15 @@ body {
   background: #7bf0a6;
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 1399px) {
   .preset-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1350px) {
+  .header-nav {
+    display: none;
   }
 }
 

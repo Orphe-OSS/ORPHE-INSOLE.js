@@ -1,57 +1,93 @@
-# ORPHE INSOLE Data Modes
+# ORPHE INSOLE Data Mode Inspector
 
-ORPHE INSOLEの通信経路と計測モードを学び、1〜2台の実機で切替・可視化・記録まで試せるexampleです。
-画面自身も`InsoleToolkitSession`の名前付きprofileとmeasurement APIを使っています。
+An unlisted engineering harness for inspecting ORPHE INSOLE BLE acquisition paths,
+Toolkit profile transitions, measurement boundaries, and export payloads with one
+or two physical devices. The page itself uses `InsoleToolkitSession` profiles and
+the public measurement API shown in its code snippets.
+
+This tool is intentionally omitted from the public examples index while its
+terminology and protocol documentation are being stabilized.
+
+## Run locally
 
 ```bash
 python3 -m http.server 8765 --bind 127.0.0.1
 ```
 
-Chromeで次を開きます。Web Bluetoothのsecure contextを保つため、LAN内IPではなく
-このMacの`localhost`を使ってください。
+Open the following URL in desktop Chrome:
 
 ```text
 http://localhost:8765/examples/data-modes/
 ```
 
-## 目的から選ぶ
+Use `localhost`, not another machine's LAN address. Web Bluetooth requires a
+secure context, and browsers treat `http://localhost` as a potentially trustworthy
+origin.
 
-| 目的 | Toolkit profile | 通信 | 主なデータ | 注意 |
-|---|---|---|---|---|
-| 圧力と姿勢をまず表示 | `realtime-full` | Notify | acc / gyro / press / quat、100 Hz | 低遅延だがlosslessではない |
-| 姿勢を高速表示 | `realtime-orientation` | Notify | acc / gyro / quat、200 Hz | pressなし |
-| 圧力を高速表示 | `realtime-pressure` | Notify | acc / gyro / press、200 Hz | quatなし |
-| Rawと歩行指標を同時利用 | `realtime-full-step` | 2系統のNotify | Full Sensor + Step Analysis | Rawの欠損率も確認する |
-| 歩行指標だけ利用 | `step-analysis` | STEP_ANALYSIS Notify | step / stride / pronation | Raw Sensor Valuesは停止 |
-| Rawを完全性優先で保存 | `fifo-recording` | Request–response | acc / gyro / press、200 Hz | Stepと排他、停止後にdrain |
+## Acquisition paths
 
-Realtimeは低遅延の表示向けです。packetをBLEで取りこぼしても再取得しません。
-FIFOはINSOLE内リングバッファからserialを追跡して回収するため、研究記録や後解析に向きます。
-停止操作は未回収データのdrainが終わるまで完了しません。Step Analysisはファームウェアが算出した
-歩行イベントで、Realtime Rawとは併用できますが、現行ファームウェアではlossless FIFOと排他です。
+| Toolkit profile | GATT delivery path | Payload | Nominal sample rate | Continuity contract |
+|---|---|---|---:|---|
+| `realtime-orientation` | `SENSOR_VALUES` Notification | acc / gyro / quat | 200 sample/s | No retransmission |
+| `realtime-pressure` | `SENSOR_VALUES` Notification | acc / gyro / press | 200 sample/s | No retransmission |
+| `realtime-full` | `SENSOR_VALUES` Notification | acc / gyro / press / quat | 100 sample/s | No retransmission |
+| `realtime-full-step` | Two concurrent Notification streams | Realtime Full + STEP_ANALYSIS | 100 sample/s Raw | Raw continuity is not guaranteed |
+| `step-analysis` | `STEP_ANALYSIS` Notification | motion / overview / stride / pronation | Firmware event rate | SENSOR_VALUES disabled |
+| `fifo-recording` | FIFO Request–Response polling | acc / gyro / press | 200 sample/s | Validate after stop and drain |
 
-## アプリへ組み込む
+### SENSOR_VALUES Notification
 
-低レベル設定を順番に変更せず、profileを1回で適用します。
+Realtime acquisition is a peripheral-to-Host BLE Notification stream. The device
+emits approximately 50 packets/s. `streamingMode` selects the packet header,
+samples per packet, and field schema:
+
+- `streamingMode=1`: header `50`, acc + gyro + quat, 200 sample/s, no press
+- `streamingMode=3`: header `55`, acc + gyro + press, 200 sample/s, no quat
+- `streamingMode=4`: header `56`, acc + gyro + press + quat, 100 sample/s
+
+The Host can detect a gap in `serial_number`, but a missed Notification cannot be
+requested again. Use this path for low-latency visualization and interaction, not
+for a lossless recording requirement.
+
+### FIFO Request–Response
+
+FIFO acquisition stores Raw samples in the device-side ring buffer. The Toolkit
+polls batches, tracks serial progress, and drains unread data during
+`stopMeasurement()`. Delivery is bursty and can be delayed relative to device
+acquisition.
+
+Do not evaluate FIFO continuity from arrival gaps during the run. Use the final
+device checkpoint after drain and verify both `serial.missing === 0` and
+`fifoDropped === 0`. FIFO is exclusive with STEP_ANALYSIS on the current firmware.
+
+### STEP_ANALYSIS Notification
+
+STEP_ANALYSIS is a separate firmware-derived Notification stream. Motion packets
+are continuous; overview, stride, and pronation packets are joined by step number
+to create a completed row. It can run concurrently with Realtime SENSOR_VALUES,
+but both streams share BLE bandwidth. It cannot run concurrently with FIFO.
+
+## Application integration
+
+Apply one named profile instead of sequencing low-level stream and characteristic
+operations in application code.
 
 ```js
 buildInsoleToolkit(document.querySelector('#toolkit'), 'INSOLE 01', 0);
 const session = getInsoleToolkitSession(0);
 
-// ユーザが接続スイッチから実機を選択した後:
+// After the user selects a device through the Bluetooth chooser:
 await session.applyProfile('realtime-full-step');
 await session.startMeasurement({
   metadata: { participant: 'P001', condition: 'walk' }
 });
-
-// 計測する
 
 const result = await session.stopMeasurement();
 const rawCsv = insoleToolkitMeasurementToCSV(result, 'raw');
 const stepCsv = insoleToolkitMeasurementToCSV(result, 'step');
 ```
 
-FIFOも同じAPIです。
+FIFO uses the same measurement API:
 
 ```js
 await session.startMeasurement({
@@ -59,34 +95,38 @@ await session.startMeasurement({
   metadata: { participant: 'P001' }
 });
 
-// stopMeasurement()はFIFO停止後のdrain完了を待つ。
+// Resolves only after FIFO stop and drain complete.
 const result = await session.stopMeasurement();
 console.log(result.raw.serial.missing);
 ```
 
-計測中の`applyProfile()` / `configure()`は`MEASUREMENT_ACTIVE`で拒否されます。
-これにより、記録区間の途中で列構成や通信経路が意図せず変わることを防ぎます。
-独自構成が必要なら`configure({ streamingMode, sensorDataMode, outputs })`でまとめて変更できます。
+`applyProfile()` and `configure()` reject changes with `MEASUREMENT_ACTIVE` while
+a formal measurement window is open. This keeps the packet schema and output set
+stable for the complete run. For a custom contract, call
+`configure({ streamingMode, sensorDataMode, outputs })` once.
 
-## 画面で確認できるもの
+## Instrumentation
 
-- Realtimeのsample / packet周波数、到着間隔、delivery age、serial continuity
-- FIFOのlag、dropped、停止後drain、デバイス時刻順へ再構成した全区間波形
-- Quaternionの数値と3D姿勢
-- Step Analysisのraw packet内訳と完成step row
-- 接続断、自動再接続、profile復元までの時間
-- 正式計測区間の結果JSON、Raw CSV、Step CSV
+The page exposes:
 
-ページを開いただけの受信は「ライブプレビュー」です。緑色の計測開始ボタンから
-`startMeasurement()`〜`stopMeasurement()`で囲んだ区間だけが、正式な記録と判定の対象です。
+- effective sample and packet rates
+- inter-arrival interval, delivery age, and serial continuity
+- FIFO lag, dropped serials, final checkpoint, and drain recovery
+- Quaternion values and 3D orientation
+- STEP_ANALYSIS packet-type counts and completed rows
+- disconnect, reconnect, first-data, and profile-restoration latency
+- Result JSON, Raw CSV, and Step CSV for the formal measurement window
 
-## FIFOのHost比較
+Data received before `startMeasurement()` is live preview only. Formal metrics and
+exports contain the interval bounded by `startMeasurement()` and
+`stopMeasurement()`.
 
-2台同時FIFOはMac / Web Bluetooth側の同時要求負荷の影響を受けるため、ページは
-1台計測を`fifo-single-baseline`、2台計測を`fifo-dual-host-stress`として分けます。
-Host差を調べる場合は、同じ実機・電池・距離・計測時間・Chrome条件で
-INSOLE 01単体、INSOLE 02単体、2台同時の順に記録してください。
-2台だけの欠損を、ただちにToolkit単体の不具合とは判定しません。
+## Dual-device FIFO Host comparison
 
-通信の完全性と、Step Analysisが算出する歩行指標の妥当性は別の評価対象です。
-このexampleの自動判定は取得状態の診断であり、医療的な妥当性を示すものではありません。
+Run single-device baselines as `fifo-single-baseline`, then run both devices as
+`fifo-dual-host-stress`. Keep the physical devices, battery state, distance,
+duration, Chrome version, and Host configuration constant.
+
+A gap observed only under dual-device load is not sufficient evidence of a
+Toolkit defect. Transport integrity and the biomechanical validity of
+firmware-derived STEP_ANALYSIS fields are separate validation targets.
