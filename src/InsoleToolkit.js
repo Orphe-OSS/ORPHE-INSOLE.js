@@ -278,6 +278,13 @@ class InsoleToolkitSession {
         const gaitOptions = insoleToolkitModuleOptions(options, 'gait');
         this._fifoCallbacks = fifoOptions;
         this._gaitCallbacks = gaitOptions;
+        this._verifyGaitNotifications = gaitOptions.verifyNotifications !== false;
+        this._gaitVerifyTimeoutMs = Number.isFinite(Number(gaitOptions.verifyTimeoutMs))
+            ? Math.max(200, Math.min(10000, Number(gaitOptions.verifyTimeoutMs)))
+            : 1500;
+        this._gaitVerifyRetries = Number.isFinite(Number(gaitOptions.verifyRetries))
+            ? Math.max(0, Math.min(3, Math.floor(Number(gaitOptions.verifyRetries))))
+            : 2;
         this.fifo = FifoClass && !options.simulator ? new FifoClass(insole, fifoOptions) : null;
         this.gait = GaitClass && !options.simulator ? new GaitClass(insole, gaitOptions) : null;
         this._wireModuleCallbacks();
@@ -303,6 +310,7 @@ class InsoleToolkitSession {
             lastMeasurement: this.lastMeasurement ? this._measurementResultSnapshot(this.lastMeasurement) : null,
             supportsFifo: this.supportsFifo,
             supportsStepAnalysis: this.supportsStepAnalysis,
+            gaitDiagnostics: this._gaitDiagnostics(),
             lastError: this.lastError,
         };
     }
@@ -549,6 +557,7 @@ class InsoleToolkitSession {
         try {
             if (this.connected) await this._applyDesiredState();
         } catch (error) {
+            if (options.rollbackOnFailure === false) throw error;
             this.streamingMode = previous.streamingMode;
             this.sensorDataMode = previous.sensorDataMode;
             this.outputs = previous.outputs;
@@ -664,12 +673,23 @@ class InsoleToolkitSession {
     }
 
     async _startGait() {
-        if (this.gaitActive) return;
         if (!this.gait) {
             const error = new Error('InsoleToolkit: Step Analysis requires InsoleGait.js.');
             error.code = 'GAIT_UNAVAILABLE';
             throw error;
         }
+        if (this.gaitActive) {
+            const beforeDiagnostics = this._gaitDiagnostics();
+            try {
+                await this._verifyGaitLiveness(beforeDiagnostics, 'active');
+            } catch (error) {
+                try { await this.gait.stop(); } catch { /* noop */ }
+                this.gaitActive = false;
+                throw error;
+            }
+            return;
+        }
+        const beforeDiagnostics = this._gaitDiagnostics();
         const started = await this.gait.start();
         if (!started) {
             const error = new Error('InsoleToolkit: failed to start Step Analysis.');
@@ -677,16 +697,31 @@ class InsoleToolkitSession {
             throw error;
         }
         this.gaitActive = true;
+        try {
+            await this._verifyGaitLiveness(beforeDiagnostics, 'start');
+        } catch (error) {
+            try { await this.gait.stop(); } catch { /* noop */ }
+            this.gaitActive = false;
+            throw error;
+        }
     }
 
     async _refreshGait() {
         if (!this.gait || !this.gaitActive) return this._startGait();
         if (typeof this.gait.refreshSubscription !== 'function') return;
+        const beforeDiagnostics = this._gaitDiagnostics();
         const refreshed = await this.gait.refreshSubscription();
         this.gaitActive = !!refreshed;
         if (!refreshed) {
             const error = new Error('InsoleToolkit: failed to refresh Step Analysis after FIFO mode change.');
             error.code = 'GAIT_REFRESH_FAILED';
+            throw error;
+        }
+        try {
+            await this._verifyGaitLiveness(beforeDiagnostics, 'restore');
+        } catch (error) {
+            try { await this.gait.stop(); } catch { /* noop */ }
+            this.gaitActive = false;
             throw error;
         }
     }
@@ -695,6 +730,91 @@ class InsoleToolkitSession {
         if (!this.gait || !this.gaitActive) return;
         await this.gait.stop();
         this.gaitActive = false;
+    }
+
+    _gaitDiagnostics() {
+        if (!this.gait || typeof this.gait.diagnostics !== 'function') return null;
+        try { return this.gait.diagnostics(); } catch { return null; }
+    }
+
+    _emitGaitDiagnostic(type, detail = {}) {
+        this._callModuleCallback(this._gaitCallbacks, 'onDiagnostic', [
+            this.insole?.id || 0,
+            {
+                type,
+                ...detail,
+                diagnostics: this._gaitDiagnostics(),
+            },
+        ]);
+    }
+
+    /**
+     * startNotifications() のresolveだけで成功扱いにせず、実際の有効packet到着を確認する。
+     * 無通知時はstreaming modeを再適用してSTEP_ANALYSISを再購読する。
+     */
+    async _verifyGaitLiveness(beforeDiagnostics, context) {
+        if (
+            !this._verifyGaitNotifications
+            || !this.gait
+            || typeof this.gait.waitForPacket !== 'function'
+        ) return true;
+
+        const afterValidPackets = Number(beforeDiagnostics?.validPackets || 0);
+        const afterTransportNotifications = Number(beforeDiagnostics?.transportNotifications || 0);
+        const afterInvalidPackets = Number(beforeDiagnostics?.invalidPackets || 0);
+        for (let attempt = 0; attempt <= this._gaitVerifyRetries; attempt++) {
+            const received = await this.gait.waitForPacket({
+                afterCount: afterValidPackets,
+                timeoutMs: this._gaitVerifyTimeoutMs,
+            });
+            if (received) {
+                this._emitGaitDiagnostic('liveness-confirmed', { context, attempt });
+                return true;
+            }
+
+            const diagnostics = this._gaitDiagnostics();
+            this._emitGaitDiagnostic('liveness-timeout', {
+                context,
+                attempt,
+                timeoutMs: this._gaitVerifyTimeoutMs,
+            });
+            if (attempt >= this._gaitVerifyRetries) {
+                const transportDelta = Math.max(
+                    0,
+                    Number(diagnostics?.transportNotifications || 0) - afterTransportNotifications
+                );
+                const invalidDelta = Math.max(
+                    0,
+                    Number(diagnostics?.invalidPackets || 0) - afterInvalidPackets
+                );
+                const hasTransport = transportDelta > 0;
+                const error = new Error(
+                    hasTransport
+                        ? 'InsoleToolkit: STEP_ANALYSIS notifications arrived but no valid packets were decoded.'
+                        : 'InsoleToolkit: STEP_ANALYSIS subscription started but no notifications arrived.'
+                );
+                error.code = hasTransport ? 'GAIT_INVALID_PACKETS' : 'GAIT_NO_NOTIFICATIONS';
+                error.diagnostics = diagnostics;
+                error.transportDelta = transportDelta;
+                error.invalidDelta = invalidDelta;
+                throw error;
+            }
+
+            this._emitGaitDiagnostic('liveness-retry', { context, attempt: attempt + 1 });
+            if (this.insole && typeof this.insole.setDataStreamingMode === 'function') {
+                await this.insole.setDataStreamingMode(this.streamingMode);
+            }
+            if (typeof this.gait.refreshSubscription !== 'function') continue;
+            const refreshed = await this.gait.refreshSubscription();
+            this.gaitActive = !!refreshed;
+            if (!refreshed) {
+                const error = new Error('InsoleToolkit: failed to retry STEP_ANALYSIS notification subscription.');
+                error.code = 'GAIT_REFRESH_FAILED';
+                error.diagnostics = this._gaitDiagnostics();
+                throw error;
+            }
+        }
+        return false;
     }
 
     _installSensorDataMeasurementListener() {
@@ -837,29 +957,62 @@ class InsoleToolkitSession {
         const result = this._finalizeMeasurementResult(measurement);
         this.lastMeasurement = result;
 
-        const restoreProfile = options.restoreProfile ?? measurement.restoreProfile;
-        if (!options.skipRestore && wasFifo) {
-            const previousWasRealtime = measurement.previousConfiguration.sensorDataMode === 'realtime';
-            const target = restoreProfile !== false && previousWasRealtime
-                ? measurement.previousConfiguration
-                : INSOLE_TOOLKIT_PROFILES['realtime-full'];
-            const targetProfileId = restoreProfile !== false && previousWasRealtime
-                ? measurement.previousProfileId
-                : 'realtime-full';
-            await this._applyConfiguration(
-                normalizeInsoleToolkitConfiguration(target, this._configuration()),
-                { profileId: targetProfileId, allowDuringMeasurement: true }
-            );
-        } else if (!options.skipRestore && restoreProfile === true) {
-            await this._applyConfiguration(measurement.previousConfiguration, {
-                profileId: measurement.previousProfileId,
-                allowDuringMeasurement: true,
+        let restoreError = null;
+        try {
+            const restoreProfile = options.restoreProfile ?? measurement.restoreProfile;
+            if (!options.skipRestore && wasFifo) {
+                const previousWasRealtime = measurement.previousConfiguration.sensorDataMode === 'realtime';
+                const target = restoreProfile !== false && previousWasRealtime
+                    ? measurement.previousConfiguration
+                    : INSOLE_TOOLKIT_PROFILES['realtime-full'];
+                const targetProfileId = restoreProfile !== false && previousWasRealtime
+                    ? measurement.previousProfileId
+                    : 'realtime-full';
+                await this._applyConfiguration(
+                    normalizeInsoleToolkitConfiguration(target, this._configuration()),
+                    {
+                        profileId: targetProfileId,
+                        allowDuringMeasurement: true,
+                        rollbackOnFailure: false,
+                    }
+                );
+            } else if (!options.skipRestore && restoreProfile === true) {
+                await this._applyConfiguration(measurement.previousConfiguration, {
+                    profileId: measurement.previousProfileId,
+                    allowDuringMeasurement: true,
+                    rollbackOnFailure: false,
+                });
+            }
+        } catch (error) {
+            restoreError = error;
+            Object.defineProperty(error, 'measurement', {
+                value: result,
+                enumerable: false,
+                configurable: true,
             });
+            // Step再購読が成立しない場合に、失敗した復元元（FIFO）へ戻して
+            // バックグラウンド収録を再開しない。Raw Realtimeを安全な退避先とする。
+            try {
+                await this._applyConfiguration(
+                    INSOLE_TOOLKIT_PROFILES['realtime-full'],
+                    {
+                        profileId: 'realtime-full',
+                        allowDuringMeasurement: true,
+                        rollbackOnFailure: false,
+                    }
+                );
+            } catch (fallbackError) {
+                error.fallbackError = fallbackError;
+                this._reportError(fallbackError);
+                try { await this._stopFifo(); } catch (stopError) { this._reportError(stopError); }
+                try { await this._stopGait(); } catch (stopError) { this._reportError(stopError); }
+            }
+        } finally {
+            this.activeMeasurement = null;
+            this.measurementPhase = 'idle';
+            this._emitState();
         }
-
-        this.activeMeasurement = null;
-        this.measurementPhase = 'idle';
-        this._emitState();
+        if (restoreError) throw restoreError;
         return result;
     }
 
@@ -1002,6 +1155,8 @@ class InsoleToolkitSession {
                 this._callModuleCallback(this._gaitCallbacks, 'onGait', args);
             };
             this.gait.onMotion = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onMotion', args);
+            this.gait.onTransport = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onTransport', args);
+            this.gait.onDiagnostic = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onDiagnostic', args);
             this.gait.onRaw = (...args) => {
                 this._captureStepPacket(args[1]);
                 this._callModuleCallback(this._gaitCallbacks, 'onRaw', args);
@@ -1056,6 +1211,9 @@ class InsoleToolkitSession {
  * @param {{sensorValues?:boolean,stepAnalysis?:boolean}} [options.outputs]
  * @param {object} [options.fifo] OrpheInsoleFifo options + callbacks
  * @param {object} [options.gait] OrpheInsoleGait options + callbacks
+ * @param {boolean} [options.gait.verifyNotifications=true] startNotifications後に実packet到着を確認
+ * @param {number} [options.gait.verifyTimeoutMs=1500] 1回のpacket待機時間ms
+ * @param {number} [options.gait.verifyRetries=2] 無通知時のmode再適用+再購読回数
  *   simulator: true にすると実機の代わりに OrpheInsoleSimulator を使う
  *   （要 InsoleSimulator.js の読み込み。実機なしのデモ・開発用）。
  */

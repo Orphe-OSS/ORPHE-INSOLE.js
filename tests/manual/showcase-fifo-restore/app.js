@@ -73,7 +73,9 @@ const dom = {
 function createCounters() {
     return {
         realtimePackets: 0,
+        stepTransportPackets: 0,
         stepPackets: 0,
+        stepInvalidPackets: 0,
         stepRows: 0,
         fifoSamples: 0,
         fifoBatches: 0,
@@ -81,7 +83,9 @@ function createCounters() {
         fifoLagMax: 0,
         drainRecovered: 0,
         firstRealtimeLogged: false,
+        firstStepTransportLogged: false,
         firstStepLogged: false,
+        firstStepInvalidLogged: false,
         firstFifoLogged: false,
     };
 }
@@ -93,7 +97,9 @@ function copyCounters(id) {
 function counterDelta(after, before) {
     return {
         realtimePackets: after.realtimePackets - before.realtimePackets,
+        stepTransportPackets: after.stepTransportPackets - before.stepTransportPackets,
         stepPackets: after.stepPackets - before.stepPackets,
+        stepInvalidPackets: after.stepInvalidPackets - before.stepInvalidPackets,
         stepRows: after.stepRows - before.stepRows,
         fifoSamples: after.fifoSamples - before.fifoSamples,
         fifoBatches: after.fifoBatches - before.fifoBatches,
@@ -125,6 +131,7 @@ function selectedScenario() {
 
 function formatSessionState(snapshot) {
     if (!snapshot) return 'session=unavailable';
+    const gait = snapshot.gaitDiagnostics;
     return [
         `connected=${Boolean(snapshot.connected)}`,
         `transitioning=${Boolean(snapshot.transitioning)}`,
@@ -136,6 +143,9 @@ function formatSessionState(snapshot) {
         `sensorNotify=${Boolean(snapshot.sensorNotifyActive)}`,
         `fifo=${Boolean(snapshot.fifoActive)}`,
         `gait=${Boolean(snapshot.gaitActive)}`,
+        `gaitTransport=${gait?.transportNotifications ?? 'n/a'}`,
+        `gaitValid=${gait?.validPackets ?? 'n/a'}`,
+        `gaitInvalid=${gait?.invalidPackets ?? 'n/a'}`,
         `measurement=${snapshot.measurementPhase}`,
     ].join(' ');
 }
@@ -239,7 +249,9 @@ function renderDevice(id) {
         missing: String(result.missing),
         dropped: String(result.dropped),
         drain: result.drainMs === null ? '—' : `${Math.round(result.drainMs)} ms`,
+        stepTransport: String(result.postDelta.stepTransportPackets),
         stepResume: String(result.postDelta.stepPackets),
+        stepInvalid: String(result.postDelta.stepInvalidPackets),
         rawResume: String(result.postDelta.realtimePackets),
     } : {
         profile: snapshot?.profileId || '—',
@@ -248,7 +260,9 @@ function renderDevice(id) {
         missing: '—',
         dropped: String(counters[id].fifoDropped),
         drain: '—',
+        stepTransport: String(counters[id].stepTransportPackets),
         stepResume: String(counters[id].stepPackets),
+        stepInvalid: String(counters[id].stepInvalidPackets),
         rawResume: String(counters[id].realtimePackets),
     };
 
@@ -260,7 +274,9 @@ function renderDevice(id) {
         metric('MISSING', values.missing),
         metric('DROPPED', values.dropped),
         metric('DRAIN', values.drain),
+        metric('STEP TRANSPORT', values.stepTransport),
         metric('STEP PACKETS', values.stepResume),
+        metric('STEP INVALID', values.stepInvalid),
         metric('RAW PACKETS', values.rawResume)
     );
 
@@ -379,14 +395,19 @@ function evaluateDevice(run, device) {
     const checks = [
         makeCheck('事前profile適用', snapshotMatchesProfile(device.before, device.profileId), formatSessionState(device.before)),
         makeCheck('事前Raw受信', !expected.raw || device.preDelta.realtimePackets > 0, `${device.preDelta.realtimePackets} packets`),
+        makeCheck('事前Step transport', !expected.step || device.preDelta.stepTransportPackets > 0, `${device.preDelta.stepTransportPackets} notifications`),
         makeCheck('事前Step受信', !expected.step || device.preDelta.stepPackets > 0, `${device.preDelta.stepPackets} packets`),
         makeCheck('FIFO単独状態へ移行', fifoStateIsValid(device.during), formatSessionState(device.during)),
         makeCheck('FIFO Rawを取得', fifoSamples > 0, `${fifoSamples} samples`),
         makeCheck('FIFO中Realtime通知なし', device.fifoDelta.realtimePackets === 0, `${device.fifoDelta.realtimePackets} packets`),
+        makeCheck('FIFO中Step transportなし', device.fifoDelta.stepTransportPackets === 0, `${device.fifoDelta.stepTransportPackets} notifications`),
         makeCheck('FIFO中Step通知なし', device.fifoDelta.stepPackets === 0, `${device.fifoDelta.stepPackets} packets`),
+        makeCheck('stop/drain・復元処理', !device.stopError, device.stopError || 'completed'),
         makeCheck('元profileへ復元', snapshotMatchesProfile(device.after, device.profileId), formatSessionState(device.after)),
         makeCheck('Raw受信再開', !expected.raw || device.postDelta.realtimePackets > 0, `${device.postDelta.realtimePackets} packets`),
+        makeCheck('Step transport再開', !expected.step || device.postDelta.stepTransportPackets > 0, `${device.postDelta.stepTransportPackets} notifications`),
         makeCheck('Step受信再開', !expected.step || device.postDelta.stepPackets > 0, `${device.postDelta.stepPackets} packets`),
+        makeCheck('Step packet decode', device.postDelta.stepInvalidPackets === 0, `invalid=${device.postDelta.stepInvalidPackets}`, 'warn'),
         makeCheck('FIFO serial continuity', missing === 0, `missing=${missing}`, 'warn'),
         makeCheck('FIFO dropped', dropped === 0, `dropped=${dropped}`, 'warn'),
     ];
@@ -432,17 +453,40 @@ async function stopStartedMeasurements(run, reason) {
     const stopStarted = performance.now();
     const settled = await Promise.allSettled(run.devices.map(async (device) => {
         if (!device.measurementStarted) return null;
-        const result = await sessions[device.id].stopMeasurement({ reason });
-        device.drainMs = performance.now() - stopStarted;
-        device.measurement = result;
-        latestMeasurements[device.id] = result;
-        return result;
+        try {
+            const result = await sessions[device.id].stopMeasurement({ reason });
+            device.measurement = result;
+            latestMeasurements[device.id] = result;
+            return result;
+        } catch (error) {
+            // profile復元に失敗しても、drain済みの正式計測結果はsessionに保持される。
+            // CSVを失わず、エラー自体はallSettledへ伝えて判定をFAILにする。
+            const recovered = error?.measurement || sessions[device.id].lastMeasurement;
+            if (recovered) {
+                device.measurement = recovered;
+                latestMeasurements[device.id] = recovered;
+                logEvent(
+                    device.id,
+                    `FIFO result preserved despite restore error: samples=${recovered.raw?.samples?.length || 0}`,
+                    'warn'
+                );
+            }
+            throw error;
+        } finally {
+            device.drainMs = performance.now() - stopStarted;
+        }
     }));
     settled.forEach((result, index) => {
         const device = run.devices[index];
         if (result.status === 'rejected') {
+            const code = result.reason?.code || 'UNKNOWN';
+            const diagnostics = result.reason?.diagnostics;
             device.stopError = result.reason?.message || String(result.reason);
-            logEvent(device.id, `FIFO stop/drain failed: ${device.stopError}`, 'error');
+            logEvent(
+                device.id,
+                `FIFO stop/restore failed: code=${code} ${device.stopError} transport=${diagnostics?.transportNotifications ?? 'n/a'} valid=${diagnostics?.validPackets ?? 'n/a'} invalid=${diagnostics?.invalidPackets ?? 'n/a'} fallback=${sessions[device.id].profileId}`,
+                'error'
+            );
         } else if (device.measurementStarted) {
             const summary = device.measurement?.raw?.serial;
             logEvent(
@@ -476,6 +520,7 @@ async function runValidation() {
             after: null,
             measurementStarted: false,
             measurement: null,
+            stopError: null,
             drainMs: null,
             drainRecovered: 0,
         })),
@@ -508,7 +553,7 @@ async function runValidation() {
             device.preDelta = counterDelta(copyCounters(device.id), device.warmupStart);
             logEvent(
                 device.id,
-                `Precondition data: realtime=${device.preDelta.realtimePackets} step=${device.preDelta.stepPackets}`,
+                `Precondition data: realtime=${device.preDelta.realtimePackets} stepTransport=${device.preDelta.stepTransportPackets} step=${device.preDelta.stepPackets} invalid=${device.preDelta.stepInvalidPackets}`,
                 'success'
             );
         });
@@ -545,7 +590,7 @@ async function runValidation() {
             device.fifoDelta = counterDelta(copyCounters(device.id), device.fifoStart);
             logEvent(
                 device.id,
-                `FIFO window: samples=${device.fifoDelta.fifoSamples} realtime=${device.fifoDelta.realtimePackets} step=${device.fifoDelta.stepPackets}`,
+                `FIFO window: samples=${device.fifoDelta.fifoSamples} realtime=${device.fifoDelta.realtimePackets} stepTransport=${device.fifoDelta.stepTransportPackets} step=${device.fifoDelta.stepPackets}`,
                 device.fifoDelta.fifoSamples > 0 ? 'success' : 'warn'
             );
         });
@@ -569,7 +614,7 @@ async function runValidation() {
             runHistory.unshift(evaluation);
             logEvent(
                 device.id,
-                `Verdict=${evaluation.verdict.toUpperCase()} restored=${evaluation.after?.profileId} fifoSamples=${evaluation.fifoSamples} missing=${evaluation.missing} dropped=${evaluation.dropped} postRaw=${evaluation.postDelta.realtimePackets} postStep=${evaluation.postDelta.stepPackets}`,
+                `Verdict=${evaluation.verdict.toUpperCase()} restored=${evaluation.after?.profileId} fifoSamples=${evaluation.fifoSamples} missing=${evaluation.missing} dropped=${evaluation.dropped} postRaw=${evaluation.postDelta.realtimePackets} postStepTransport=${evaluation.postDelta.stepTransportPackets} postStep=${evaluation.postDelta.stepPackets} postInvalid=${evaluation.postDelta.stepInvalidPackets}`,
                 evaluation.verdict === 'fail' ? 'error' : evaluation.verdict
             );
         });
@@ -607,7 +652,7 @@ function formatEventLogText() {
         `connectedDevices=${connectedIds().map((id) => id + 1).join(',') || 'none'}`,
         ...DEVICE_IDS.map((id) => `${deviceLabel(id)} ${formatSessionState(sessions[id]?.snapshot())}`),
         ...latestRunResults().map((result) => (
-            `${deviceLabel(result.deviceId)} result=${result.verdict} expected=${result.profileId} restored=${result.after?.profileId || 'none'} fifoSamples=${result.fifoSamples} missing=${result.missing} dropped=${result.dropped} drainMs=${result.drainMs} postRaw=${result.postDelta.realtimePackets} postStep=${result.postDelta.stepPackets}`
+            `${deviceLabel(result.deviceId)} result=${result.verdict} expected=${result.profileId} restored=${result.after?.profileId || 'none'} fifoSamples=${result.fifoSamples} missing=${result.missing} dropped=${result.dropped} drainMs=${result.drainMs} postRaw=${result.postDelta.realtimePackets} postStepTransport=${result.postDelta.stepTransportPackets} postStep=${result.postDelta.stepPackets} postInvalid=${result.postDelta.stepInvalidPackets}`
         )),
         '',
         'timestamp\tlevel\tdevice\tmessage',
@@ -730,6 +775,41 @@ function installDevice(id) {
                 },
             },
             gait: {
+                verifyNotifications: true,
+                verifyTimeoutMs: 1500,
+                verifyRetries: 2,
+                onTransport(deviceId, info) {
+                    const state = counters[deviceId];
+                    state.stepTransportPackets += 1;
+                    if (!info?.valid) state.stepInvalidPackets += 1;
+                    if (!state.firstStepTransportLogged) {
+                        state.firstStepTransportLogged = true;
+                        logEvent(
+                            deviceId,
+                            `First Step transport notification: length=${info?.byteLength ?? 'unknown'} header=${info?.header ?? 'unknown'} subheader=${info?.subheader ?? 'unknown'} valid=${Boolean(info?.valid)}`,
+                            info?.valid ? 'success' : 'warn'
+                        );
+                    }
+                    if (!info?.valid && !state.firstStepInvalidLogged) {
+                        state.firstStepInvalidLogged = true;
+                        logEvent(
+                            deviceId,
+                            `Invalid Step transport packet: length=${info?.byteLength ?? 'unknown'} header=${info?.header ?? 'unknown'} subheader=${info?.subheader ?? 'unknown'}`,
+                            'error'
+                        );
+                    }
+                },
+                onDiagnostic(deviceId, info) {
+                    const details = info?.diagnostics || {};
+                    const level = ['liveness-timeout', 'packet-timeout', 'invalid-packet'].includes(info?.type)
+                        ? 'warn'
+                        : info?.type === 'liveness-retry' ? 'info' : 'success';
+                    logEvent(
+                        deviceId,
+                        `Step diagnostic: type=${info?.type || 'unknown'} transport=${details.transportNotifications ?? 'n/a'} valid=${details.validPackets ?? 'n/a'} invalid=${details.invalidPackets ?? 'n/a'} subscribed=${details.subscribed ?? 'n/a'}`,
+                        level
+                    );
+                },
                 onRaw(deviceId, packet) {
                     counters[deviceId].stepPackets += 1;
                     if (!counters[deviceId].firstStepLogged) {

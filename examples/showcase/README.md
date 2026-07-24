@@ -38,6 +38,10 @@ FWバッファから欠損なくデータを回収します（`read_sensor_data_
 （`serial_number, timestamp, gyro[dps], acc[G], press1..6[N]`）。FIFOモードにクォータニオンは含まれません。
 この記録カードとギア内の設定は同じ Toolkit セッションを操作するため、どちらから切り替えても競合しません。
 記録カードからFIFOを開始するとStep Analysisを一時停止し、停止時のdrain後に直前のRealtime/Step設定を復元します。
+Step Analysisの開始・復元時は実packet到着まで確認し、無通知ならstreaming mode再適用と再購読を
+自動で最大2回行います。開始できない場合はカードに`GAIT_NO_NOTIFICATIONS`（BLE notifyなし）または
+`GAIT_INVALID_PACKETS`（transport到着・decode不成立）が表示されます。FIFO後の復元に失敗しても
+収録済みFIFO結果は保持され、意図しないFIFO再開を避けてRealtime Rawへ退避します。
 
 ## デモ用歩行データの差し替え
 

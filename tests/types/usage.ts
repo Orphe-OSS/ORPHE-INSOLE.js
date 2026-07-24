@@ -99,7 +99,12 @@ globalThis.buildInsoleToolkit(document.createElement('div'), 'ADVANCED', 1, {
         onDataLoss(info) { void info.dropped; },
     },
     gait: {
+        verifyNotifications: true,
+        verifyTimeoutMs: 1500,
+        verifyRetries: 2,
         onGait(deviceId, row) { void deviceId; void row.step_number; },
+        onTransport(deviceId, info) { void deviceId; void info.transportNotifications; },
+        onDiagnostic(deviceId, info) { void deviceId; void info.diagnostics?.validPackets; },
     },
     onStateChange(state) { void state.fifoActive; },
 });
@@ -123,7 +128,7 @@ if (toolkitSession) {
     void toolkitSession.setSensorDataMode('realtime');
     void toolkitSession.setOutputs({ sensorValues: false, stepAnalysis: true });
     const toolkitState: import('../../types/orphe-insole').InsoleToolkitSessionState = toolkitSession.snapshot();
-    void toolkitState;
+    void toolkitState.gaitDiagnostics?.transportNotifications;
 }
 globalThis.insoles = [insole, alias, globalInsole];
 globalThis.bles = globalThis.insoles;
@@ -224,6 +229,22 @@ async function runFifo() {
 void runFifo();
 const fifoHeader: string = globalThis.OrpheInsoleFifo.CSV_HEADER;
 void fifoHeader;
+
+// ── OrpheInsoleGait transport/liveness 診断の型 ──
+const gait = new globalThis.OrpheInsoleGait(insole);
+gait.onTransport = (deviceId, info) => {
+    const valid: boolean = info.valid;
+    void deviceId;
+    void valid;
+};
+gait.onDiagnostic = (deviceId, info) => {
+    void deviceId;
+    void info.type;
+    void info.diagnostics?.invalidPackets;
+};
+const gaitDiagnostics = gait.diagnostics();
+void gaitDiagnostics.lastTransport?.byteLength;
+void gait.waitForPacket({ afterCount: gaitDiagnostics.validPackets, timeoutMs: 1500 });
 
 // ── connectionState / connectTimeoutMs / エラーcode の型 ──
 const state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = insole.connectionState;

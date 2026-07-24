@@ -795,6 +795,52 @@ function makeMockInsole() {
     assert.equal(gait.isRunning, false);
   }
 
+  // startNotifications成功と実packet到着を分離し、transport/decode診断を保持する
+  {
+    const mock = makeMockInsole();
+    const gait = new Gait(mock);
+    const transports = [];
+    const diagnostics = [];
+    gait.onTransport = (id, info) => transports.push({ id, ...info });
+    gait.onDiagnostic = (id, info) => diagnostics.push({ id, ...info });
+    assert.equal(await gait.start(), true);
+
+    const waiting = gait.waitForPacket({ afterCount: 0, timeoutMs: 100 });
+    mock._gaitNotifySink(new DataView(new ArrayBuffer(8)));
+    let snapshot = gait.diagnostics();
+    assert.equal(snapshot.transportNotifications, 1);
+    assert.equal(snapshot.validPackets, 0);
+    assert.equal(snapshot.invalidPackets, 1);
+    assert.equal(transports[0].valid, false);
+    assert.ok(diagnostics.some((info) => info.type === 'invalid-packet'));
+
+    mock._gaitNotifySink(pkt(4, 123));
+    assert.equal(await waiting, true, '有効packet到着でwaiterを解決');
+    snapshot = gait.diagnostics();
+    assert.equal(snapshot.transportNotifications, 2);
+    assert.equal(snapshot.validPackets, 1);
+    assert.equal(snapshot.invalidPackets, 1);
+    assert.equal(snapshot.lastTransport.header, 51);
+    assert.equal(snapshot.lastTransport.subheader, 4);
+    assert.ok(diagnostics.some((info) => info.type === 'first-valid-packet'));
+    await gait.stop();
+  }
+
+  // transportが来ない場合はtimeoutし、停止は待機中waiterを即座に解除する
+  {
+    const mock = makeMockInsole();
+    const gait = new Gait(mock);
+    const diagnostics = [];
+    gait.onDiagnostic = (id, info) => diagnostics.push({ id, ...info });
+    assert.equal(await gait.start(), true);
+    assert.equal(await gait.waitForPacket({ afterCount: 0, timeoutMs: 5 }), false);
+    assert.ok(diagnostics.some((info) => info.type === 'packet-timeout'));
+
+    const waiting = gait.waitForPacket({ afterCount: 0, timeoutMs: 1000 });
+    await gait.stop();
+    assert.equal(await waiting, false, 'stopでpacket待機を解除');
+  }
+
   console.log('insole-gait.test.js passed');
 })().catch((error) => {
   console.error(error);

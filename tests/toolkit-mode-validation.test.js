@@ -305,6 +305,11 @@ const metrics = require('../examples/data-modes/metrics.js');
     assert.match(fifoRestoreHtml, /id="download_csv_button"/);
     assert.match(fifoRestoreApp, /profile:\s*'fifo-recording'/);
     assert.match(fifoRestoreApp, /sessions\[device\.id\]\.stopMeasurement/);
+    assert.match(fifoRestoreApp, /verifyNotifications:\s*true/);
+    assert.match(fifoRestoreApp, /stepTransportPackets/);
+    assert.match(fifoRestoreApp, /stepInvalidPackets/);
+    assert.match(fifoRestoreApp, /error\?\.measurement \|\| sessions\[device\.id\]\.lastMeasurement/);
+    assert.match(fifoRestoreApp, /FIFO stop\/restore failed: code=/);
     assert.match(fifoRestoreApp, /formatEventLogText/);
     assert.doesNotMatch(fifoRestoreApp, /setSensorDataMode\('fifo'\)/);
 }

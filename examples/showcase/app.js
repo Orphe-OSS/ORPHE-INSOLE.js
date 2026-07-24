@@ -826,6 +826,7 @@ window.onload = function () {
         gaitToggle.disabled = true;
         gaitDownload.disabled = true;
         gaitActiveIds = [];
+        const startErrors = [];
         for (const id of ids) gaitLatest[id] = null;
         const results = await Promise.all(ids.map(async (id) => {
             const session = getInsoleToolkitSession(id);
@@ -838,12 +839,20 @@ window.onload = function () {
                 return session.gaitActive;
             } catch (error) {
                 console.warn(`INSOLE${id}: failed to enable Step Analysis`, error);
+                startErrors.push({
+                    id,
+                    code: error?.code || 'UNKNOWN',
+                    message: error?.message || String(error),
+                });
                 return false;
             }
         }));
         results.forEach((ok, i) => { if (ok) gaitActiveIds.push(ids[i]); });
         if (gaitActiveIds.length === 0) {
-            gaitStatus.textContent = i18nText('gaitStatusIdle');
+            const codes = startErrors.map((item) => `INSOLE${item.id + 1}: ${item.code}`).join(', ');
+            gaitStatus.textContent = startErrors.length > 0
+                ? i18nText('gaitStatusError', { codes })
+                : i18nText('gaitStatusIdle');
             gaitToggle.disabled = false;
             return;
         }

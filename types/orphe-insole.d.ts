@@ -634,6 +634,45 @@ export interface InsoleGaitMotion {
 }
 export type InsoleGaitPacket = InsoleGaitOverview | InsoleGaitStride | InsoleGaitPronation | InsoleGaitMotion;
 
+export interface InsoleGaitTransportInfo {
+    receivedAt: number;
+    byteLength: number;
+    header: number | null;
+    subheader: number | null;
+    valid: boolean;
+    transportNotifications: number;
+    validPackets: number;
+    invalidPackets: number;
+}
+
+export interface InsoleGaitDiagnostics {
+    running: boolean;
+    subscribed: boolean;
+    transportNotifications: number;
+    validPackets: number;
+    invalidPackets: number;
+    lastTransportAt: number | null;
+    lastValidPacketAt: number | null;
+    lastTransport: InsoleGaitTransportInfo | null;
+    connectionGeneration: number;
+    lifecycleGeneration: number;
+}
+
+export interface InsoleGaitDiagnosticEvent {
+    type:
+        | 'subscription-started'
+        | 'physical-disconnect'
+        | 'invalid-packet'
+        | 'first-valid-packet'
+        | 'packet-timeout'
+        | 'liveness-confirmed'
+        | 'liveness-timeout'
+        | 'liveness-retry'
+        | string;
+    diagnostics: InsoleGaitDiagnostics | null;
+    [key: string]: unknown;
+}
+
 /** 1歩ぶんに集約した歩容パラメーター（overview + stride + pronation + 派生指標） */
 export interface InsoleGaitRow {
     step_number: number;
@@ -678,7 +717,13 @@ export declare class OrpheInsoleGait {
     onMotion: ((deviceId: number, motion: InsoleGaitMotion) => void) | null;
     /** デコード済みの全パケット */
     onRaw: ((deviceId: number, packet: InsoleGaitPacket) => void) | null;
+    /** characteristic notify 1件ごとのtransport/decode診断 */
+    onTransport: ((deviceId: number, info: InsoleGaitTransportInfo) => void) | null;
+    /** 購読・初回packet・timeout等の低頻度診断イベント */
+    onDiagnostic: ((deviceId: number, info: InsoleGaitDiagnosticEvent) => void) | null;
     onError: ((error: unknown) => void) | null;
+    diagnostics(): InsoleGaitDiagnostics;
+    waitForPacket(options?: { afterCount?: number; timeoutMs?: number }): Promise<boolean>;
     /** 歩容解析の notify を開始（SENSOR_VALUES は begin() 済みであること） */
     start(): Promise<boolean>;
     /** 集約中・完成済みのstepを維持したままSTEP_ANALYSIS notifyを再購読 */
@@ -722,9 +767,17 @@ export interface InsoleToolkitFifoOptions extends InsoleFifoOptions {
 }
 
 export interface InsoleToolkitGaitOptions extends InsoleGaitOptions {
+    /** startNotifications成功後に実packet到着まで確認する（Toolkit既定true） */
+    verifyNotifications?: boolean;
+    /** 1回の実packet待機時間ms（既定1500、200〜10000） */
+    verifyTimeoutMs?: number;
+    /** 無通知時のmode再適用+再購読回数（既定2、0〜3） */
+    verifyRetries?: number;
     onGait?: (deviceId: number, row: InsoleGaitRow) => void;
     onMotion?: (deviceId: number, motion: InsoleGaitMotion) => void;
     onRaw?: (deviceId: number, packet: InsoleGaitPacket) => void;
+    onTransport?: (deviceId: number, info: InsoleGaitTransportInfo) => void;
+    onDiagnostic?: (deviceId: number, info: InsoleGaitDiagnosticEvent) => void;
     onError?: (error: unknown) => void;
 }
 
@@ -838,6 +891,7 @@ export interface InsoleToolkitSessionState {
     lastMeasurement: InsoleToolkitMeasurementSummary | null;
     supportsFifo: boolean;
     supportsStepAnalysis: boolean;
+    gaitDiagnostics: InsoleGaitDiagnostics | null;
     lastError: unknown | null;
 }
 

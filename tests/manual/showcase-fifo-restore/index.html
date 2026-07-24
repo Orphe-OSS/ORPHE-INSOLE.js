@@ -114,7 +114,11 @@
       </div>
       <div class="motion-note">
         <i class="bi bi-person-walking"></i>
-        <span>事前受信確認と復元確認の表示中は、Stepパケットを発生させるためINSOLEを履いて歩くか、両足を動かし続けてください。</span>
+        <span>
+          事前受信確認と復元確認の表示中は、Stepパケットを発生させるためINSOLEを履いて歩くか、両足を動かし続けてください。
+          Step購読後は実パケット到着まで確認し、無通知なら最大2回再購読します。ログの
+          <code>transport / valid / invalid</code> でBLE無通知とdecode不一致を区別できます。
+        </span>
       </div>
 
       <div class="progress-shell">

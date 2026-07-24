@@ -419,7 +419,13 @@ buildInsoleToolkit(parent, 'Left Foot', 0, {
     onSamples(deviceId, samples) { /* FIFO raw data */ },
   },
   gait: {
+    // Toolkit既定: 実packetを確認し、無通知ならmode再適用+再購読を最大2回行う
+    verifyNotifications: true,
+    verifyTimeoutMs: 1500,
+    verifyRetries: 2,
     onGait(deviceId, row) { /* one aggregated step */ },
+    onTransport(deviceId, info) { /* transport/valid/invalid counters */ },
+    onDiagnostic(deviceId, info) { /* liveness/retry/timeout */ },
   },
 });
 
@@ -438,6 +444,17 @@ const fifoResult = await session.stopMeasurement();
 接続後、ツールキットのヘッダには 実測周波数 / L・Rバッジ（mount_position から自動判定）/ バッテリー / 再接続ステータス / 設定が表示されます。設定モーダルでは、Realtime Sensor Values と Step Analysis を同時に選択でき、Sensor Values は Realtime / FIFO を切り替えられます。Realtime Streaming Format (1/3/4) は Realtime 選択時のみ有効です。現行FWではFIFO RawとStep Analysisは同時取得できないため、FIFOはRaw単独で使用し、Step AnalysisはRealtime Rawとの同時取得またはStep-onlyで使用します。FIFOにquaternionは含まれません。
 
 FIFO は `InsoleFifo.js`、Step Analysis は `InsoleGait.js` を読み込んだ場合だけ選択できます。どちらも無い既存ページでは、従来どおり Realtime Sensor Values が既定です。
+
+ToolkitはStep購読の開始後、`startNotifications()`のresolveだけでなく有効なSTEP_ANALYSIS
+packetの到着を確認します。既定では1.5秒待機し、無通知ならstreaming mode再適用と再購読を
+最大2回実行します。全試行でtransportが0件なら`GAIT_NO_NOTIFICATIONS`、transportは増えたが
+有効packetが0件なら`GAIT_INVALID_PACKETS`です。現在値は`session.snapshot().gaitDiagnostics`
+または`session.gait.diagnostics()`で確認できます。特殊なFW検証で従来の購読完了だけを使う場合は
+`gait.verifyNotifications: false`を明示してください。
+
+FIFO drain後に元のStep profileを復元できなかった場合、`stopMeasurement()`は上記errorをreject
+しますが、完成した計測結果は`error.measurement`と`session.lastMeasurement`に保持されます。
+セッションはFIFOへrollbackせず、可能なら`realtime-full`へ退避します。
 
 `options.simulator: true` を渡すと、そのスロットが `OrpheInsoleSimulator` に差し替わり
 **実機なしで同じ UI・コールバックが動きます**（要 `InsoleSimulator.js` の読み込み。
