@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `examples/showcase/`: start FIFO recording through the atomic `fifo-recording` measurement profile so Step-only and Realtime Raw + Step states transition safely to FIFO Raw, then drain and restore the previous Realtime/Step profile on stop. The Toolkit guide and Showcase README now consistently document that FIFO Raw is exclusive with Step Analysis on the current firmware.
 - `examples/data-modes/`: bound long-running live-preview metric buffers and remove spread-based min/max aggregation so leaving the physical-device inspector open for hours cannot overflow the JavaScript call stack.
 - `InsoleToolkitSession`: reject lossless FIFO Raw + Step Analysis with `FIFO_STEP_INCOMPATIBLE`, while retaining Realtime Raw + Step as the supported application mode. Real-device validation showed that FIFO read mode suppresses Step publishing, while temporary Realtime windows restore Step motion packets but make the same device serials unavailable from the FW FIFO (`fw_nodata`). The settings UI disables the invalid cross-selection and directs users to sequential FIFO recording then Realtime + Step.
 - Bound asynchronous polling in the gait and connection-stability tests so a failed mock expectation reports a timeout instead of spinning indefinitely with `setImmediate()`. The gait test gate now also runs in a child process with a 60-second hard timeout (exit 124), preventing a stuck regression from accumulating CPU-consuming orphan processes.

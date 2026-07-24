@@ -416,6 +416,30 @@ async function main() {
     assert.equal(session.measurementPhase, 'idle');
   }
 
+  for (const previousProfile of ['realtime-full-step', 'step-analysis']) {
+    const { session } = createSession();
+    await session.connect();
+    await session.applyProfile(previousProfile);
+    await session.startMeasurement({
+      profile: 'fifo-recording',
+      metadata: { source: 'showcase-fifo-card' },
+    });
+    assert.equal(session.profileId, 'fifo-recording');
+    assert.equal(session.fifoActive, true);
+    assert.equal(session.gaitActive, false);
+
+    await session.stopMeasurement({ reason: 'test' });
+    assert.equal(session.profileId, previousProfile);
+    assert.equal(session.fifoActive, false);
+    assert.equal(session.gaitActive, true);
+    assert.deepEqual(
+      session.outputs,
+      previousProfile === 'step-analysis'
+        ? { sensorValues: false, stepAnalysis: true }
+        : { sensorValues: true, stepAnalysis: true }
+    );
+  }
+
   {
     const { insole, session } = createSession();
     await session.connect();
