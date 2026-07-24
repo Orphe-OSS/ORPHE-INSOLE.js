@@ -70,6 +70,13 @@ if (parsed && parsed.samples[0]?.press) {
     const values: number[] = parsed.samples[0].press.values;
     void values;
 }
+const fullMode = OrpheInsole.getStreamingModeInfo(4);
+if (fullMode) void fullMode.fields.press;
+const unsubscribeSensorData = insole.addSensorDataListener((event) => {
+    const packetSerial: number = event.packet.serial_number;
+    void packetSerial;
+});
+unsubscribeSensorData();
 
 const buffer = new FixedSizeArray<number>(2);
 buffer.push(1);
@@ -81,6 +88,43 @@ const hz: number = timestamp.getHz();
 void hz;
 
 globalThis.buildInsoleToolkit(document.createElement('div'), 'INSOLE 01', 0, { streamingMode: 4 });
+globalThis.buildInsoleToolkit(document.createElement('div'), 'RECORDER', 0, { profile: 'fifo-recording' });
+globalThis.buildInsoleToolkit(document.createElement('div'), 'ADVANCED', 1, {
+    streamingMode: 3,
+    sensorDataMode: 'realtime',
+    outputs: { sensorValues: true, stepAnalysis: true },
+    fifo: {
+        startupDelayMs: 500,
+        onSamples(deviceId, samples) { void deviceId; void samples[0]?.press.values; },
+        onDataLoss(info) { void info.dropped; },
+    },
+    gait: {
+        onGait(deviceId, row) { void deviceId; void row.step_number; },
+    },
+    onStateChange(state) { void state.fifoActive; },
+});
+const toolkitSession = globalThis.getInsoleToolkitSession(1);
+if (toolkitSession) {
+    void toolkitSession.applyProfile('realtime-full-step');
+    void toolkitSession.configure({
+        streamingMode: 3,
+        sensorDataMode: 'realtime',
+        outputs: { sensorValues: true, stepAnalysis: false },
+    });
+    void toolkitSession.startMeasurement({
+        profile: 'realtime-full',
+        metadata: { participant: 'P001' },
+    }).then(() => toolkitSession.stopMeasurement()).then((measurement) => {
+        if (!measurement) return;
+        const csv: string = globalThis.insoleToolkitMeasurementToCSV(measurement, 'raw');
+        void measurement.raw.serial.missing;
+        void csv;
+    });
+    void toolkitSession.setSensorDataMode('realtime');
+    void toolkitSession.setOutputs({ sensorValues: false, stepAnalysis: true });
+    const toolkitState: import('../../types/orphe-insole').InsoleToolkitSessionState = toolkitSession.snapshot();
+    void toolkitState;
+}
 globalThis.insoles = [insole, alias, globalInsole];
 globalThis.bles = globalThis.insoles;
 globalThis.cores = globalThis.insoles;
@@ -90,6 +134,9 @@ void insole.begin('STEP_ANALYSIS');
 
 // @ts-expect-error Streaming mode 2 is rejected by the runtime implementation.
 void insole.setDataStreamingMode(2);
+
+// @ts-expect-error Toolkit acquisition mode is realtime | fifo only.
+void toolkitSession?.setSensorDataMode('batch');
 
 // @ts-expect-error gotPress requires an InsolePressSample payload.
 insole.gotPress({ values: [1, 2, 3, 4, 5, 6] });
@@ -161,6 +208,11 @@ fifo.onSamples = (deviceId, samples) => {
     void gyroX;
 };
 fifo.onProgress = (info) => { const c: number = info.collected; void c; };
+const fifoCheckpoint = fifo.createCheckpoint();
+const fifoCheckpointSummary = fifo.summarizeSince(fifoCheckpoint);
+const fifoWindowSerials: number[] = fifo.serialsSince(fifoCheckpoint);
+void fifoCheckpointSummary.missing;
+void fifoWindowSerials;
 async function runFifo() {
     const started: boolean = await fifo.start();
     void started;

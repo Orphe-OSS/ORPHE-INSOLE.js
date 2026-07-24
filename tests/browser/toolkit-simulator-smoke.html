@@ -16,6 +16,8 @@
   <script src="../../src/ORPHE-INSOLE.js"></script>
   <script src="../../src/InsoleSimulator.js"></script>
   <script src="../../src/InsoleToolkit.js"></script>
+  <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
 </head>
 <body>
   <div id="toolkit"></div>
@@ -37,6 +39,14 @@
         // 2. UI が構築されていること
         const toggle = document.querySelector('#switch_ble0');
         checks.uiBuilt = !!toggle;
+        const sensorOutput = document.querySelector('#output_sensor_values0');
+        const stepOutput = document.querySelector('#output_step_analysis0');
+        const acquisition = document.querySelector('#select_sensor_data_mode0');
+        checks.dataModeControlsBuilt = !!sensorOutput && !!stepOutput && !!acquisition;
+        checks.dataModeDefaults = sensorOutput.checked && !stepOutput.checked && acquisition.value === 'realtime';
+        checks.simulatorAdvancedModesDisabled = stepOutput.disabled
+          && Array.from(acquisition.options).find((option) => option.value === 'fifo').disabled;
+        checks.sessionExposed = !!getInsoleToolkitSession(0);
 
         // 3. コールバック購読 → トグルON（実機なら chooser が出る操作）でデータが流れること
         let pressCount = 0;
@@ -55,7 +65,7 @@
         checks.lrBadge = !!badge && badge.innerText === 'L';
 
         // 5. ストリーミングモード切替（設定モーダル相当の呼び出し）で quat が止まること
-        await insoles[0].setDataStreamingMode(3);
+        await getInsoleToolkitSession(0).setStreamingMode(3);
         const quatAtSwitch = quatCount;
         const pressAtSwitch = pressCount;
         await new Promise((resolve) => setTimeout(resolve, 400));
@@ -70,7 +80,17 @@
         await new Promise((resolve) => setTimeout(resolve, 300));
         checks.stopsOnToggleOff = pressCount === pressAtStop && !insoles[0].isConnected();
 
-        // 7. simulator 未読込 + {simulator:true} は明確なエラーを投げること
+        // 7. 実機スロットでは opt-in モジュール読込時に FIFO / Step Analysis を選べること
+        insoles[1] = new OrpheInsole(1);
+        buildInsoleToolkit(document.getElementById('toolkit'), 'DEVICE 1', 1);
+        const deviceSession = getInsoleToolkitSession(1);
+        const deviceStepOutput = document.querySelector('#output_step_analysis1');
+        const deviceAcquisition = document.querySelector('#select_sensor_data_mode1');
+        checks.advancedModulesDetected = deviceSession.supportsFifo && deviceSession.supportsStepAnalysis
+          && !deviceStepOutput.disabled
+          && !Array.from(deviceAcquisition.options).find((option) => option.value === 'fifo').disabled;
+
+        // 8. simulator 未読込 + {simulator:true} は明確なエラーを投げること
         const savedSimulator = window.OrpheInsoleSimulator;
         try {
           window.OrpheInsoleSimulator = undefined;

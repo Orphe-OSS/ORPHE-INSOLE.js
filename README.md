@@ -19,7 +19,8 @@ Happy hacking for ORPHE INSOLE module on javascript.
 
 INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-shoe](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe) へ（クリック/キーボードでも試奏できます。ジェスチャ収録ツール [GESTURE LAB](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe/lab.html) 付き）。
 
-通常モード（リアルタイム通知）と FIFO（ロスレス収録）の違いは [fifo-vs-realtime](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/fifo-vs-realtime) ページで、仕組みの解説と実機での欠損率比較ができます。
+通常モード（リアルタイム通知）と FIFO（ロスレス収録）だけを比較する旧サンプルは
+[fifo-vs-realtime](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/fifo-vs-realtime) に残しています。
 
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
@@ -71,6 +72,31 @@ insole.gotConvertedAcc = acc => console.log(acc); // acc[G]
 insole.begin({ preset: 'walk', streamingMode: 4 });
 </script>
 ```
+
+### Toolkitで計測モードを切り替えて記録する
+
+`InsoleToolkit.js`、`InsoleFifo.js`、`InsoleGait.js`を読み込むと、低レベル設定を順番に変更せず、
+実機検証済みの名前付きprofileを原子的に適用できます。
+
+```js
+buildInsoleToolkit(document.querySelector('#toolkit'), 'INSOLE 01', 0);
+const session = getInsoleToolkitSession(0);
+
+// ユーザが接続スイッチから実機を選択した後:
+await session.applyProfile('realtime-full-step');
+await session.startMeasurement({ metadata: { participant: 'P001' } });
+
+// 計測する
+
+const result = await session.stopMeasurement();
+const rawCsv = insoleToolkitMeasurementToCSV(result, 'raw');
+const stepCsv = insoleToolkitMeasurementToCSV(result, 'step');
+```
+
+主なprofileは`realtime-full`（全センサー100 Hz）、`realtime-orientation`（姿勢200 Hz）、
+`realtime-pressure`（圧力+IMU 200 Hz）、`realtime-full-step`、`step-analysis`、
+`fifo-recording`です。FIFOの`stopMeasurement()`は未回収データのdrain完了まで待ちます。
+計測中のprofile変更は拒否されるため、正式計測区間のデータ形式を一定に保てます。
 
 ### Tutorial
   * https://github.com/Orphe-OSS/ORPHE-INSOLE.js/wiki

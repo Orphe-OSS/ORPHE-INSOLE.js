@@ -159,6 +159,28 @@ export interface InsoleSensorPacket {
     samples: InsoleParsedSample[];
 }
 
+export interface InsoleStreamingModeInfo {
+    readonly id: InsoleStreamingMode;
+    readonly sampleHz: 100 | 200;
+    readonly packetHz: 50;
+    readonly fields: Readonly<{
+        quat: boolean;
+        gyro: boolean;
+        acc: boolean;
+        press: boolean;
+    }>;
+    readonly label: string;
+}
+
+export interface InsoleSensorDataEvent {
+    deviceId: number;
+    receivedAt: number;
+    packet: InsoleSensorPacket;
+    data: DataView | null;
+}
+
+export const ORPHE_INSOLE_STREAMING_MODES: Readonly<Record<InsoleStreamingMode, InsoleStreamingModeInfo>>;
+
 export interface InsoleGait {
     type: number;
     direction: number;
@@ -205,6 +227,8 @@ export class OrpheInsole {
     constructor(id?: number);
 
     static parseSensorValues(data: DataView, options?: ParseInsoleSensorValuesOptions): InsoleSensorPacket | null;
+    static getStreamingModeInfo(mode: number): InsoleStreamingModeInfo | null;
+    static readonly STREAMING_MODES: typeof ORPHE_INSOLE_STREAMING_MODES;
 
     readonly ORPHE_INFORMATION: string;
     readonly ORPHE_DEVICE_INFORMATION: string;
@@ -301,6 +325,8 @@ export class OrpheInsole {
     startWatchingAdvertisements(): void;
     stopWatchingAdvertisements(): void;
     onAdvertisementReceived(event: InsoleBluetoothAdvertisingEvent): void;
+    addSensorDataListener(listener: (event: InsoleSensorDataEvent) => void): () => boolean;
+    removeSensorDataListener(listener: (event: InsoleSensorDataEvent) => void): boolean;
 
     gotData: (data: DataView, uuid?: InsoleSetupName) => void;
     gotStatus: (status: InsoleStatus) => void;
@@ -396,6 +422,8 @@ export declare class OrpheInsoleSimulator {
     setDataStreamingMode(mode: InsoleStreamingMode): Promise<void>;
     getDeviceInformation(): Promise<{ battery: number; mount_position: number; range: { acc: number; gyro: number } }>;
     resetAnalysisLogs(): void;
+    addSensorDataListener(listener: (event: InsoleSensorDataEvent) => void): () => boolean;
+    removeSensorDataListener(listener: (event: InsoleSensorDataEvent) => void): boolean;
 
     gotPress: (press: InsolePressSample) => void;
     gotAcc: (acc: InsoleVector3Sample) => void;
@@ -438,6 +466,27 @@ export interface InsoleFifoOptions {
      * stopOnLoss 自動停止・切断・例外では発動しない。
      */
     drainTimeoutMs?: number;
+}
+
+export interface InsoleFifoCheckpoint {
+    captureId: number;
+    serial: number | null;
+    dropped: number;
+    collected: number;
+}
+
+export interface InsoleFifoCheckpointSummary {
+    available: boolean;
+    first: number | null;
+    last: number | null;
+    expected: number;
+    received: number;
+    missing: number;
+    missingRate: number;
+    dropped: number;
+    /** FIFO全体の累積dropped差分（checkpoint以前のcarryOver確定分を含みうる） */
+    reportedDroppedDelta?: number;
+    checkpoint: InsoleFifoCheckpoint | null;
 }
 
 export interface InsoleFifoProgress {
@@ -502,6 +551,12 @@ export declare class OrpheInsoleFifo {
      */
     onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void) | null;
     onError: ((error: unknown) => void) | null;
+    /** 現在のFIFO要求境界を記録 */
+    createCheckpoint(): InsoleFifoCheckpoint;
+    /** checkpoint後のdevice serial範囲をrawStoreから再集計 */
+    summarizeSince(checkpoint: InsoleFifoCheckpoint): InsoleFifoCheckpointSummary;
+    /** checkpoint範囲で回収済みのdevice serial */
+    serialsSince(checkpoint: InsoleFifoCheckpoint): number[];
     /** FIFO 収集を開始（SENSOR_VALUES 通知は begin() 済みであること） */
     start(): Promise<boolean>;
     /** 収集を停止し、直前のリアルタイムモードへ復帰。収集した raw ストアを返す */
@@ -626,6 +681,8 @@ export declare class OrpheInsoleGait {
     onError: ((error: unknown) => void) | null;
     /** 歩容解析の notify を開始（SENSOR_VALUES は begin() 済みであること） */
     start(): Promise<boolean>;
+    /** 集約中・完成済みのstepを維持したままSTEP_ANALYSIS notifyを再購読 */
+    refreshSubscription(): Promise<boolean>;
     /** 歩容解析の notify を停止 */
     stop(): Promise<void>;
     /** 集めた歩容パラメーターを CSV 文字列にする */
@@ -648,9 +705,202 @@ export declare class OrpheInsoleGait {
 
 type OrpheInsoleGaitConstructor = typeof OrpheInsoleGait;
 
+export type InsoleSensorDataMode = 'realtime' | 'fifo';
+
+export interface InsoleToolkitOutputs {
+    sensorValues?: boolean;
+    stepAnalysis?: boolean;
+}
+
+export interface InsoleToolkitFifoOptions extends InsoleFifoOptions {
+    onSamples?: (deviceId: number, samples: InsoleFifoSample[]) => void;
+    onProgress?: (info: InsoleFifoProgress) => void;
+    onAnomaly?: (info: InsoleFifoAnomaly) => void;
+    onDataLoss?: (info: InsoleFifoDataLoss) => void;
+    onStopped?: (info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void;
+    onError?: (error: unknown) => void;
+}
+
+export interface InsoleToolkitGaitOptions extends InsoleGaitOptions {
+    onGait?: (deviceId: number, row: InsoleGaitRow) => void;
+    onMotion?: (deviceId: number, motion: InsoleGaitMotion) => void;
+    onRaw?: (deviceId: number, packet: InsoleGaitPacket) => void;
+    onError?: (error: unknown) => void;
+}
+
+export type InsoleToolkitProfileId =
+    | 'realtime-orientation'
+    | 'realtime-pressure'
+    | 'realtime-full'
+    | 'realtime-full-step'
+    | 'step-analysis'
+    | 'fifo-recording';
+
+export interface InsoleToolkitConfiguration {
+    streamingMode: InsoleStreamingMode;
+    sensorDataMode: InsoleSensorDataMode;
+    outputs: Required<InsoleToolkitOutputs>;
+}
+
+export interface InsoleToolkitProfile extends InsoleToolkitConfiguration {
+    readonly id: InsoleToolkitProfileId | string;
+    readonly label: string;
+    readonly shortLabel?: string;
+    readonly transport?: 'notify' | 'request-response';
+    readonly sampleHz?: number | null;
+    readonly fields?: Readonly<{
+        acc: boolean;
+        gyro: boolean;
+        press: boolean;
+        quat: boolean;
+        step: boolean;
+    }>;
+    readonly recommendedFor?: readonly string[];
+    readonly cautions?: readonly string[];
+}
+
+export const INSOLE_TOOLKIT_PROFILES: Readonly<Record<InsoleToolkitProfileId, InsoleToolkitProfile>>;
+
+export interface InsoleToolkitMeasurementSerialSummary {
+    first: number | null;
+    last: number | null;
+    expected: number;
+    received: number;
+    missing: number;
+    missingRate: number;
+}
+
+export interface InsoleToolkitMeasurementSummary {
+    id: number;
+    deviceId: number;
+    status: 'recording' | 'draining' | 'completed';
+    reason: string | null;
+    startedAt: number;
+    endedAt: number | null;
+    durationMs: number | null;
+    profileId: InsoleToolkitProfileId | string;
+    metadata: Record<string, unknown>;
+    raw: {
+        packets: number;
+        samples: number;
+        serial: InsoleToolkitMeasurementSerialSummary;
+        truncated: boolean;
+    };
+    step: {
+        packets: number;
+        typeCounts: Record<'motion' | 'overview' | 'stride' | 'pronation', number>;
+        rows: number;
+        truncated: boolean;
+    };
+    fifo: InsoleFifoCheckpointSummary | null;
+}
+
+export interface InsoleToolkitMeasurementResult
+    extends Omit<InsoleToolkitMeasurementSummary, 'raw' | 'step'> {
+    profile: InsoleToolkitProfile;
+    raw: Omit<InsoleToolkitMeasurementSummary['raw'], 'samples'> & {
+        samples: Array<InsoleParsedSample | InsoleFifoSample>;
+    };
+    step: Omit<InsoleToolkitMeasurementSummary['step'], 'rows'> & {
+        rows: InsoleGaitRow[];
+    };
+}
+
+export interface InsoleToolkitMeasurementOptions {
+    profile?: InsoleToolkitProfileId | InsoleToolkitProfile | Partial<InsoleToolkitConfiguration>;
+    metadata?: Record<string, unknown>;
+    /** メモリ上に保持するRaw sample上限（既定120000） */
+    maxSamples?: number;
+    /** メモリ上に保持する完成Step row上限（既定10000） */
+    maxStepRows?: number;
+    /** 終了後に開始前のRealtime profileへ戻す。FIFOは既定true */
+    restoreProfile?: boolean;
+}
+
+export interface InsoleToolkitStopMeasurementOptions {
+    reason?: string;
+    restoreProfile?: boolean;
+}
+
+export interface InsoleToolkitSessionState {
+    connected: boolean;
+    transitioning: boolean;
+    profileId: InsoleToolkitProfileId | string;
+    profile: InsoleToolkitProfile | null;
+    streamingMode: InsoleStreamingMode;
+    sensorDataMode: InsoleSensorDataMode;
+    outputs: Required<InsoleToolkitOutputs>;
+    sensorNotifyActive: boolean;
+    fifoActive: boolean;
+    gaitActive: boolean;
+    measurementPhase: 'idle' | 'recording' | 'draining';
+    measurement: InsoleToolkitMeasurementSummary | null;
+    lastMeasurement: InsoleToolkitMeasurementSummary | null;
+    supportsFifo: boolean;
+    supportsStepAnalysis: boolean;
+    lastError: unknown | null;
+}
+
 export interface BuildInsoleToolkitOptions extends InsoleBeginOptions {
     /** true にすると実機の代わりに OrpheInsoleSimulator を使う（要 InsoleSimulator.js） */
     simulator?: boolean;
+    /** 実機検証済みの名前付き計測プロファイル */
+    profile?: InsoleToolkitProfileId | InsoleToolkitProfile | Partial<InsoleToolkitConfiguration>;
+    /** SENSOR_VALUES の取得経路。FIFO は InsoleFifo.js の読み込みが必要 */
+    sensorDataMode?: InsoleSensorDataMode;
+    /** Sensor Values / Step Analysis の出力選択（最低1つ必要） */
+    outputs?: InsoleToolkitOutputs;
+    /** FIFO の収集設定とコールバック */
+    fifo?: InsoleToolkitFifoOptions;
+    /** Step Analysis の購読設定とコールバック */
+    gait?: InsoleToolkitGaitOptions;
+    /** Toolkit の状態遷移後に呼ばれる */
+    onStateChange?: (state: InsoleToolkitSessionState) => void;
+    /** Toolkit または統合モジュールのエラー */
+    onError?: (error: unknown, state: InsoleToolkitSessionState) => void;
+}
+
+export declare class InsoleToolkitSession {
+    constructor(
+        insole: OrpheInsole | OrpheInsoleSimulator,
+        options?: BuildInsoleToolkitOptions,
+        adapters?: {
+            FifoClass?: OrpheInsoleFifoConstructor | null;
+            GaitClass?: OrpheInsoleGaitConstructor | null;
+        }
+    );
+    readonly insole: OrpheInsole | OrpheInsoleSimulator;
+    profileId: InsoleToolkitProfileId | string;
+    streamingMode: InsoleStreamingMode;
+    sensorDataMode: InsoleSensorDataMode;
+    outputs: Required<InsoleToolkitOutputs>;
+    connected: boolean;
+    transitioning: boolean;
+    sensorNotifyActive: boolean;
+    fifoActive: boolean;
+    gaitActive: boolean;
+    measurementPhase: 'idle' | 'recording' | 'draining';
+    readonly activeMeasurement: unknown | null;
+    readonly lastMeasurement: InsoleToolkitMeasurementResult | null;
+    lastError: unknown | null;
+    readonly supportsFifo: boolean;
+    readonly supportsStepAnalysis: boolean;
+    readonly fifo: OrpheInsoleFifo | null;
+    readonly gait: OrpheInsoleGait | null;
+    snapshot(): InsoleToolkitSessionState;
+    setFifoCallbacks(callbacks?: InsoleToolkitFifoOptions): void;
+    setGaitCallbacks(callbacks?: InsoleToolkitGaitOptions): void;
+    connect(options?: InsoleBeginOptions): Promise<string | void>;
+    disconnect(): Promise<void>;
+    setOutputs(outputs: InsoleToolkitOutputs): Promise<void>;
+    setSensorDataMode(mode: InsoleSensorDataMode): Promise<void>;
+    setStreamingMode(mode: InsoleStreamingMode): Promise<void>;
+    configure(config: Partial<InsoleToolkitConfiguration>): Promise<void>;
+    applyProfile(profile: InsoleToolkitProfileId | InsoleToolkitProfile | Partial<InsoleToolkitConfiguration>): Promise<void>;
+    startMeasurement(options?: InsoleToolkitMeasurementOptions): Promise<InsoleToolkitMeasurementSummary>;
+    stopMeasurement(options?: InsoleToolkitStopMeasurementOptions): Promise<InsoleToolkitMeasurementResult | null>;
+    reapplyAfterReconnect(): Promise<void>;
+    markDisconnected(): void;
 }
 
 type OrpheInsoleConstructor = typeof OrpheInsole;
@@ -674,11 +924,28 @@ declare global {
     var insoles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var bles: Array<OrpheInsole | OrpheInsoleSimulator>;
     var cores: Array<OrpheInsole | OrpheInsoleSimulator>;
+    var insoleToolkitSessions: Array<InsoleToolkitSession | null>;
     var FixedSizeArray: FixedSizeArrayConstructor;
     var OrpheTimestamp: OrpheTimestampConstructor;
     var parseInsoleSensorValues: ParseInsoleSensorValues;
+    var ORPHE_INSOLE_STREAMING_MODES: typeof import('./orphe-insole').ORPHE_INSOLE_STREAMING_MODES;
+    var INSOLE_TOOLKIT_PROFILES: typeof import('./orphe-insole').INSOLE_TOOLKIT_PROFILES;
+    var insoleToolkitMeasurementToCSV: typeof import('./orphe-insole').insoleToolkitMeasurementToCSV;
     var buildInsoleToolkit: BuildInsoleToolkit;
+    var getInsoleToolkitSession: (insole_id: number) => InsoleToolkitSession | null;
 }
+
+export function resolveInsoleToolkitProfile(
+    profile: InsoleToolkitProfileId | InsoleToolkitProfile | Partial<InsoleToolkitConfiguration>
+): InsoleToolkitProfile;
+export function normalizeInsoleToolkitConfiguration(
+    config?: Partial<InsoleToolkitConfiguration>,
+    current?: Partial<InsoleToolkitConfiguration>
+): InsoleToolkitConfiguration;
+export function insoleToolkitMeasurementToCSV(
+    result: InsoleToolkitMeasurementResult,
+    kind?: 'raw' | 'step'
+): string;
 
 // ── InsoleUtils (src/InsoleUtils.js) — 圧力データ処理ユーティリティ ──
 

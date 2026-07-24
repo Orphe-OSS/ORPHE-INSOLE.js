@@ -525,6 +525,43 @@ function near(actual, expected, tol, label) {
     assert.equal(mock._fifoNotifySink, undefined, 'teardown で sink 解除');
   }
 
+  // ── 計測 checkpoint: preview と正式計測の到着順が混ざっても device serial 範囲で判定 ──
+  {
+    const fifo = new Fifo({
+      id: 0,
+      streaming_mode: 4,
+      isConnected: () => true,
+      write: async () => {},
+    });
+    for (let sn = 100; sn <= 109; sn++) {
+      fifo.state.rawStore.set(sn, null);
+      fifo.state.noteStored(sn);
+    }
+    fifo.state.lastSerial = 109;
+    const checkpoint = fifo.createCheckpoint();
+
+    // 112以降が先に届くとarrival windowだけでは110/111が一時欠損に見える。
+    // rawStoreへ後から110/111が回収されればcheckpoint範囲はlosslessでなければならない。
+    for (const sn of [112, 113, 114, 115, 110, 111]) {
+      fifo.state.rawStore.set(sn, null);
+      fifo.state.noteStored(sn);
+    }
+    fifo.state.lastSerial = 115;
+
+    assert.deepEqual(fifo.summarizeSince(checkpoint), {
+      available: true,
+      first: 110,
+      last: 115,
+      expected: 6,
+      received: 6,
+      missing: 0,
+      missingRate: 0,
+      dropped: 0,
+      reportedDroppedDelta: 0,
+      checkpoint,
+    });
+  }
+
   console.log('insole-fifo.test.js passed');
 })().catch((error) => {
   console.error(error);

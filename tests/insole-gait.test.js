@@ -349,6 +349,24 @@ function makeMockInsole() {
 }
 
 (async () => {
+  // FIFO read-mode切替後は集約済みrowを失わずSTEP_ANALYSISだけ再購読できる
+  {
+    const mock = makeMockInsole();
+    const gait = new Gait(mock);
+    assert.equal(await gait.start(), true);
+    const aggregator = gait.aggregator;
+    gait.rows.push({ step_number: 7 });
+
+    assert.equal(await gait.refreshSubscription(), true);
+    assert.equal(mock.calls.stopNotify, 1, '既存STEP_ANALYSIS notifyを停止');
+    assert.equal(mock.calls.startNotify, 2, '同じ接続でSTEP_ANALYSISを再購読');
+    assert.equal(gait.aggregator, aggregator, '未完成stepの集約状態を維持');
+    assert.equal(gait.rows.length, 1, '完成済みrowを維持');
+    assert.equal(gait.rows[0].step_number, 7);
+    assert.equal(gait.isRunning, true);
+    await gait.stop();
+  }
+
   // P1-2: startNotify が未完了でも stop() は待たずに完了し、遅延成功時は補償停止する
   {
     const mock = makeMockInsole();

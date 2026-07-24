@@ -526,10 +526,51 @@ window.onload = function () {
             document.getElementById(`toolkit${id}`),
             `INSOLE 0${id + 1}`,
             id,
-            { streamingMode: 4, autoReconnect: true }
+            {
+                streamingMode: 4,
+                autoReconnect: true,
+                sensorDataMode: 'realtime',
+                outputs: { sensorValues: true, stepAnalysis: false },
+                fifo: {
+                    startupDelayMs: 800,
+                    onSamples(deviceId, samples) {
+                        for (const s of samples) {
+                            dispatchFrame(deviceId, {
+                                t: s.t,
+                                serial: s.serial_number,
+                                press: s.press.values.slice(0, 6),
+                                acc: { x: s.converted_acc.x, y: s.converted_acc.y, z: s.converted_acc.z },
+                                gyro: { x: s.converted_gyro.x, y: s.converted_gyro.y, z: s.converted_gyro.z },
+                                quat: null,
+                                euler: null,
+                            }, true);
+                        }
+                    },
+                    onDataLoss(info) {
+                        // 気づかない欠損を防ぐため、回復不能ロスは必ずコンソールにも残す
+                        console.warn(`INSOLE${id}: FIFO data loss (${info.reason}): +${info.dropped}, cumulative ${info.cumulative}`);
+                    },
+                    onStopped(info) {
+                        // drain で救えたシリアル数を集計（stopFifo の完了ステータスに反映）
+                        fifoDrainRecovered += info.drainRecovered || 0;
+                    },
+                },
+                gait: {
+                    onGait(deviceId, row) {
+                        gaitLatest[deviceId] = row;
+                        gaitDisplayDirty = true;
+                    },
+                },
+                onError(error) {
+                    console.warn(`INSOLE${id}: Toolkit data mode error`, error);
+                },
+            }
         );
 
         const insole = insoles[id];
+        const toolkitSession = getInsoleToolkitSession(id);
+        fifos[id] = toolkitSession ? toolkitSession.fifo : null;
+        gaits[id] = toolkitSession ? toolkitSession.gait : null;
         insole.setup();
 
         insole.gotQuat = function (quat) {
@@ -566,47 +607,6 @@ window.onload = function () {
         insole.onReconnectSuccess = function () {
             applyMountPositionWhenReady(this);
         };
-
-        // FIFO（ロスレス収録）: 収集したサンプルを通常のライブ経路に流し込む
-        if (typeof OrpheInsoleFifo !== 'undefined') {
-            fifos[id] = new OrpheInsoleFifo(insole, { startupDelayMs: 800 });
-            fifos[id].onSamples = function (deviceId, samples) {
-                for (const s of samples) {
-                    dispatchFrame(deviceId, {
-                        t: s.t,
-                        serial: s.serial_number,
-                        press: s.press.values.slice(0, 6),
-                        acc: { x: s.converted_acc.x, y: s.converted_acc.y, z: s.converted_acc.z },
-                        gyro: { x: s.converted_gyro.x, y: s.converted_gyro.y, z: s.converted_gyro.z },
-                        quat: null,
-                        euler: null,
-                    }, true);
-                }
-            };
-            fifos[id].onDataLoss = function (info) {
-                // 気づかない欠損を防ぐため、回復不能ロスは必ずコンソールにも残す
-                console.warn(`INSOLE${this.deviceId}: FIFO data loss (${info.reason}): +${info.dropped}, cumulative ${info.cumulative}`);
-            };
-            fifos[id].onStopped = function (info) {
-                // drain で救えたシリアル数を集計（stopFifo の完了ステータスに反映）
-                fifoDrainRecovered += info.drainRecovered || 0;
-            };
-            fifos[id].onError = function (error) {
-                console.warn(`INSOLE${this.deviceId}: FIFO error`, error);
-            };
-        }
-
-        // 歩容解析（Gait Analysis）: 1歩ごとの歩容パラメーターを受け取り、最新値を表示に反映
-        if (typeof OrpheInsoleGait !== 'undefined') {
-            gaits[id] = new OrpheInsoleGait(insole);
-            gaits[id].onGait = function (deviceId, row) {
-                gaitLatest[deviceId] = row;
-                gaitDisplayDirty = true;
-            };
-            gaits[id].onError = function (error) {
-                console.warn(`INSOLE${this.deviceId}: Gait error`, error);
-            };
-        }
     }
 
     // 初期のL/Rバッジ・並び（デモは device0=左足 / device1=右足）
@@ -665,7 +665,8 @@ window.onload = function () {
     function connectedInsoleIds() {
         const ids = [];
         for (let id = 0; id < 2; id++) {
-            if (fifos[id] && insoles[id] && insoles[id].isConnected && insoles[id].isConnected()) ids.push(id);
+            const session = getInsoleToolkitSession(id);
+            if (session && insoles[id] && insoles[id].isConnected && insoles[id].isConnected()) ids.push(id);
         }
         return ids;
     }
@@ -696,7 +697,22 @@ window.onload = function () {
         fifoStatus.textContent = i18nText('fifoStatusPreparing');
         fifoActiveIds = [];
         fifoDrainRecovered = 0;
-        const results = await Promise.all(ids.map(id => fifos[id].start()));
+        const results = await Promise.all(ids.map(async (id) => {
+            const session = getInsoleToolkitSession(id);
+            if (!session || !session.fifo) return false;
+            try {
+                // Step-only からでも一度に FIFO + Step Analysis へ移れる順序。
+                await session.setSensorDataMode('fifo');
+                await session.setOutputs({
+                    sensorValues: true,
+                    stepAnalysis: session.outputs.stepAnalysis,
+                });
+                return session.fifoActive;
+            } catch (error) {
+                console.warn(`INSOLE${id}: failed to enable FIFO`, error);
+                return false;
+            }
+        }));
         results.forEach((ok, i) => { if (ok) fifoActiveIds.push(ids[i]); });
         if (fifoActiveIds.length === 0) {
             fifoStatus.textContent = i18nText('fifoFailed');
@@ -718,7 +734,15 @@ window.onload = function () {
         // 以降の経過秒つき「回収中」表示は描画ループが継続更新する。
         setFifoStatusLoss(false);
         fifoStatus.textContent = i18nText('fifoDraining', { seconds: '0.0' });
-        await Promise.all(fifoActiveIds.map(id => fifos[id].stop()));
+        await Promise.all(fifoActiveIds.map(async (id) => {
+            const session = getInsoleToolkitSession(id);
+            if (!session) return;
+            try {
+                await session.setSensorDataMode('realtime');
+            } catch (error) {
+                console.warn(`INSOLE${id}: failed to stop FIFO`, error);
+            }
+        }));
         fifoRunning = false;
         fifoStopping = false;
         fifoToggle.disabled = false;
@@ -795,7 +819,20 @@ window.onload = function () {
         gaitDownload.disabled = true;
         gaitActiveIds = [];
         for (const id of ids) gaitLatest[id] = null;
-        const results = await Promise.all(ids.map((id) => gaits[id].start()));
+        const results = await Promise.all(ids.map(async (id) => {
+            const session = getInsoleToolkitSession(id);
+            if (!session || !session.gait) return false;
+            try {
+                await session.setOutputs({
+                    sensorValues: session.outputs.sensorValues,
+                    stepAnalysis: true,
+                });
+                return session.gaitActive;
+            } catch (error) {
+                console.warn(`INSOLE${id}: failed to enable Step Analysis`, error);
+                return false;
+            }
+        }));
         results.forEach((ok, i) => { if (ok) gaitActiveIds.push(ids[i]); });
         if (gaitActiveIds.length === 0) {
             gaitStatus.textContent = i18nText('gaitStatusIdle');
@@ -811,7 +848,17 @@ window.onload = function () {
     }
     async function stopGait() {
         gaitToggle.disabled = true;
-        await Promise.all(gaitActiveIds.map((id) => gaits[id] ? gaits[id].stop() : null));
+        await Promise.all(gaitActiveIds.map(async (id) => {
+            const session = getInsoleToolkitSession(id);
+            if (!session) return;
+            try {
+                // Step-only の場合は空選択を避け、Realtime Sensor Values に戻す。
+                if (!session.outputs.sensorValues) await session.setSensorDataMode('realtime');
+                await session.setOutputs({ sensorValues: true, stepAnalysis: false });
+            } catch (error) {
+                console.warn(`INSOLE${id}: failed to stop Step Analysis`, error);
+            }
+        }));
         gaitRunning = false;
         gaitToggle.disabled = false;
         gaitToggle.classList.replace('btn-danger', 'btn-primary');
@@ -832,6 +879,65 @@ window.onload = function () {
             }
         }
     }
+
+    // Toolkit 設定モーダルから切り替えた場合も、記録カード側の表示を同じ状態へ追従させる。
+    function syncAdvancedSessionState() {
+        const connectedIds = connectedInsoleIds();
+        const activeFifoIds = connectedIds.filter((id) => {
+            const session = getInsoleToolkitSession(id);
+            return !!(session && session.fifoActive);
+        });
+        if (activeFifoIds.length > 0) {
+            if (!fifoRunning) {
+                fifoActiveIds = activeFifoIds.slice();
+                fifoDrainRecovered = 0;
+                fifoStartedAt = performance.now();
+                fifoDownload.disabled = true;
+            } else {
+                for (const id of activeFifoIds) {
+                    if (!fifoActiveIds.includes(id)) fifoActiveIds.push(id);
+                }
+            }
+            fifoRunning = true;
+            fifoToggle.classList.replace('btn-primary', 'btn-danger');
+            updateFifoToggleLabel();
+        } else if (fifoRunning && !fifoStopping) {
+            fifoRunning = false;
+            fifoToggle.classList.replace('btn-danger', 'btn-primary');
+            updateFifoToggleLabel();
+            const total = fifoCollectedTotal();
+            const dropped = fifoDroppedTotal();
+            fifoDownload.disabled = total === 0;
+            fifoStatus.textContent = dropped > 0
+                ? i18nText('fifoStatusDoneLoss', { packets: total, dropped })
+                : i18nText('fifoStatusDone', { packets: total });
+            setFifoStatusLoss(dropped > 0);
+        }
+
+        const activeGaitIds = connectedIds.filter((id) => {
+            const session = getInsoleToolkitSession(id);
+            return !!(session && session.gaitActive);
+        });
+        if (activeGaitIds.length > 0) {
+            if (!gaitRunning) gaitActiveIds = activeGaitIds.slice();
+            else {
+                for (const id of activeGaitIds) {
+                    if (!gaitActiveIds.includes(id)) gaitActiveIds.push(id);
+                }
+            }
+            gaitRunning = true;
+            gaitToggle.classList.replace('btn-primary', 'btn-danger');
+            updateGaitToggleLabel();
+        } else if (gaitRunning) {
+            gaitRunning = false;
+            gaitToggle.classList.replace('btn-danger', 'btn-primary');
+            updateGaitToggleLabel();
+            const steps = gaitStepsTotal();
+            gaitDownload.disabled = steps === 0;
+            gaitStatus.textContent = i18nText('gaitStatusStopped', { steps });
+        }
+    }
+
     gaitToggle.addEventListener('click', () => { if (gaitRunning) stopGait(); else startGait(); });
     gaitDownload.addEventListener('click', () => {
         const d = new Date();
@@ -979,6 +1085,8 @@ window.onload = function () {
 
             // 記録ステータス
             updateRecordStatus();
+
+            syncAdvancedSessionState();
 
             // FIFO（ロスレス収録）ステータス / トグル有効化
             if (fifoStopping) {

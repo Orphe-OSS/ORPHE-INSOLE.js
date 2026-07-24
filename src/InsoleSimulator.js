@@ -229,6 +229,7 @@ class OrpheInsoleSimulator {
         this._frames = null;
         this._frameIndex = 0;
         this._loop = true;
+        this._sensorDataListeners = new Set();
     }
 
     setup(names = ['DEVICE_INFORMATION', 'DATE_TIME', 'SENSOR_VALUES'], options = {}) {
@@ -296,6 +297,18 @@ class OrpheInsoleSimulator {
         this.onReset();
     }
 
+    addSensorDataListener(listener) {
+        if (typeof listener !== 'function') {
+            throw new TypeError('OrpheInsoleSimulator.addSensorDataListener expects a function');
+        }
+        this._sensorDataListeners.add(listener);
+        return () => this.removeSensorDataListener(listener);
+    }
+
+    removeSensorDataListener(listener) {
+        return this._sensorDataListeners.delete(listener);
+    }
+
     isConnected() {
         return this._connected;
     }
@@ -356,6 +369,7 @@ class OrpheInsoleSimulator {
         const tickTime = this._now() - this._startedAt;
         const serialNumber = this._serial;
         this._serial = (this._serial + 1) % 65536;
+        const packetSamples = [];
         for (let packetNumber = 0; packetNumber < count; packetNumber++) {
             const timestamp = Math.round(tickTime + packetNumber * interval);
             const frame = this._nextFrame(timestamp);
@@ -365,8 +379,25 @@ class OrpheInsoleSimulator {
             }
             const frameSerial = frame.serial === undefined ? serialNumber : finiteNumber(frame.serial, serialNumber);
             const framePacketNumber = frame.packet_number === undefined ? packetNumber : finiteNumber(frame.packet_number, packetNumber);
-            this._dispatchFrame(frame, timestamp, frameSerial, framePacketNumber);
+            packetSamples.push(this._dispatchFrame(frame, timestamp, frameSerial, framePacketNumber));
             this._sampleIndex += 1;
+        }
+        if (this._sensorDataListeners.size > 0) {
+            const packet = {
+                header: this._streamingMode === 4 ? 56 : this._streamingMode === 1 ? 50 : 55,
+                serial_number: serialNumber,
+                timestamp: Math.round(tickTime),
+                samples: packetSamples,
+            };
+            const event = Object.freeze({
+                deviceId: this.id,
+                receivedAt: Date.now(),
+                packet,
+                data: null,
+            });
+            for (const listener of Array.from(this._sensorDataListeners)) {
+                try { listener(event); } catch (error) { this.onError(error); }
+            }
         }
     }
 
@@ -426,6 +457,19 @@ class OrpheInsoleSimulator {
             };
             this.gotPress(this.press);
         }
+        return {
+            timestamp: frameTimestamp,
+            serial_number: serialNumber,
+            packet_number: packetNumber,
+            ...(this.quat && this._streamingMode !== 3 ? { quat: { ...this.quat } } : {}),
+            ...(this.gyro ? { gyro: { ...this.gyro } } : {}),
+            ...(this.acc ? { acc: { ...this.acc } } : {}),
+            ...(this.converted_gyro ? { converted_gyro: { ...this.converted_gyro } } : {}),
+            ...(this.converted_acc ? { converted_acc: { ...this.converted_acc } } : {}),
+            ...(this.press && this._streamingMode !== 1
+                ? { press: { ...this.press, values: [...this.press.values] } }
+                : {}),
+        };
     }
 
     gotPress(press) { void press; }

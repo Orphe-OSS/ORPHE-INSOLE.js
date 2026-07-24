@@ -34,6 +34,8 @@ module.exports = [
                 cores: 'writable',
                 buildInsoleToolkit: 'readonly',
                 buildCoreToolkit: 'readonly',
+                getInsoleToolkitSession: 'readonly',
+                insoleToolkitSessions: 'readonly',
                 orphe_js_version_date: 'readonly',
                 updateFSRData: 'writable',
                 PRESSURE_SENSOR_LAYOUT: 'readonly',

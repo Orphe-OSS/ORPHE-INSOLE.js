@@ -85,6 +85,9 @@ ORPHE-INSOLE.js/
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
   <script src="../../src/ORPHE-INSOLE.js"></script>
   <script src="../../src/InsoleToolkit.js"></script>
+  <!-- Toolkit から FIFO / Step Analysis を選ぶ場合に追加 -->
+  <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 <body>
@@ -393,16 +396,42 @@ buildInsoleToolkit(
   parent_element,   // DOM element to append UI
   title,            // 表示タイトル (e.g., 'Left Foot')
   insole_id,        // 0 or 1
-  options           // { streamingMode: 4, autoReconnect: true, simulator: false }
+  options           // 下記参照
 );
 
 // Global variables created by InsoleToolkit:
 // var insoles = [new OrpheInsole(0), new OrpheInsole(1)];
 // var bles = insoles;   // CORE互換エイリアス
 // var cores = insoles;  // CORE互換エイリアス
+// var insoleToolkitSessions = [session0, session1];
 ```
 
-接続後、ツールキットのヘッダには 実測周波数 / L・Rバッジ（mount_position から自動判定）/ バッテリー / 再接続ステータス / 設定（ストリーミングモード変更）が表示されます。
+```javascript
+buildInsoleToolkit(parent, 'Left Foot', 0, {
+  streamingMode: 4,
+  autoReconnect: true,
+  sensorDataMode: 'realtime', // 'realtime' | 'fifo'
+  outputs: {
+    sensorValues: true,
+    stepAnalysis: false,
+  },
+  fifo: {
+    onSamples(deviceId, samples) { /* FIFO raw data */ },
+  },
+  gait: {
+    onGait(deviceId, row) { /* one aggregated step */ },
+  },
+});
+
+// 独自の記録UIから切り替える場合も同じセッションを使う。
+const session = getInsoleToolkitSession(0);
+await session.setSensorDataMode('fifo');
+await session.setOutputs({ sensorValues: true, stepAnalysis: true });
+```
+
+接続後、ツールキットのヘッダには 実測周波数 / L・Rバッジ（mount_position から自動判定）/ バッテリー / 再接続ステータス / 設定が表示されます。設定モーダルでは、Sensor Values / Step Analysis（両方も可）と、Sensor Values の Realtime / FIFO を独立して切り替えられます。Realtime Streaming Format (1/3/4) は Realtime 選択時のみ有効です。FIFO に quaternion は含まれず、Step Analysis は FIFO 選択中も専用の realtime characteristic から取得します。
+
+FIFO は `InsoleFifo.js`、Step Analysis は `InsoleGait.js` を読み込んだ場合だけ選択できます。どちらも無い既存ページでは、従来どおり Realtime Sensor Values が既定です。
 
 `options.simulator: true` を渡すと、そのスロットが `OrpheInsoleSimulator` に差し替わり
 **実機なしで同じ UI・コールバックが動きます**（要 `InsoleSimulator.js` の読み込み。
