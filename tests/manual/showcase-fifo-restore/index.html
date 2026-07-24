@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR #54 FIFO Restore Validation — ORPHE INSOLE</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="page-width header-inner">
+      <div>
+        <div class="eyebrow">ORPHE INSOLE / PR #54 PHYSICAL DEVICE TEST</div>
+        <h1>Showcase FIFO Restore Validation</h1>
+      </div>
+      <div class="header-status">
+        <span id="global_dot" class="status-dot idle"></span>
+        <span id="global_status">2台の接続待ち</span>
+      </div>
+      <div class="timer">
+        <span>TEST TIMER</span>
+        <strong id="test_timer">00:00.0</strong>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-width">
+    <section class="hero panel">
+      <div>
+        <span class="section-label">PURPOSE</span>
+        <h2>FIFO開始前のprofileを、stop・drain後に端末ごとに復元できるか確認</h2>
+        <p>
+          2台を接続してシナリオを1つ選ぶだけで、Realtime/Stepの事前確認、FIFO Raw計測、
+          drain、profile復元、データ再開を自動検証します。Bluetooth chooserだけは利用者が操作してください。
+        </p>
+      </div>
+      <div class="environment-grid">
+        <div><span>Secure context</span><strong id="secure_context">確認中</strong></div>
+        <div><span>Web Bluetooth</span><strong id="web_bluetooth">確認中</strong></div>
+        <div><span>Target</span><strong>PR #54 / 5d838db+</strong></div>
+      </div>
+      <div id="environment_warning" class="alert-box hidden"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="section-label">STEP 1</span>
+          <h2>INSOLEを2台接続</h2>
+        </div>
+        <span id="connection_badge" class="badge-neutral">0 / 2 connected</span>
+      </div>
+      <p class="section-help">
+        下のスイッチを順番にONにし、Bluetooth chooserで別々のINSOLEを選択してください。
+      </p>
+      <div class="toolkit-grid">
+        <article class="toolkit-card">
+          <div id="toolkit0"></div>
+          <div id="device_summary_0" class="device-summary"></div>
+        </article>
+        <article class="toolkit-card">
+          <div id="toolkit1"></div>
+          <div id="device_summary_1" class="device-summary"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="section-label">STEP 2</span>
+          <h2>復元シナリオを選択</h2>
+        </div>
+        <span class="badge-neutral">2台同時実行</span>
+      </div>
+      <div class="scenario-grid" role="radiogroup" aria-label="Validation scenario">
+        <label class="scenario-card selected">
+          <input type="radio" name="scenario" value="dual-realtime-step" checked>
+          <span class="scenario-number">01</span>
+          <strong>両方 Realtime Raw + Step</strong>
+          <small>両端末がFIFO停止後にRaw＋Stepへ戻ることを確認</small>
+        </label>
+        <label class="scenario-card">
+          <input type="radio" name="scenario" value="dual-step-only">
+          <span class="scenario-number">02</span>
+          <strong>両方 Step-only</strong>
+          <small>両端末がFIFO停止後にRaw OFF＋Stepへ戻ることを確認</small>
+        </label>
+        <label class="scenario-card">
+          <input type="radio" name="scenario" value="mixed">
+          <span class="scenario-number">03</span>
+          <strong>左右で異なるprofile</strong>
+          <small>INSOLE 01はRaw＋Step、02はStep-onlyへ個別復元</small>
+        </label>
+      </div>
+
+      <div class="run-controls">
+        <label>
+          FIFO計測時間
+          <select id="duration_select">
+            <option value="10000">10秒</option>
+            <option value="20000" selected>20秒</option>
+            <option value="30000">30秒</option>
+          </select>
+        </label>
+        <button id="start_button" class="primary-button" disabled>
+          <i class="bi bi-play-fill"></i> 自動テスト開始
+        </button>
+        <button id="stop_button" class="secondary-button" disabled>
+          <i class="bi bi-stop-fill"></i> 計測を早めに終了
+        </button>
+      </div>
+      <div class="motion-note">
+        <i class="bi bi-person-walking"></i>
+        <span>事前受信確認と復元確認の表示中は、Stepパケットを発生させるためINSOLEを履いて歩くか、両足を動かし続けてください。</span>
+      </div>
+
+      <div class="progress-shell">
+        <div class="progress-copy">
+          <strong id="stage_label">2台を接続してください</strong>
+          <span id="stage_detail">接続後にテストを開始できます</span>
+        </div>
+        <div class="progress-track"><div id="progress_bar" class="progress-bar"></div></div>
+      </div>
+
+      <ol class="stage-list">
+        <li id="stage_prepare"><span>1</span>事前profile適用</li>
+        <li id="stage_warmup"><span>2</span>Raw / Step受信確認</li>
+        <li id="stage_fifo"><span>3</span>FIFO Raw計測</li>
+        <li id="stage_drain"><span>4</span>stop / drain</li>
+        <li id="stage_restore"><span>5</span>profile復元・データ再開</li>
+      </ol>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="section-label">STEP 3</span>
+          <h2>端末別の検証結果</h2>
+        </div>
+        <span class="legend"><i class="pass"></i>PASS <i class="warn"></i>WARN <i class="fail"></i>FAIL</span>
+      </div>
+      <div class="result-grid">
+        <article id="result_card_0" class="result-card">
+          <div class="result-title">
+            <div><span>DEVICE 01</span><h3>INSOLE 01</h3></div>
+            <strong id="verdict_0" class="verdict neutral">WAITING</strong>
+          </div>
+          <div id="metrics_0" class="metric-grid"></div>
+          <div id="checks_0" class="check-list"></div>
+        </article>
+        <article id="result_card_1" class="result-card">
+          <div class="result-title">
+            <div><span>DEVICE 02</span><h3>INSOLE 02</h3></div>
+            <strong id="verdict_1" class="verdict neutral">WAITING</strong>
+          </div>
+          <div id="metrics_1" class="metric-grid"></div>
+          <div id="checks_1" class="check-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="section-label">RUN HISTORY</span>
+          <h2>実行履歴</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>時刻</th><th>シナリオ</th><th>Device</th><th>結果</th>
+              <th>復元profile</th><th>FIFO samples</th><th>Missing</th><th>Dropped</th><th>Drain</th>
+            </tr>
+          </thead>
+          <tbody id="history_body">
+            <tr><td colspan="9" class="empty-cell">まだ実行結果はありません</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="section-heading">
+        <div>
+          <span class="section-label">SHAREABLE EVIDENCE</span>
+          <h2>イベントログ</h2>
+        </div>
+        <div class="log-actions">
+          <button id="copy_log_button" class="secondary-button"><i class="bi bi-clipboard"></i> ログをコピー</button>
+          <button id="download_json_button" class="secondary-button"><i class="bi bi-download"></i> JSON保存</button>
+          <button id="download_csv_button" class="secondary-button" disabled><i class="bi bi-filetype-csv"></i> FIFO CSV保存</button>
+          <button id="clear_log_button" class="ghost-button">ログ消去</button>
+        </div>
+      </div>
+      <div id="event_log" class="event-log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../../src/InsoleFifo.js"></script>
+  <script src="../../../src/InsoleGait.js"></script>
+  <script src="../../../src/InsoleToolkit.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

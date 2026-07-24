@@ -233,6 +233,9 @@ const metrics = require('../examples/data-modes/metrics.js');
         'utf8'
     );
     const claudeGuide = fs.readFileSync(path.join(__dirname, '..', 'CLAUDE.md'), 'utf8');
+    const fifoRestoreRoot = path.join(__dirname, 'manual', 'showcase-fifo-restore');
+    const fifoRestoreHtml = fs.readFileSync(path.join(fifoRestoreRoot, 'index.html'), 'utf8');
+    const fifoRestoreApp = fs.readFileSync(path.join(fifoRestoreRoot, 'app.js'), 'utf8');
     const legacy = fs.readFileSync(
         path.join(__dirname, 'manual', 'toolkit-mode-validation', 'index.html'),
         'utf8'
@@ -292,6 +295,18 @@ const metrics = require('../examples/data-modes/metrics.js');
     );
     assert.match(showcaseReadme, /FIFO RawとStep Analysisは\s*同時取得できない/);
     assert.match(claudeGuide, /FIFO RawとStep Analysisは同時取得できない/);
+    assert.match(fifoRestoreHtml, /id="toolkit0"/);
+    assert.match(fifoRestoreHtml, /id="toolkit1"/);
+    assert.match(fifoRestoreHtml, /value="dual-realtime-step"/);
+    assert.match(fifoRestoreHtml, /value="dual-step-only"/);
+    assert.match(fifoRestoreHtml, /value="mixed"/);
+    assert.match(fifoRestoreHtml, /id="copy_log_button"/);
+    assert.match(fifoRestoreHtml, /id="download_json_button"/);
+    assert.match(fifoRestoreHtml, /id="download_csv_button"/);
+    assert.match(fifoRestoreApp, /profile:\s*'fifo-recording'/);
+    assert.match(fifoRestoreApp, /sessions\[device\.id\]\.stopMeasurement/);
+    assert.match(fifoRestoreApp, /formatEventLogText/);
+    assert.doesNotMatch(fifoRestoreApp, /setSensorDataMode\('fifo'\)/);
 }
 
 console.log('toolkit-mode-validation tests: ok');
