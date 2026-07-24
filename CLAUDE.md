@@ -425,11 +425,17 @@ buildInsoleToolkit(parent, 'Left Foot', 0, {
 
 // 独自の記録UIから切り替える場合も同じセッションを使う。
 const session = getInsoleToolkitSession(0);
-await session.setSensorDataMode('fifo');
-await session.setOutputs({ sensorValues: true, stepAnalysis: true });
+
+// Realtime Raw + Step Analysis は同時取得できる。
+await session.applyProfile('realtime-full-step');
+
+// FIFOはRaw単独。正式計測APIなら原子的に切り替わり、
+// stop時のdrain後に直前のRealtime + Step設定へ戻る。
+await session.startMeasurement({ profile: 'fifo-recording' });
+const fifoResult = await session.stopMeasurement();
 ```
 
-接続後、ツールキットのヘッダには 実測周波数 / L・Rバッジ（mount_position から自動判定）/ バッテリー / 再接続ステータス / 設定が表示されます。設定モーダルでは、Sensor Values / Step Analysis（両方も可）と、Sensor Values の Realtime / FIFO を独立して切り替えられます。Realtime Streaming Format (1/3/4) は Realtime 選択時のみ有効です。FIFO に quaternion は含まれず、Step Analysis は FIFO 選択中も専用の realtime characteristic から取得します。
+接続後、ツールキットのヘッダには 実測周波数 / L・Rバッジ（mount_position から自動判定）/ バッテリー / 再接続ステータス / 設定が表示されます。設定モーダルでは、Realtime Sensor Values と Step Analysis を同時に選択でき、Sensor Values は Realtime / FIFO を切り替えられます。Realtime Streaming Format (1/3/4) は Realtime 選択時のみ有効です。現行FWではFIFO RawとStep Analysisは同時取得できないため、FIFOはRaw単独で使用し、Step AnalysisはRealtime Rawとの同時取得またはStep-onlyで使用します。FIFOにquaternionは含まれません。
 
 FIFO は `InsoleFifo.js`、Step Analysis は `InsoleGait.js` を読み込んだ場合だけ選択できます。どちらも無い既存ページでは、従来どおり Realtime Sensor Values が既定です。
 

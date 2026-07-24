@@ -224,6 +224,15 @@ const metrics = require('../examples/data-modes/metrics.js');
     const app = fs.readFileSync(path.join(pageRoot, 'app.js'), 'utf8');
     const attitude = fs.readFileSync(path.join(pageRoot, 'attitude-viz.js'), 'utf8');
     const examplesIndex = fs.readFileSync(path.join(__dirname, '..', 'examples', 'README.md'), 'utf8');
+    const showcaseApp = fs.readFileSync(
+        path.join(__dirname, '..', 'examples', 'showcase', 'app.js'),
+        'utf8'
+    );
+    const showcaseReadme = fs.readFileSync(
+        path.join(__dirname, '..', 'examples', 'showcase', 'README.md'),
+        'utf8'
+    );
+    const claudeGuide = fs.readFileSync(path.join(__dirname, '..', 'CLAUDE.md'), 'utf8');
     const legacy = fs.readFileSync(
         path.join(__dirname, 'manual', 'toolkit-mode-validation', 'index.html'),
         'utf8'
@@ -267,6 +276,22 @@ const metrics = require('../examples/data-modes/metrics.js');
     assert.doesNotMatch(html, /data-preset="fifo-step"/);
     assert.doesNotMatch(examplesIndex, /\[data-modes\]/);
     assert.match(legacy, /examples\/data-modes/);
+    assert.match(
+        showcaseApp,
+        /session\.startMeasurement\(\{\s*profile:\s*'fifo-recording'/
+    );
+    assert.match(showcaseApp, /session\.stopMeasurement\(\{\s*reason:/);
+    assert.doesNotMatch(
+        showcaseApp,
+        /setSensorDataMode\('fifo'\)[\s\S]{0,200}stepAnalysis:\s*session\.outputs\.stepAnalysis/
+    );
+    assert.doesNotMatch(showcaseReadme, /FIFO 選択中も Step Analysis/);
+    assert.doesNotMatch(
+        claudeGuide,
+        /setSensorDataMode\('fifo'\)[\s\S]{0,200}stepAnalysis:\s*true/
+    );
+    assert.match(showcaseReadme, /FIFO RawとStep Analysisは\s*同時取得できない/);
+    assert.match(claudeGuide, /FIFO RawとStep Analysisは同時取得できない/);
 }
 
 console.log('toolkit-mode-validation tests: ok');
