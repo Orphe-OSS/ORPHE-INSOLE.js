@@ -342,47 +342,143 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     // setup() を忘れると hashUUID が空で接続時に serviceUUID 参照で落ちる
     // （buildInsoleToolkit は simulator 指定時以外 setup() を呼ばない）。実機で踏んだので固定する。
     assert.match(app, /insoles\[DEVICE_ID\]\.setup\(\)/);
-    assert.match(app, /startMeasurement\(\{[\s\S]*?profile: 'fifo-recording'/);
+    assert.match(app, /startMeasurement\(\{[\s\S]*?profile: "fifo-recording"/);
     assert.match(app, /stopMeasurement\(/);
-    assert.match(app, /insoleToolkitMeasurementToCSV\(result, 'raw'\)/);
+    assert.match(app, /insoleToolkitMeasurementToCSV\(result, "raw"\)/);
     // FIFO プロトコルを example 側で組み立てていないこと
     assert.doesNotMatch(app, /new OrpheInsoleFifo\(/);
     assert.doesNotMatch(app, /createGetSensorDataRequest|0x0B|SUB_GET_DATA/);
     // CSV ボタンは stop/drain 完了まで無効
     assert.match(app, /csvButton\.disabled = true/);
-    // ライブ表示は固定長バッファ
-    assert.match(app, /ACC_HISTORY_SIZE/);
+    // ライブ表示・ログは固定長バッファ
+    assert.match(app, /LIVE_HISTORY_SIZE/);
     assert.match(app, /MAX_LOG_ENTRIES/);
     // Bluetooth chooser のキャンセルを error 表示にしない
     assert.match(app, /isUserCancel/);
+}
 
+// ── step-analysis と同じ example テンプレートに沿っていること ────────────────
+{
     const html = read('index.html');
-    // 30秒バッファの説明と「絶対保証ではない」明記
-    assert.match(html, /約30秒/);
-    assert.match(html, /30秒以内なら絶対に無欠損/);
-    // dropped と missing を別指標として説明している
-    assert.match(html, /<code>dropped<\/code> と CSVの <code>missing<\/code> は別の指標/);
-    // CSV 1行と serial packet の関係
-    assert.match(html, /1 serial = 4行/);
-    // quaternion なし / Step Analysis と排他
-    assert.match(html, /クォータニオン（姿勢）<\/strong> — 姿勢が必要なら Realtime/);
-    assert.match(html, /FIFO Raw と Step Analysis は同時に取得できません/);
-    // 必須メトリクスの表示先が存在する
-    for (const id of ['m_duration', 'm_samples', 'm_first', 'm_last', 'm_expected',
-        'm_received', 'm_missing', 'm_missing_rate', 'm_dropped', 'm_drain_recovered',
-        'm_drain_ms', 'm_max_lag', 'm_csv']) {
-        assert.ok(html.includes(`id="${id}"`), `index.html に ${id} がない`);
+    // ヘッダ（戻りリンク / JA-EN 切替 / eyebrow / toolkit スロット）
+    assert.match(html, /<header class="app-header">/);
+    assert.match(html, /href="\.\.\/\.\.\/index\.html#examples"/);
+    assert.match(html, /data-lang-button="ja"/);
+    assert.match(html, /data-lang-button="en"/);
+    assert.match(html, /class="eyebrow"/);
+    assert.match(html, /id="toolkit0" class="toolkit-slot"/);
+    // 操作 → 設定ガイド → 可視化 → 結果 → 解説 → コード → ログ → footer の順
+    const order = [
+        'class="control-strip"',
+        'class="settings-guide"',
+        'class="buffer-strip"',
+        'class="graphs-section"',
+        'class="result-section"',
+        'class="explain-section"',
+        'class="how-section"',
+        'class="log-section"',
+        '<footer',
+    ].map((needle) => {
+        const index = html.indexOf(needle);
+        assert.ok(index >= 0, `index.html に ${needle} がない`);
+        return index;
+    });
+    for (let i = 1; i < order.length; i += 1) {
+        assert.ok(order[i] > order[i - 1], 'テンプレートのセクション順が崩れている');
+    }
+    // 共通コンポーネント（step-analysis と同じクラス名）
+    for (const needle of ['source-badge', 'section-heading', 'chart-card', 'chart-toolbar',
+        'table-frame', 'notify-strip', 'scope-note', 'code-card']) {
+        assert.ok(html.includes(needle), `index.html に ${needle} がない`);
     }
     // 数千serialをDOM化せず Canvas で描く
-    assert.match(html, /<canvas id="timeline_canvas"/);
-    // 医療・診断を断定する表現を使わず、免責を明記している
-    assert.match(html, /医療機器ではなく、疾病の診断・治療・予防を目的としていません/);
-    assert.doesNotMatch(html, /診断できます|治療できます|改善します/);
+    assert.match(html, /<canvas id="timeline-canvas"/);
+    assert.match(html, /<canvas id="live-canvas"/);
+    // 結果テーブルは app.js が i18n ラベルで組み立てる
+    assert.match(html, /id="metric-table-body"/);
+    // 静的テキストは i18n キー経由（ハードコードした日本語だけの画面にしない）
+    assert.match(html, /data-i18n="leadCopy"/);
+    assert.match(html, /data-i18n-html="scopeNote"/);
+    // 30秒バッファの換算式はページ本体にも出す
+    assert.match(html, /RING_BUFFER_CAPACITY = 1500/);
+    assert.match(html, /30,000 ms {2}≈ 30 s/);
+    // スクリプトの読み込み順（continuity → i18n → app）
+    const scriptOrder = ['./continuity.js', './i18n.js', './app.js']
+        .map((src) => html.indexOf(src));
+    assert.ok(scriptOrder[0] < scriptOrder[1] && scriptOrder[1] < scriptOrder[2]);
+}
 
+// ── 2言語とも必要な内容を含むこと（30秒の非保証 / dropped ≠ missing など） ───
+{
+    const i18n = require('../examples/fifo-guide/i18n.js');
+    assert.deepEqual(Object.keys(i18n.translations).sort(), ['en', 'ja']);
+
+    // ja / en でキーが欠けていないこと（片方だけ翻訳漏れがあると英語へ暗黙fallbackする）
+    const jaKeys = Object.keys(i18n.translations.ja).sort();
+    const enKeys = Object.keys(i18n.translations.en).sort();
+    assert.deepEqual(jaKeys, enKeys, 'ja / en の翻訳キーが一致していない');
+
+    // 必須メトリクスのラベルと説明が両言語にある
+    for (const key of ['m_duration', 'm_samples', 'm_first', 'm_last', 'm_expected',
+        'm_received', 'm_missing', 'm_missing_rate', 'm_dropped', 'm_drain_recovered',
+        'm_drain_ms', 'm_max_lag', 'm_csv']) {
+        assert.ok(i18n.translations.ja[key], `ja に ${key} がない`);
+        assert.ok(i18n.translations.en[key], `en に ${key} がない`);
+    }
+
+    // 30秒を「絶対保証」と書かず、非保証であることを明記している
+    assert.match(i18n.translations.ja.scopeNote, /30秒以内なら絶対に無欠損」ではありません/);
+    assert.match(i18n.translations.en.scopeNote, /not a guarantee of zero loss/);
+    for (const language of ['ja', 'en']) {
+        assert.doesNotMatch(i18n.translations[language].scopeNote, /guaranteed lossless|必ず無欠損/);
+    }
+
+    // dropped と missing を別指標として説明している
+    assert.match(i18n.translations.ja.scopeNote, /<code>dropped<\/code> と <code>missing<\/code> は別指標/);
+    assert.match(i18n.translations.en.scopeNote, /different metrics/);
+    assert.match(i18n.translations.ja.m_dropped_note, /missing とは別指標/);
+    assert.match(i18n.translations.en.m_dropped_note, /different metric from missing/);
+
+    // CSV 1行と serial packet の関係
+    assert.match(i18n.translations.ja.resultFootnote, /1 serial = 4行/);
+    assert.match(i18n.translations.en.resultFootnote, /one serial is four CSV rows/);
+
+    // FIFO Raw に quat が無く、Step Analysis と同時取得しないこと
+    assert.match(i18n.translations.ja.fifoCardBody, /quaternionは含まれません/);
+    assert.match(i18n.translations.ja.fifoCardBody, /Step Analysisと同時に取得できません/);
+    assert.match(i18n.translations.en.fifoCardBody, /No quaternion/);
+    assert.match(i18n.translations.en.fifoCardBody, /cannot run together with Step Analysis/);
+
+    // 医療・診断を断定せず免責を明記
+    for (const language of ['ja', 'en']) {
+        assert.match(i18n.translations[language].footerNote, /医療機器ではなく|not a medical device/);
+        assert.doesNotMatch(i18n.translations[language].footerNote, /診断できます|can diagnose/);
+    }
+
+    // 言語自動判定（step-analysis と同じ規則）
+    assert.equal(i18n.detectDefaultLanguage('Asia/Tokyo', 'en-US'), 'ja');
+    assert.equal(i18n.detectDefaultLanguage('Europe/Berlin', 'ja-JP'), 'en');
+    assert.equal(i18n.detectDefaultLanguage('', 'ja-JP'), 'ja');
+    assert.equal(i18n.detectDefaultLanguage('', 'fr-FR'), 'en');
+
+    // 補間（バッファガイド・結果ログ）
+    assert.equal(
+        i18n.t('bufferWithinWindow', { seconds: 10, packets: 500, window: 30 }),
+        '推奨帯: 10秒 ≒ 500 serial（端末内バッファ約30秒に収まりやすい）'
+    );
+    i18n.setLanguage('en', { notify: false });
+    assert.match(i18n.t('bufferOverWindow', { seconds: 60, packets: 3000, window: 30 }),
+        /Caution: 60 s ≈ 3000 serials/);
+    i18n.setLanguage('ja', { notify: false });
+}
+
+// ── README ──────────────────────────────────────────────────────────────
+{
     const readme = read('README.md');
     assert.match(readme, /1500/);
     assert.match(readme, /30,000 ms|30000 ms/);
     assert.match(readme, /RING_BUFFER_CAPACITY/);
+    assert.match(readme, /\?lang=ja|\?lang=en/);
 }
 
 console.log('fifo-guide-continuity tests: ok');

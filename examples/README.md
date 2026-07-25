@@ -10,7 +10,7 @@
 | サンプル | 目的 | 必要機材 | 実機なし確認 | 主な実装パターン |
 |---|---|---|---|---|
 | [VISUALIZE](./VISUALIZE/) | 6chチャート+IMU可視化（推奨スターター） | INSOLE ×1 | ―（実機推奨） | rAF描画スロットリング |
-| [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた） | INSOLE ×1 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、serial continuity可視化 |
+| [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた） | INSOLE ×1 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、serial continuity可視化、ja/en切替 |
 | [fifo-vs-realtime](./fifo-vs-realtime/) | 通常(push)/FIFO(pull)の実測比較 | INSOLE ×1〜2 | ―（実機推奨） | 欠損率、シリアル連続性マップ、droppedCount照合 |
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
 | [step-analysis](./step-analysis/) | 1歩ごとの歩容表 + Realtime Rawグラフ | INSOLE ×1〜2 | `?demo=1` またはデモ再生ボタン | `realtime-full-step`、左右自動割当、10歩統計 |
@@ -28,6 +28,27 @@
 2. Realtime との違いを実測で比べたい／2台で試したいなら [fifo-vs-realtime](./fifo-vs-realtime/)
 3. `dropped`（収録中の回復不能ロス累計）と最終CSVの `missing`（区間内の欠損serial数）は
    定義が違うため一致しないことがあります。**両方が 0 のときだけ「欠損なし」**と判断してください。
+
+## 新しい example を作るとき（共通テンプレート）
+
+[`step-analysis`](./step-analysis/) と [`fifo-guide`](./fifo-guide/) が現在の雛形です。
+新規ページはこの構成・デザイン・セクション順に揃えてください。
+
+1. `header.app-header` — 戻りリンク（`../../index.html#examples`）/ `JA`・`EN` 切替 /
+   eyebrow（`TOOLKIT EXAMPLE / <MODE>`）/ h1 / **ヘッダ内に Toolkit スロット** / `lead-copy`
+2. `.control-strip` — 状態バッジ（`WAITING` / `LIVE` 等）+ 現在の状態文 + 操作ボタン（`.button`）
+3. `.settings-guide` — Toolkit 歯車で必要な設定と「このデモでは初期設定済み」の明記
+4. `.graphs-section` — `.chart-card`（dark 背景 + Canvas）で可視化
+5. `.result-section` — `.section-heading` + `.table-frame` + `.notify-strip` +
+   **`.scope-note`（取得できない値・保証しないことの明示）** + `.chart-footnote`
+6. `.how-section` — `.code-card` にこのページが実行している公開APIのコード
+7. `<footer>` — 医療機器ではない旨の免責
+
+- 文言は `i18n.js`（`data-i18n` / `data-i18n-html` / `data-i18n-aria-label`）で ja / en 両方用意し、
+  `?lang=ja` / `?lang=en` と端末タイムゾーンによる既定を実装する
+- 判定・数値ロジックは `metrics.js` / `continuity.js` のような純関数モジュールに分け、Node でテストする
+- `buildInsoleToolkit()` の後に **`insoles[id].setup()` を必ず呼ぶ**（Toolkit は呼びません）
+- サムネイルは `assets/images/thumbs/<name>.svg`（説明図SVG）。landing page のカードと `sitemap.xml` も更新する
 
 ## 実機がない場合
 

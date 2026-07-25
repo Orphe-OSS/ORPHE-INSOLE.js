@@ -689,5 +689,9 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 
+新規 example のレイアウト・デザイン・i18n は `examples/step-analysis/` と `examples/fifo-guide/` が雛形です
+（header + control-strip + settings-guide + chart-card + table-frame + scope-note + code-card、
+ja/en の `i18n.js`、`?lang=` 指定）。詳細は `examples/README.md` の「新しい example を作るとき」を参照。
+
 圧力データの検証・キャリブレーション・CoP・接地検出は `src/InsoleUtils.js`（`OrpheInsoleUtils`）に
 共通実装があります。新規アプリでは自前実装せずこちらを使ってください。

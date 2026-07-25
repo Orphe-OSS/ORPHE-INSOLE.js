@@ -1,869 +1,986 @@
-/* global buildInsoleToolkit, getInsoleToolkitSession, insoles, insoleToolkitMeasurementToCSV, FifoGuideContinuity */
-/**
- * FIFO Guide — 初めてFIFOを使う人向けの実機ページ。
- *
- * FIFOプロトコル（serial指定・再要求・drain）はこのファイルでは一切実装しない。
- *   - src/InsoleFifo.js        … FIFO収集ループ本体
- *   - src/InsoleToolkit.js     … 接続UI / 'fifo-recording' プロファイル /
- *                                startMeasurement()・stopMeasurement()（drain待ち込み）/
- *                                insoleToolkitMeasurementToCSV()
- * 判定ロジック（serial連続性・欠損range・timeline集約・30秒バッファ判定）は
- * ./continuity.js に純関数として切り出し、Node で単体テストしている。
- */
-(function () {
-    'use strict';
+(function fifoGuideApp(root) {
+  "use strict";
 
-    const C = FifoGuideContinuity;
-    const DEVICE_ID = 0;
-    const MAX_LOG_ENTRIES = 400;
-    const ACC_HISTORY_SIZE = 300;
-    const MAX_SAMPLES = 120000;      // 600 s 相当。超えたら結果に truncated 警告を出す
-    const TIMELINE_BINS = C.DEFAULT_BIN_COUNT;
-    const BAR_FULL_SCALE_MS = 60000; // バッファガイドバーの右端
+  /**
+   * FIFO Guide — 初めてFIFOを使う人向けの実機example。
+   *
+   * FIFOプロトコル（serial指定・再要求・drain）はこのファイルでは一切実装しない。
+   *   - src/InsoleFifo.js    … FIFO収集ループ本体
+   *   - src/InsoleToolkit.js … 接続UI / 'fifo-recording' プロファイル /
+   *                            startMeasurement()・stopMeasurement()（drain待ち込み）/
+   *                            insoleToolkitMeasurementToCSV()
+   * 判定ロジック（serial連続性・欠損range・timeline集約・30秒バッファ判定）は
+   * ./continuity.js に純関数として切り出し、Node で単体テストしている。
+   */
 
-    const dom = {};
-    const state = {
-        phase: 'idle',
-        session: null,
-        connected: false,
-        recording: false,
-        plannedMs: 30000,
-        startedAt: 0,
-        stopTimer: null,
-        tickTimer: null,
-        drainStartedAt: 0,
-        drainMs: null,
-        drainRecovered: 0,
-        maxLag: 0,
-        droppedLive: 0,      // onDataLoss(info.cumulative) の最新値
-        droppedTotal: null,  // onStopped(info.dropped) = この収録の回復不能ロス累計
-        batchCount: 0,
-        lastBatchAt: 0,
-        lastBatchGapMs: null,
-        lastBatchSize: 0,
-        latestSample: null,
-        press: null,
-        accHistory: new Float32Array(ACC_HISTORY_SIZE),
-        accCount: 0,
-        accHead: 0,
-        result: null,
-        analysis: null,
-        csv: '',
-        renderQueued: false,
+  const C = root.FifoGuideContinuity;
+  const I18n = root.FifoGuideI18n;
+
+  if (!C) throw new Error("fifo-guide: continuity.js must be loaded before app.js");
+  if (!I18n) throw new Error("fifo-guide: i18n.js must be loaded before app.js");
+
+  const DEVICE_ID = 0;
+  const MAX_LOG_ENTRIES = 400;
+  const LIVE_HISTORY_SIZE = 600;   // 固定長リングバッファ（長時間開いてもメモリが増えない）
+  const MAX_SAMPLES = 120000;      // 600 s 相当。超えたら結果に truncated 注意を出す
+  const TIMELINE_BINS = C.DEFAULT_BIN_COUNT;
+  const BAR_FULL_SCALE_MS = 60000; // バッファガイドバーの右端
+  const PRESSURE_FULL_SCALE = 20000;
+  const ACC_FULL_SCALE = 4;        // G
+
+  /** 結果テーブルの行定義。key = i18n キー、note = 説明の i18n キー */
+  const METRIC_ROWS = [
+    { key: "m_duration", note: "m_duration_note" },
+    { key: "m_samples", note: "m_samples_note" },
+    { key: "m_first", note: "m_first_note" },
+    { key: "m_last", note: "m_last_note" },
+    { key: "m_expected", note: "m_expected_note" },
+    { key: "m_received", note: "m_received_note" },
+    { key: "m_missing", note: "m_missing_note" },
+    { key: "m_missing_rate", note: "m_missing_rate_note" },
+    { key: "m_dropped", note: "m_dropped_note" },
+    { key: "m_drain_recovered", note: "m_drain_note" },
+    { key: "m_drain_ms", note: "m_drain_ms_note" },
+    { key: "m_max_lag", note: "m_max_lag_note" },
+    { key: "m_csv", note: "m_csv_note" }
+  ];
+
+  const dom = {};
+  const logEntries = [];
+  const state = {
+    phase: "idle",           // idle | ready | preparing | recording | draining | done
+    session: null,
+    connected: false,
+    recording: false,
+    plannedMs: 30000,
+    startedAt: 0,
+    stopTimer: null,
+    tickTimer: null,
+    drainStartedAt: 0,
+    drainMs: null,
+    drainRecovered: 0,
+    maxLag: 0,
+    lag: 0,
+    droppedLive: 0,          // onDataLoss(info.cumulative) の最新値
+    droppedTotal: null,      // onStopped(info.dropped) = この収録の回復不能ロス累計
+    batchCount: 0,
+    lastBatchAt: 0,
+    lastBatchGapMs: null,
+    lastBatchSize: 0,
+    latestSample: null,
+    live: {
+      pressure: new Float32Array(LIVE_HISTORY_SIZE),
+      acc: new Float32Array(LIVE_HISTORY_SIZE),
+      count: 0,
+      head: 0
+    },
+    result: null,
+    analysis: null,
+    verdict: null,
+    dropped: 0,
+    cautions: [],
+    csv: "",
+    lastUpdateAt: null,
+    sourceCopy: null,
+    renderQueued: false
+  };
+
+  const t = (key, params) => I18n.t(key, params);
+
+  // ── 起動 ────────────────────────────────────────────────────────────
+  root.document.addEventListener("DOMContentLoaded", () => {
+    cacheDom();
+    buildMetricTable();
+    wireControls();
+    renderEnvLine();
+    installDevice();
+    setPhase("idle");
+    drawTimeline([]);
+    renderLive();
+    log("info", "logPageReady");
+
+    // 言語切替時は、動的に組み立てた文字列も作り直す
+    root.addEventListener("fifo-guide:languagechange", () => {
+      buildMetricTable();
+      refreshSourceCopy();
+      renderResult();
+      renderLive();
+      renderLog();
+      renderEnvLine();
+      updateBufferGuide(state.recording ? Date.now() - state.startedAt : 0);
+      dom.recordButton.innerHTML = t(state.recording ? "recordStopHtml" : "recordStartHtml");
+    });
+  });
+
+  function cacheDom() {
+    const ids = [
+      "toolkit0", "source-badge", "source-title", "source-detail",
+      "duration-select", "duration-custom", "record-button", "csv-button", "json-button",
+      "elapsed-text", "buffer-guide-text", "buffer-bar-cursor", "buffer-bar-mark",
+      "timeline-canvas", "timeline-caption", "continuity-rate",
+      "missing-ranges", "missing-ranges-wrap",
+      "live-canvas", "live-rate", "batch-count", "batch-size", "batch-gap", "live-lag",
+      "latest-sample",
+      "result-card", "result-verdict", "result-summary", "result-cautions",
+      "metric-table-body", "last-update-time",
+      "event-log", "env-line", "copy-log-button", "clear-log-button"
+    ];
+    for (const id of ids) dom[camel(id)] = root.document.getElementById(id);
+  }
+
+  function camel(id) {
+    return id.replace(/-([a-z0-9])/g, (_, character) => character.toUpperCase());
+  }
+
+  /** 結果テーブルを i18n ラベルで組み立てる（言語切替時は値を保ったまま作り直す） */
+  function buildMetricTable() {
+    const body = dom.metricTableBody;
+    if (!body) return;
+    const previous = new Map();
+    body.querySelectorAll("tr").forEach((row) => {
+      previous.set(row.dataset.metric, {
+        value: row.querySelector(".metric-value").textContent,
+        level: row.className
+      });
+    });
+    body.innerHTML = "";
+    for (const metric of METRIC_ROWS) {
+      const row = root.document.createElement("tr");
+      row.dataset.metric = metric.key;
+      const restored = previous.get(metric.key);
+      if (restored) row.className = restored.level;
+      const label = root.document.createElement("th");
+      label.scope = "row";
+      label.textContent = t(metric.key);
+      const value = root.document.createElement("td");
+      value.className = "metric-value";
+      value.textContent = restored ? restored.value : t("valueEmpty");
+      const note = root.document.createElement("td");
+      note.className = "metric-note";
+      note.textContent = t(metric.note);
+      row.append(label, value, note);
+      body.appendChild(row);
+    }
+  }
+
+  function wireControls() {
+    dom.durationSelect.addEventListener("change", () => {
+      const custom = dom.durationSelect.value === "custom";
+      dom.durationCustom.disabled = !custom;
+      if (custom) dom.durationCustom.focus();
+      updateBufferGuide(0);
+    });
+    dom.durationCustom.addEventListener("input", () => updateBufferGuide(0));
+    dom.recordButton.addEventListener("click", () => {
+      if (state.recording) stopRecording("manual");
+      else startRecording();
+    });
+    dom.csvButton.addEventListener("click", downloadCsv);
+    dom.jsonButton.addEventListener("click", downloadJson);
+    dom.copyLogButton.addEventListener("click", copyLog);
+    dom.clearLogButton.addEventListener("click", () => {
+      logEntries.length = 0;
+      renderLog();
+    });
+    root.addEventListener("resize", () => {
+      drawTimeline(state.analysis ? C.buildTimelineBins(state.analysis, TIMELINE_BINS) : []);
+      drawLive();
+    });
+    updateBufferGuide(0);
+  }
+
+  function installDevice() {
+    if (typeof root.buildInsoleToolkit !== "function" || !Array.isArray(root.insoles)) {
+      setSourceCopy("error", "toolkitLoadErrorTitle", "toolkitLoadErrorDetail");
+      return;
+    }
+    root.buildInsoleToolkit(dom.toolkit0, "INSOLE 01", DEVICE_ID, {
+      // 接続時は Realtime。収録開始時に 'fifo-recording' へ切り替え、停止後に戻す。
+      profile: "realtime-full",
+      autoReconnect: true,
+      reconnectIntervalMs: 2000,
+      onStateChange: handleSessionState,
+      onError: handleSessionError,
+      fifo: {
+        startupDelayMs: 1000,
+        drainTimeoutMs: 5000,
+        onSamples: handleFifoSamples,
+        onProgress: handleFifoProgress,
+        onDataLoss: handleFifoDataLoss,
+        onStopped: handleFifoStopped,
+        onAnomaly: handleFifoAnomaly,
+        onError: handleSessionError
+      }
+    });
+    state.session = root.getInsoleToolkitSession(DEVICE_ID);
+    // buildInsoleToolkit() は setup() を呼ばない（simulator 指定時のみ内部で呼ぶ）。
+    // 未呼び出しだと hashUUID が空のままで、接続時に serviceUUID 参照で失敗する。
+    root.insoles[DEVICE_ID].setup();
+  }
+
+  // ── 計測時間とバッファガイド ─────────────────────────────────────────
+  function selectedDurationMs() {
+    if (dom.durationSelect.value === "custom") {
+      const seconds = Math.max(3, Math.min(600, Number(dom.durationCustom.value) || 30));
+      return seconds * 1000;
+    }
+    return Number(dom.durationSelect.value) || 30000;
+  }
+
+  function updateBufferGuide(elapsedMs) {
+    const planned = selectedDurationMs();
+    const guide = C.bufferGuidance(planned);
+    const cursorMs = state.recording ? elapsedMs : planned;
+    dom.bufferBarCursor.style.left = `${Math.min(100, (cursorMs / BAR_FULL_SCALE_MS) * 100)}%`;
+    dom.bufferBarCursor.classList.toggle("over", cursorMs > C.BUFFER_WINDOW_MS);
+    dom.bufferBarMark.style.left = `${(C.BUFFER_WINDOW_MS / BAR_FULL_SCALE_MS) * 100}%`;
+
+    const params = {
+      seconds: planned / 1000,
+      packets: guide.expectedPackets,
+      window: guide.windowSeconds
     };
-    const logEntries = [];
+    dom.bufferGuideText.className = `buffer-guide-text ${guide.withinWindow ? "ok" : "caution"}`;
+    dom.bufferGuideText.textContent = guide.withinWindow
+      ? t("bufferWithinWindow", params)
+      : t("bufferOverWindow", params);
+  }
 
-    // ── 起動 ────────────────────────────────────────────────────────────
-    document.addEventListener('DOMContentLoaded', () => {
-        cacheDom();
-        buildPressBars();
-        wireControls();
-        renderCodeSnippet();
-        renderEnvLine();
+  // ── 収録 ────────────────────────────────────────────────────────────
+  async function startRecording() {
+    if (!state.session || !state.connected) {
+      log("warn", "logNotConnected");
+      return;
+    }
+    state.plannedMs = selectedDurationMs();
+    resetRunState();
+    setPhase("preparing");
+    log("info", "logPreparing", { seconds: state.plannedMs / 1000 });
 
-        buildInsoleToolkit(dom.toolkit, 'ORPHE INSOLE', DEVICE_ID, {
-            // 接続時は Realtime（= realtime-full 相当）。
-            // 収録開始時に 'fifo-recording' プロファイルへ切り替える。
-            streamingMode: 4,
-            sensorDataMode: 'realtime',
-            outputs: { sensorValues: true, stepAnalysis: false },
-            autoReconnect: true,
-            onStateChange: handleSessionState,
-            onError: handleSessionError,
-            fifo: {
-                startupDelayMs: 1000,
-                drainTimeoutMs: 5000,
-                onSamples: handleFifoSamples,
-                onProgress: handleFifoProgress,
-                onDataLoss: handleFifoDataLoss,
-                onStopped: handleFifoStopped,
-                onAnomaly: handleFifoAnomaly,
-                onError: handleSessionError,
-            },
-        });
-        state.session = getInsoleToolkitSession(DEVICE_ID);
-        // buildInsoleToolkit() は setup() を呼ばない（simulator 指定時のみ内部で呼ぶ）。
-        // setup() を忘れると hashUUID が空のままで、接続時に
-        // 「Cannot read properties of undefined (reading 'serviceUUID')」で失敗する。
-        insoles[DEVICE_ID].setup();
+    try {
+      await state.session.startMeasurement({
+        profile: "fifo-recording",
+        restoreProfile: true,
+        maxSamples: MAX_SAMPLES,
+        metadata: {
+          page: "fifo-guide",
+          plannedDurationMs: state.plannedMs,
+          platform: root.navigator.platform
+        }
+      });
+    } catch (error) {
+      setPhase(state.connected ? "ready" : "idle");
+      log("error", "logStartFailed", { message: describeError(error) });
+      return;
+    }
 
-        setPhase('idle');
-        drawTimeline([]);
-        drawAcc();
-        log('info', 'ページを読み込みました。ORPHE INSOLE を1台接続してください。');
+    state.recording = true;
+    state.startedAt = Date.now();
+    setPhase("recording");
+    log("success", "logStarted");
+    state.tickTimer = root.setInterval(onTick, 100);
+    state.stopTimer = root.setTimeout(() => stopRecording("duration"), state.plannedMs);
+  }
+
+  function onTick() {
+    const elapsed = Date.now() - state.startedAt;
+    dom.elapsedText.textContent = `${(elapsed / 1000).toFixed(1)} s`;
+    updateBufferGuide(elapsed);
+  }
+
+  async function stopRecording(reason) {
+    if (!state.recording) return;
+    state.recording = false;
+    clearTimers();
+    state.drainStartedAt = Date.now();
+    setPhase("draining");
+    log("info", reason === "duration" ? "logStoppedByDuration" : "logStoppedManually");
+
+    let result = null;
+    try {
+      result = await state.session.stopMeasurement({ reason });
+    } catch (error) {
+      log("error", "logStopFailed", { message: describeError(error) });
+      // Toolkit はプロファイル復元に失敗しても直近の計測結果を保持する
+      result = state.session.lastMeasurement || null;
+    }
+    if (state.drainMs === null) state.drainMs = Date.now() - state.drainStartedAt;
+
+    if (!result) {
+      setPhase(state.connected ? "ready" : "idle");
+      log("error", "logNoResult");
+      return;
+    }
+    finalizeResult(result);
+    setPhase("done");
+  }
+
+  function clearTimers() {
+    if (state.stopTimer) { root.clearTimeout(state.stopTimer); state.stopTimer = null; }
+    if (state.tickTimer) { root.clearInterval(state.tickTimer); state.tickTimer = null; }
+  }
+
+  function resetRunState() {
+    state.drainStartedAt = 0;
+    state.drainMs = null;
+    state.drainRecovered = 0;
+    state.maxLag = 0;
+    state.lag = 0;
+    state.droppedLive = 0;
+    state.droppedTotal = null;
+    state.batchCount = 0;
+    state.lastBatchAt = 0;
+    state.lastBatchGapMs = null;
+    state.lastBatchSize = 0;
+    state.latestSample = null;
+    state.live.count = 0;
+    state.live.head = 0;
+    state.result = null;
+    state.analysis = null;
+    state.verdict = null;
+    state.dropped = 0;
+    state.cautions = [];
+    state.csv = "";
+    dom.elapsedText.textContent = "0.0 s";
+    dom.csvButton.disabled = true;
+    dom.jsonButton.disabled = true;
+    resetMetricTable();
+    renderResult();
+    drawTimeline([]);
+    renderLive();
+  }
+
+  function resetMetricTable() {
+    dom.metricTableBody.querySelectorAll("tr").forEach((row) => {
+      row.className = "";
+      row.querySelector(".metric-value").textContent = t("valueEmpty");
+    });
+    dom.continuityRate.textContent = "missing 0 / expected 0";
+    dom.timelineCaption.textContent = t("continuityEmpty");
+    dom.missingRanges.textContent = t("missingRangesNone");
+    dom.missingRangesWrap.className = "missing-ranges clean";
+  }
+
+  // ── FIFO コールバック ────────────────────────────────────────────────
+  function handleFifoSamples(deviceId, samples) {
+    if (!Array.isArray(samples) || samples.length === 0) return;
+    const now = root.performance.now();
+    state.batchCount += 1;
+    state.lastBatchSize = samples.length;
+    if (state.lastBatchAt > 0) state.lastBatchGapMs = now - state.lastBatchAt;
+    state.lastBatchAt = now;
+    state.latestSample = samples[samples.length - 1];
+    state.lastUpdateAt = new Date();
+
+    for (const sample of samples) {
+      const press = sample && sample.press && Array.isArray(sample.press.values)
+        ? sample.press.values.reduce((sum, value) => sum + (Number(value) || 0), 0)
+        : 0;
+      const acc = sample && sample.converted_acc;
+      const norm = acc ? Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z) : 0;
+      state.live.pressure[state.live.head] = press;
+      state.live.acc[state.live.head] = norm;
+      state.live.head = (state.live.head + 1) % LIVE_HISTORY_SIZE;
+      if (state.live.count < LIVE_HISTORY_SIZE) state.live.count += 1;
+    }
+    queueLiveRender();
+  }
+
+  function handleFifoProgress(info) {
+    const lag = Number(info && info.lag) || 0;
+    state.lag = lag;
+    if (lag > state.maxLag) state.maxLag = lag;
+    if (info && info.draining) {
+      setSourceCopy("draining", "sourceDrainingTitle", "sourceDrainingProgress", {
+        detailParams: { collected: info.collected, lag }
+      });
+    }
+    queueLiveRender();
+  }
+
+  function handleFifoDataLoss(info) {
+    state.droppedLive = Number(info && info.cumulative) || state.droppedLive;
+    log("error", "logDataLoss", {
+      dropped: info.dropped,
+      cumulative: info.cumulative,
+      reason: info.reason
+    });
+  }
+
+  function handleFifoStopped(info) {
+    state.drainRecovered = Number(info && info.drainRecovered) || 0;
+    state.droppedTotal = Number(info && info.dropped) || 0;
+    if (state.drainStartedAt > 0 && state.drainMs === null) {
+      state.drainMs = Date.now() - state.drainStartedAt;
+    }
+    log("info", "logFifoStopped", {
+      collected: info.collected,
+      dropped: info.dropped,
+      recovered: state.drainRecovered
+    });
+  }
+
+  function handleFifoAnomaly(info) {
+    // 到着待ちの再要求は正常動作。記録はするが警告扱いにはしない。
+    log("info", "logReRequest", {
+      expected: info.expected,
+      received: info.received,
+      noData: info.noData
+    });
+  }
+
+  /**
+   * 接続状態の遷移は Toolkit の onStateChange 経由で拾う。
+   * insole.on* を上書きしないので、Toolkit のヘッダ表示や自動再接続と競合しない。
+   */
+  function handleSessionState(snapshot) {
+    const wasConnected = state.connected;
+    state.connected = !!snapshot.connected;
+    if (snapshot.measurementPhase === "draining" && state.drainStartedAt === 0) {
+      state.drainStartedAt = Date.now();
+    }
+    if (state.connected && !wasConnected) {
+      log("success", "logConnected");
+      if (state.phase === "idle") setPhase("ready");
+    }
+    if (!state.connected && wasConnected) {
+      if (state.recording) {
+        clearTimers();
+        state.recording = false;
+        log("error", "logDisconnectedWhileRecording");
+        // 計測ウィンドウを閉じておく。閉じないと activeMeasurement が残り、
+        // 再接続後に MEASUREMENT_ACTIVE で次の収録を開始できなくなる。
+        Promise.resolve(state.session.stopMeasurement({ reason: "disconnect" }))
+          .catch((error) => log("warn", "logStopAfterDisconnect", { message: describeError(error) }));
+      }
+      log("warn", "logDisconnected");
+      setPhase("disconnected");
+      return;
+    }
+    applyButtonState();
+  }
+
+  function handleSessionError(error) {
+    if (isUserCancel(error)) {
+      log("info", "logChooserCancelled");
+      return;
+    }
+    log("error", "logError", { message: describeError(error) });
+    setSourceCopy("error", "sourceErrorTitle", "", { detailRaw: describeError(error) });
+  }
+
+  function isUserCancel(error) {
+    if (!error) return false;
+    if (error.name === "NotFoundError") return true;
+    const message = error.message ? String(error.message) : String(error);
+    return /cancel+ed|chooser/i.test(message);
+  }
+
+  function describeError(error) {
+    if (!error) return "unknown";
+    const code = error.code ? ` [${error.code}]` : "";
+    return `${error.message || String(error)}${code}`;
+  }
+
+  // ── 結果の確定 ───────────────────────────────────────────────────────
+  function finalizeResult(result) {
+    const samples = Array.isArray(result.raw && result.raw.samples) ? result.raw.samples : [];
+    const analysis = C.analyzeSerials(samples.map((sample) => sample.serial_number));
+    // dropped は「収録中に回復不能と判定された累計」。onStopped(info.dropped) が正。
+    // result.fifo.dropped は checkpoint 区間の再集計値なので定義が異なる。
+    const dropped = state.droppedTotal !== null
+      ? state.droppedTotal
+      : Math.max(0, Number(result.fifo && result.fifo.dropped) || 0);
+    const verdict = C.evaluateRecording({
+      analysis,
+      missing: analysis.missing,
+      dropped,
+      durationMs: result.durationMs,
+      maxLag: state.maxLag
     });
 
-    function cacheDom() {
-        const ids = [
-            'toolkit_placeholder', 'status_banner', 'status_label', 'status_text', 'step_strip',
-            'duration_select', 'duration_custom', 'record_button', 'elapsed_text',
-            'buffer_guide_text', 'buffer_bar_cursor', 'buffer_bar_mark',
-            'result_card', 'result_verdict', 'result_summary', 'result_cautions',
-            'm_duration', 'm_samples', 'm_first', 'm_last', 'm_expected', 'm_received',
-            'm_missing', 'm_missing_rate', 'm_dropped', 'm_drain_recovered', 'm_drain_ms',
-            'm_max_lag', 'm_csv',
-            'timeline_canvas', 'timeline_caption', 'missing_ranges', 'missing_ranges_wrap',
-            'csv_button', 'json_button', 'export_hint',
-            'press_bars', 'press_total', 'acc_canvas', 'batch_count', 'batch_size',
-            'batch_gap', 'live_lag', 'latest_sample',
-            'code_snippet', 'event_log', 'env_line', 'copy_log_button', 'clear_log_button',
-        ];
-        for (const id of ids) dom[camel(id)] = document.getElementById(id);
-        dom.toolkit = dom.toolkitPlaceholder;
+    state.result = result;
+    state.analysis = analysis;
+    state.verdict = verdict;
+    state.dropped = dropped;
+    state.csv = samples.length > 0 ? root.insoleToolkitMeasurementToCSV(result, "raw") : "";
+    state.lastUpdateAt = new Date();
+
+    state.cautions = verdict.cautions.map((text) => ({ raw: text }));
+    if (result.raw.truncated) {
+      state.cautions.push({ key: "cautionTruncated", params: { max: MAX_SAMPLES } });
+    }
+    if (dropped !== analysis.missing) {
+      state.cautions.push({
+        key: "cautionDroppedMismatch",
+        params: { dropped, missing: analysis.missing }
+      });
     }
 
-    function camel(id) {
-        return id.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    // 画面表示とSDK側の集計がずれていないかを突き合わせる
+    const sdkSerial = (result.raw && result.raw.serial) || null;
+    if (sdkSerial && Number.isInteger(sdkSerial.missing) && sdkSerial.missing !== analysis.missing) {
+      log("warn", "logSdkMismatch", { sdk: sdkSerial.missing, recomputed: analysis.missing });
+    }
+    // 保存するCSVから数え直した欠損数と画面表示が一致することを確認する
+    if (state.csv) {
+      const fromCsv = C.analyzeSerials(C.extractSerialsFromCsv(state.csv));
+      const matched = fromCsv.missing === analysis.missing && fromCsv.expected === analysis.expected;
+      log(matched ? "success" : "error", "logCsvCrossCheck", {
+        expected: fromCsv.expected,
+        received: fromCsv.received,
+        missing: fromCsv.missing,
+        verdict: t(matched ? "logCsvMatched" : "logCsvMismatched")
+      });
     }
 
-    function buildPressBars() {
-        for (let i = 0; i < 6; i += 1) {
-            const row = document.createElement('div');
-            row.className = 'press-row';
-            row.innerHTML = `<span class="press-label mono">${i + 1}</span>`
-                + '<span class="press-track"><span class="press-fill"></span></span>'
-                + '<span class="press-value mono">-</span>';
-            dom.pressBars.appendChild(row);
-        }
+    renderResult();
+    dom.csvButton.disabled = samples.length === 0;
+    dom.jsonButton.disabled = false;
+
+    log(verdict.level === "fail" ? "error" : verdict.level === "caution" ? "warn" : "success", "logResult", {
+      label: verdict.label,
+      seconds: (result.durationMs / 1000).toFixed(1),
+      samples: samples.length,
+      received: analysis.received,
+      expected: analysis.expected,
+      missing: analysis.missing,
+      dropped,
+      recovered: state.drainRecovered,
+      drainMs: state.drainMs,
+      maxLag: state.maxLag
+    });
+  }
+
+  function renderResult() {
+    const result = state.result;
+    const analysis = state.analysis;
+    const verdict = state.verdict;
+
+    if (!result || !analysis || !verdict) {
+      dom.resultCard.className = "verdict-bar result-empty";
+      dom.resultVerdict.className = "verdict-badge";
+      dom.resultVerdict.textContent = t("verdictWaiting");
+      dom.resultSummary.textContent = t("resultSummaryWaiting");
+      dom.resultCautions.innerHTML = "";
+      dom.lastUpdateTime.textContent = "—";
+      return;
     }
 
-    function wireControls() {
-        dom.durationSelect.addEventListener('change', () => {
-            const custom = dom.durationSelect.value === 'custom';
-            dom.durationCustom.disabled = !custom;
-            if (custom) dom.durationCustom.focus();
-            updateBufferGuide(0);
-        });
-        dom.durationCustom.addEventListener('input', () => updateBufferGuide(0));
-        dom.recordButton.addEventListener('click', () => {
-            if (state.recording) stopRecording('manual');
-            else startRecording();
-        });
-        dom.csvButton.addEventListener('click', downloadCsv);
-        dom.jsonButton.addEventListener('click', downloadJson);
-        dom.copyLogButton.addEventListener('click', copyLog);
-        dom.clearLogButton.addEventListener('click', () => {
-            logEntries.length = 0;
-            renderLog();
-        });
-        window.addEventListener('resize', () => {
-            drawTimeline(state.analysis ? C.buildTimelineBins(state.analysis, TIMELINE_BINS) : []);
-            drawAcc();
-        });
-        updateBufferGuide(0);
+    const level = verdict.level;
+    dom.resultCard.className = `verdict-bar result-${level === "caution" ? "caution" : level}`;
+    dom.resultVerdict.className = `verdict-badge verdict-${level}`;
+    dom.resultVerdict.textContent = t(
+      level === "fail" ? "verdictFail" : level === "caution" ? "verdictWarn" : "verdictPass"
+    );
+    dom.resultSummary.textContent = t(
+      level === "fail" ? "resultSummaryFail"
+        : level === "caution" ? "resultSummaryWarn"
+          : "resultSummaryPass"
+    );
+
+    const samples = Array.isArray(result.raw.samples) ? result.raw.samples.length : 0;
+    setMetric("m_duration", `${(result.durationMs / 1000).toFixed(1)} s`,
+      verdict.buffer.withinWindow ? "ok" : "warn");
+    setMetric("m_samples", String(samples), samples > 0 ? "ok" : "bad");
+    setMetric("m_first", analysis.first === null ? t("valueEmpty") : String(analysis.first));
+    setMetric("m_last", analysis.last === null ? t("valueEmpty") : String(analysis.last));
+    setMetric("m_expected", String(analysis.expected));
+    setMetric("m_received", String(analysis.received));
+    setMetric("m_missing", String(analysis.missing), analysis.missing === 0 ? "ok" : "bad");
+    setMetric("m_missing_rate", `${(analysis.missingRate * 100).toFixed(3)} %`,
+      analysis.missing === 0 ? "ok" : "bad");
+    setMetric("m_dropped", String(state.dropped), state.dropped === 0 ? "ok" : "bad");
+    setMetric("m_drain_recovered", String(state.drainRecovered));
+    setMetric("m_drain_ms", state.drainMs === null ? t("valueEmpty") : `${state.drainMs} ms`);
+    setMetric("m_max_lag", `${state.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
+      verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
+    setMetric("m_csv", samples > 0 ? t("csvAvailable") : t("csvUnavailable"), samples > 0 ? "ok" : "bad");
+
+    const cautions = state.cautions.map((entry) => (
+      entry.raw !== undefined ? entry.raw : t(entry.key, entry.params)
+    ));
+    dom.resultCautions.innerHTML = cautions.length === 0 ? "" : [
+      '<div class="caution-box">',
+      `<strong>${escapeHtml(t("cautionsTitle"))}</strong><ul>`,
+      ...cautions.map((text) => `<li>${escapeHtml(text)}</li>`),
+      "</ul></div>"
+    ].join("");
+
+    const bins = C.buildTimelineBins(analysis, TIMELINE_BINS);
+    drawTimeline(bins);
+    dom.continuityRate.textContent = `missing ${analysis.missing} / expected ${analysis.expected}`;
+    dom.timelineCaption.textContent = analysis.expected === 0
+      ? t("continuityEmpty")
+      : t("continuityCaption", {
+        first: analysis.first,
+        last: analysis.last,
+        bins: bins.length,
+        perBin: Math.max(1, Math.round(analysis.expected / Math.max(1, bins.length)))
+      });
+
+    if (analysis.missingRanges.length > 0) {
+      dom.missingRangesWrap.className = "missing-ranges";
+      dom.missingRanges.textContent = C.formatMissingRanges(analysis.missingRanges, 30);
+    } else {
+      dom.missingRangesWrap.className = "missing-ranges clean";
+      dom.missingRanges.textContent = t("missingRangesNone");
     }
+    dom.lastUpdateTime.textContent = state.lastUpdateAt
+      ? state.lastUpdateAt.toLocaleTimeString()
+      : "—";
+  }
 
-    // ── 計測時間 ────────────────────────────────────────────────────────
-    function selectedDurationMs() {
-        if (dom.durationSelect.value === 'custom') {
-            const seconds = Math.max(3, Math.min(600, Number(dom.durationCustom.value) || 30));
-            return seconds * 1000;
-        }
-        return Number(dom.durationSelect.value) || 30000;
+  function setMetric(key, value, level) {
+    const row = dom.metricTableBody.querySelector(`tr[data-metric="${key}"]`);
+    if (!row) return;
+    row.querySelector(".metric-value").textContent = value;
+    row.className = level ? `level-${level}` : "";
+  }
+
+  // ── 描画 ────────────────────────────────────────────────────────────
+  function queueLiveRender() {
+    if (state.renderQueued) return;
+    state.renderQueued = true;
+    root.requestAnimationFrame(() => {
+      state.renderQueued = false;
+      renderLive();
+    });
+  }
+
+  function renderLive() {
+    dom.batchCount.textContent = String(state.batchCount);
+    dom.batchSize.textContent = state.lastBatchSize > 0 ? String(state.lastBatchSize) : "—";
+    dom.batchGap.textContent = state.lastBatchGapMs === null
+      ? "—"
+      : `${Math.round(state.lastBatchGapMs)} ms`;
+    dom.liveLag.textContent = state.recording || state.phase === "draining"
+      ? `${state.lag} / ${C.RING_BUFFER_CAPACITY}`
+      : "—";
+    dom.liveLag.className = state.lag >= C.RING_BUFFER_CAPACITY * C.LAG_CAUTION_RATIO ? "alert" : "";
+    dom.liveRate.textContent = state.live.count > 0 ? `${state.live.count} samples plotted` : "";
+
+    const sample = state.latestSample;
+    dom.latestSample.textContent = sample
+      ? [
+        `serial_number : ${sample.serial_number}  (packet_number ${sample.packet_number})`,
+        `t             : ${sample.t} ms`,
+        `gyro   [dps]  : ${formatVector(sample.converted_gyro)}`,
+        `acc    [G]    : ${formatVector(sample.converted_acc)}`,
+        `press  [ADC]  : ${sample.press && sample.press.values ? sample.press.values.join(", ") : "—"}`,
+        t("latestSampleQuatNote")
+      ].join("\n")
+      : t("latestSampleEmpty");
+    drawLive();
+  }
+
+  function formatVector(vector) {
+    if (!vector) return "—";
+    return `x=${vector.x.toFixed(2)} y=${vector.y.toFixed(2)} z=${vector.z.toFixed(2)}`;
+  }
+
+  function prepareCanvas(canvas) {
+    const ratio = root.devicePixelRatio || 1;
+    const width = Math.max(1, canvas.clientWidth);
+    const height = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute("height")) || 80);
+    const pixelWidth = Math.floor(width * ratio);
+    const pixelHeight = Math.floor(height * ratio);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
     }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    return { ctx, width, height };
+  }
 
-    function updateBufferGuide(elapsedMs) {
-        const planned = selectedDurationMs();
-        const guide = C.bufferGuidance(planned);
-        const cursorMs = state.recording ? elapsedMs : planned;
-        const percent = Math.min(100, (cursorMs / BAR_FULL_SCALE_MS) * 100);
-        dom.bufferBarCursor.style.left = `${percent}%`;
-        dom.bufferBarCursor.classList.toggle('over', cursorMs > C.BUFFER_WINDOW_MS);
-        dom.bufferBarMark.style.left = `${(C.BUFFER_WINDOW_MS / BAR_FULL_SCALE_MS) * 100}%`;
+  function drawPlaceholder(ctx, width, height, text) {
+    ctx.fillStyle = "#0b141b";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#5d707d";
+    ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText(text, 12, height / 2 + 4);
+  }
 
-        const packets = guide.expectedPackets;
-        if (guide.withinWindow) {
-            dom.bufferGuideText.className = 'text-success';
-            dom.bufferGuideText.textContent =
-                `推奨帯: ${planned / 1000}秒 ≒ ${packets} serial（端末内バッファ約${guide.windowSeconds}秒に収まりやすい）`;
-        } else {
-            dom.bufferGuideText.className = 'text-warning-emphasis fw-semibold';
-            dom.bufferGuideText.textContent =
-                `警告帯: ${planned / 1000}秒 ≒ ${packets} serial（バッファ約${guide.windowSeconds}秒を超過。欠損しうる）`;
-        }
+  /** timeline は bin 単位で Canvas に描く（serialごとのDOM要素は作らない） */
+  function drawTimeline(bins) {
+    const canvas = dom.timelineCanvas;
+    if (!canvas) return;
+    const { ctx, width, height } = prepareCanvas(canvas);
+    if (!bins || bins.length === 0) {
+      drawPlaceholder(ctx, width, height, t("continuityEmpty"));
+      return;
     }
-
-    // ── 収録 ────────────────────────────────────────────────────────────
-    async function startRecording() {
-        const session = state.session;
-        if (!session || !state.connected) {
-            log('warn', 'まず INSOLE を接続してください。');
-            return;
-        }
-        state.plannedMs = selectedDurationMs();
-        resetRunState();
-        setPhase('preparing');
-        log('info', `FIFO収録を準備します（予定 ${state.plannedMs / 1000} 秒）。read modeをFIFOへ切り替え、バッファを消去します。`);
-
-        try {
-            await session.startMeasurement({
-                profile: 'fifo-recording',
-                restoreProfile: true,
-                maxSamples: MAX_SAMPLES,
-                metadata: {
-                    page: 'fifo-guide',
-                    plannedDurationMs: state.plannedMs,
-                    platform: navigator.platform,
-                },
-            });
-        } catch (error) {
-            setPhase(state.connected ? 'connected' : 'idle');
-            log('error', `収録を開始できませんでした: ${describeError(error)}`);
-            return;
-        }
-
-        state.recording = true;
-        state.startedAt = Date.now();
-        dom.recordButton.innerHTML = '<i class="bi bi-stop-circle"></i> 収録停止';
-        dom.recordButton.classList.replace('btn-primary', 'btn-danger');
-        setPhase('recording');
-        log('success', 'FIFO収録を開始しました。データは数百msごとにまとめて届きます。');
-
-        state.tickTimer = setInterval(onTick, 100);
-        state.stopTimer = setTimeout(() => stopRecording('duration'), state.plannedMs);
+    const binWidth = width / bins.length;
+    for (let i = 0; i < bins.length; i += 1) {
+      const bin = bins[i];
+      const x = i * binWidth;
+      const w = Math.max(1, binWidth + 0.5);
+      ctx.fillStyle = "#35d1b6";
+      ctx.fillRect(x, 0, w, height);
+      if (bin.missing > 0) {
+        // 欠損が1つでもあるbinは赤で塗り、割合を高さで示す（見落とし防止）
+        const ratio = bin.total > 0 ? bin.missing / bin.total : 1;
+        ctx.fillStyle = "#ff7559";
+        ctx.fillRect(x, 0, w, Math.max(height * 0.5, height * ratio));
+      }
     }
+  }
 
-    function onTick() {
-        const elapsed = Date.now() - state.startedAt;
-        dom.elapsedText.textContent = `${(elapsed / 1000).toFixed(1)} s`;
-        updateBufferGuide(elapsed);
-        if (elapsed > C.BUFFER_WINDOW_MS) {
-            dom.statusBanner.classList.add('status-over-buffer');
-        }
+  function drawLive() {
+    const canvas = dom.liveCanvas;
+    if (!canvas) return;
+    const { ctx, width, height } = prepareCanvas(canvas);
+    if (state.live.count === 0) {
+      drawPlaceholder(ctx, width, height, t("liveEmpty"));
+      return;
     }
+    ctx.fillStyle = "#0b141b";
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+    drawSeries(ctx, width, height, state.live.pressure, PRESSURE_FULL_SCALE, "#7fa4ff");
+    drawSeries(ctx, width, height, state.live.acc, ACC_FULL_SCALE, "#f6c860");
+  }
 
-    async function stopRecording(reason) {
-        if (!state.recording) return;
-        state.recording = false;
-        clearTimers();
-        dom.recordButton.innerHTML = '<i class="bi bi-record-circle"></i> 収録開始';
-        dom.recordButton.classList.replace('btn-danger', 'btn-primary');
-        state.drainStartedAt = Date.now();
-        setPhase('draining');
-        log('info', reason === 'duration'
-            ? '予定時間になったので停止しました。端末内に残っているデータを回収（drain）しています…'
-            : '停止しました。端末内に残っているデータを回収（drain）しています…');
-
-        let result = null;
-        try {
-            result = await state.session.stopMeasurement({ reason });
-        } catch (error) {
-            log('error', `停止処理でエラーが発生しました: ${describeError(error)}`);
-            // Toolkit は失敗しても直近の計測結果を保持する
-            result = state.session.lastMeasurement || null;
-        }
-        if (state.drainMs === null) state.drainMs = Date.now() - state.drainStartedAt;
-
-        if (!result) {
-            setPhase(state.connected ? 'connected' : 'idle');
-            log('error', '収録結果を取得できませんでした。');
-            return;
-        }
-        finalizeResult(result);
-        setPhase('done');
+  function drawSeries(ctx, width, height, buffer, fullScale, color) {
+    const { count, head } = state.live;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < count; i += 1) {
+      const index = (head - count + i + LIVE_HISTORY_SIZE * 2) % LIVE_HISTORY_SIZE;
+      const value = Math.min(1, Math.max(0, buffer[index] / fullScale));
+      const x = (i / Math.max(1, count - 1)) * width;
+      const y = height - value * (height - 6) - 3;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
+    ctx.stroke();
+  }
 
-    function clearTimers() {
-        if (state.stopTimer) { clearTimeout(state.stopTimer); state.stopTimer = null; }
-        if (state.tickTimer) { clearInterval(state.tickTimer); state.tickTimer = null; }
-    }
+  // ── 状態表示 ─────────────────────────────────────────────────────────
+  const PHASE_SOURCE = {
+    idle: ["waiting", "sourceConnectTitle", "sourceConnectDetail"],
+    ready: ["ready", "sourceReadyTitle", "sourceReadyDetail"],
+    preparing: ["preparing", "sourcePreparingTitle", "sourcePreparingDetail"],
+    recording: ["recording", "sourceRecordingTitle", "sourceRecordingDetail"],
+    draining: ["draining", "sourceDrainingTitle", "sourceDrainingDetail"],
+    done: ["done", "sourceDoneTitle", "sourceDoneDetail"],
+    disconnected: ["waiting", "sourceDisconnectedTitle", "sourceDisconnectedDetail"]
+  };
 
-    function resetRunState() {
-        state.drainMs = null;
-        state.drainStartedAt = 0;
-        state.drainRecovered = 0;
-        state.maxLag = 0;
-        state.droppedLive = 0;
-        state.droppedTotal = null;
-        state.batchCount = 0;
-        state.lastBatchAt = 0;
-        state.lastBatchGapMs = null;
-        state.lastBatchSize = 0;
-        state.latestSample = null;
-        state.press = null;
-        state.accCount = 0;
-        state.accHead = 0;
-        state.result = null;
-        state.analysis = null;
-        state.csv = '';
-        dom.elapsedText.textContent = '0.0 s';
-        dom.batchCount.textContent = '0';
-        dom.batchSize.textContent = '-';
-        dom.batchGap.textContent = '-';
-        dom.liveLag.textContent = '-';
-        dom.latestSample.textContent = '-';
-        dom.csvButton.disabled = true;
-        dom.jsonButton.disabled = true;
-        dom.missingRangesWrap.hidden = true;
-        dom.statusBanner.classList.remove('status-over-buffer');
-        drawTimeline([]);
-        drawAcc();
-    }
+  const BADGE_TEXT = {
+    waiting: "WAITING",
+    ready: "READY",
+    preparing: "PREPARING",
+    recording: "RECORDING",
+    draining: "DRAINING",
+    done: "DONE",
+    error: "ERROR"
+  };
 
-    // ── FIFO コールバック ────────────────────────────────────────────────
-    function handleFifoSamples(deviceId, samples) {
-        if (!Array.isArray(samples) || samples.length === 0) return;
-        const now = performance.now();
-        state.batchCount += 1;
-        state.lastBatchSize = samples.length;
-        if (state.lastBatchAt > 0) state.lastBatchGapMs = now - state.lastBatchAt;
-        state.lastBatchAt = now;
+  function setPhase(phase) {
+    state.phase = phase === "disconnected" ? "idle" : phase;
+    const entry = PHASE_SOURCE[phase] || PHASE_SOURCE.idle;
+    setSourceCopy(entry[0], entry[1], entry[2]);
+    dom.recordButton.innerHTML = t(phase === "recording" ? "recordStopHtml" : "recordStartHtml");
+    dom.recordButton.classList.toggle("active", phase === "recording");
+    applyButtonState();
+  }
 
-        const latest = samples[samples.length - 1];
-        state.latestSample = latest;
-        if (latest && latest.press && Array.isArray(latest.press.values)) {
-            state.press = latest.press.values;
-        }
-        for (const sample of samples) {
-            const acc = sample && sample.converted_acc;
-            if (!acc) continue;
-            const norm = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-            state.accHistory[state.accHead] = norm;
-            state.accHead = (state.accHead + 1) % ACC_HISTORY_SIZE;
-            if (state.accCount < ACC_HISTORY_SIZE) state.accCount += 1;
-        }
-        queueLiveRender();
-    }
+  /** 収録開始/停止ボタンと計測時間入力の有効・無効は phase から一元的に決める */
+  function applyButtonState() {
+    const phase = state.phase;
+    dom.recordButton.disabled = phase === "recording"
+      ? false
+      : phase === "preparing" || phase === "draining" || !state.connected;
+    const busy = phase === "preparing" || phase === "recording" || phase === "draining";
+    dom.durationSelect.disabled = busy;
+    dom.durationCustom.disabled = busy || dom.durationSelect.value !== "custom";
+  }
 
-    function handleFifoProgress(info) {
-        const lag = Number(info && info.lag) || 0;
-        if (lag > state.maxLag) state.maxLag = lag;
-        dom.liveLag.textContent = `${lag} / ${C.RING_BUFFER_CAPACITY}`;
-        dom.liveLag.className = lag >= C.RING_BUFFER_CAPACITY * C.LAG_CAUTION_RATIO
-            ? 'mono text-danger fw-bold'
-            : 'mono';
-        if (info && info.draining) {
-            setStatus('draining', '回収中（drain）',
-                `残りの再要求を回収しています… 回収済み ${info.collected} serial / 未取得 ${lag}`);
-        }
-    }
+  function renderSource(source, title, detail) {
+    dom.sourceBadge.className = `source-badge ${source}`;
+    dom.sourceBadge.textContent = BADGE_TEXT[source] || BADGE_TEXT.waiting;
+    dom.sourceTitle.textContent = title;
+    dom.sourceDetail.textContent = detail;
+  }
 
-    function handleFifoDataLoss(info) {
-        state.droppedLive = Number(info && info.cumulative) || state.droppedLive;
-        log('error', `回復不能な欠損: ${info.dropped} serial（累計 ${info.cumulative}）reason=${info.reason}`);
-    }
-
-    function handleFifoStopped(info) {
-        state.drainRecovered = Number(info && info.drainRecovered) || 0;
-        state.droppedTotal = Number(info && info.dropped) || 0;
-        if (state.drainStartedAt > 0 && state.drainMs === null) {
-            state.drainMs = Date.now() - state.drainStartedAt;
-        }
-        log('info', `FIFO停止: collected=${info.collected} dropped=${info.dropped} drainRecovered=${state.drainRecovered}`);
-    }
-
-    function handleFifoAnomaly(info) {
-        // 到着待ちの再要求は正常動作。ログには残すが警告扱いにはしない。
-        log('info', `再要求: expected ${info.expected} / received ${info.received} / no-data ${info.noData}`);
-    }
-
-    /**
-     * 接続状態の遷移はすべて Toolkit の onStateChange 経由で拾う。
-     * insole.on* を上書きしないので、Toolkit のヘッダ表示や自動再接続と競合しない。
-     */
-    function handleSessionState(snapshot) {
-        const wasConnected = state.connected;
-        state.connected = !!snapshot.connected;
-        if (snapshot.measurementPhase === 'draining' && state.drainStartedAt === 0) {
-            state.drainStartedAt = Date.now();
-        }
-        if (state.connected && !wasConnected) {
-            log('success', 'INSOLE に接続しました。計測時間を選んで「収録開始」を押してください。');
-            if (state.phase === 'idle') setPhase('connected');
-        }
-        if (!state.connected && wasConnected) {
-            if (state.recording) {
-                clearTimers();
-                state.recording = false;
-                dom.recordButton.innerHTML = '<i class="bi bi-record-circle"></i> 収録開始';
-                dom.recordButton.classList.replace('btn-danger', 'btn-primary');
-                log('error', '収録中に切断されました。この収録は完了扱いになりません。');
-                // 計測ウィンドウを閉じておく。閉じないと activeMeasurement が残り、
-                // 再接続後に MEASUREMENT_ACTIVE で次の収録を開始できなくなる。
-                Promise.resolve(state.session.stopMeasurement({ reason: 'disconnect' }))
-                    .catch((error) => log('warn', `切断後の計測終了処理: ${describeError(error)}`));
-            }
-            log('warn', 'INSOLE が切断されました。');
-            setPhase('idle');
-            return;
-        }
-        applyButtonState();
-    }
-
-    function handleSessionError(error) {
-        if (isUserCancel(error)) {
-            log('info', 'デバイス選択をキャンセルしました。');
-            return;
-        }
-        log('error', `エラー: ${describeError(error)}`);
-    }
-
-    function isUserCancel(error) {
-        if (!error) return false;
-        if (error.name === 'NotFoundError') return true;
-        const message = error.message ? String(error.message) : String(error);
-        return /cancel+ed|chooser|User cancelled/i.test(message);
-    }
-
-    function describeError(error) {
-        if (!error) return 'unknown';
-        const code = error.code ? ` [${error.code}]` : '';
-        return `${error.message || String(error)}${code}`;
-    }
-
-    // ── 結果の確定 ───────────────────────────────────────────────────────
-    function finalizeResult(result) {
-        const samples = Array.isArray(result.raw && result.raw.samples) ? result.raw.samples : [];
-        const analysis = C.analyzeSerials(samples.map((sample) => sample.serial_number));
-        // dropped は「収録中に回復不能と判定された累計」。onStopped(info.dropped) が正。
-        // result.fifo.dropped は checkpoint 区間の再集計値なので定義が異なる（画面では別々に扱う）。
-        const dropped = state.droppedTotal !== null
-            ? state.droppedTotal
-            : Math.max(Number(result.fifo && result.fifo.dropped) || 0, 0);
-        const verdict = C.evaluateRecording({
-            analysis,
-            missing: analysis.missing,
-            dropped,
-            durationMs: result.durationMs,
-            maxLag: state.maxLag,
-        });
-
-        state.result = result;
-        state.analysis = analysis;
-        state.csv = samples.length > 0 ? insoleToolkitMeasurementToCSV(result, 'raw') : '';
-
-        // 画面表示とSDK側の集計がずれていないかを突き合わせる（ずれたらログに残す）
-        const sdkSerial = (result.raw && result.raw.serial) || null;
-        if (sdkSerial && Number.isInteger(sdkSerial.missing) && sdkSerial.missing !== analysis.missing) {
-            log('warn', `SDK集計 missing=${sdkSerial.missing} と再計算 missing=${analysis.missing} が一致しません（表示は再計算値）。`);
-        }
-        // 保存するCSVから数え直した欠損数と画面表示が一致することを確認する
-        if (state.csv) {
-            const fromCsv = C.analyzeSerials(C.extractSerialsFromCsv(state.csv));
-            const matched = fromCsv.missing === analysis.missing && fromCsv.expected === analysis.expected;
-            log(matched ? 'success' : 'error',
-                `CSV照合: expected=${fromCsv.expected} received=${fromCsv.received} missing=${fromCsv.missing}`
-                + `（画面表示と${matched ? '一致' : '不一致'}）`);
-        }
-
-        renderResult(result, analysis, verdict, dropped);
-        log(verdict.level === 'fail' ? 'error' : verdict.level === 'caution' ? 'warn' : 'success',
-            `RESULT ${verdict.label} duration=${(result.durationMs / 1000).toFixed(1)}s samples=${samples.length} `
-            + `serial=${analysis.received}/${analysis.expected} missing=${analysis.missing} `
-            + `dropped=${dropped} drainRecovered=${state.drainRecovered} drainMs=${state.drainMs} maxLag=${state.maxLag}`);
-    }
-
-    function renderResult(result, analysis, verdict, dropped) {
-        const card = dom.resultCard;
-        card.classList.remove('result-empty', 'result-pass', 'result-caution', 'result-fail');
-        card.classList.add(`result-${verdict.level === 'caution' ? 'caution' : verdict.level}`);
-        dom.resultVerdict.textContent = verdict.level === 'fail'
-            ? 'FAIL / 欠損あり'
-            : verdict.level === 'caution'
-                ? 'WARN / 欠損なし（注意あり）'
-                : 'PASS / 欠損なし';
-        dom.resultVerdict.className = `verdict-badge verdict-${verdict.level}`;
-
-        dom.resultSummary.textContent = verdict.level === 'fail'
-            ? '欠損が発生しました。下の timeline と欠損range、CSVの中身を確認してください。'
-            : verdict.level === 'caution'
-                ? '欠損は検出されませんでしたが、注意事項があります（下記）。'
-                : 'この収録区間では欠損は検出されませんでした（missing と dropped がどちらも 0）。';
-
-        const samples = Array.isArray(result.raw.samples) ? result.raw.samples.length : 0;
-        setText('mDuration', `${(result.durationMs / 1000).toFixed(1)} s`);
-        setText('mSamples', String(samples));
-        setText('mFirst', analysis.first === null ? '-' : String(analysis.first));
-        setText('mLast', analysis.last === null ? '-' : String(analysis.last));
-        setText('mExpected', String(analysis.expected));
-        setText('mReceived', String(analysis.received));
-        setText('mMissing', String(analysis.missing));
-        setText('mMissingRate', `${(analysis.missingRate * 100).toFixed(3)} %`);
-        setText('mDropped', String(dropped));
-        setText('mDrainRecovered', String(state.drainRecovered));
-        setText('mDrainMs', state.drainMs === null ? '-' : `${state.drainMs} ms`);
-        setText('mMaxLag', `${state.maxLag} / ${C.RING_BUFFER_CAPACITY}`);
-        setText('mCsv', samples > 0 ? '可' : '不可（sampleなし）');
-
-        markMetric('mMissing', analysis.missing === 0 ? 'ok' : 'bad');
-        markMetric('mDropped', dropped === 0 ? 'ok' : 'bad');
-        markMetric('mMissingRate', analysis.missing === 0 ? 'ok' : 'bad');
-        markMetric('mMaxLag', verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? 'warn' : 'ok');
-        markMetric('mDuration', verdict.buffer.withinWindow ? 'ok' : 'warn');
-        markMetric('mCsv', samples > 0 ? 'ok' : 'bad');
-
-        // 注意事項
-        const cautions = [...verdict.cautions];
-        if (result.raw.truncated) {
-            cautions.push(`sample数の上限 ${MAX_SAMPLES} に達したため、後半のsampleが記録されていません（CSVも同様）。`);
-        }
-        if (dropped !== analysis.missing) {
-            cautions.push(`dropped（${dropped}）と最終CSV区間の missing（${analysis.missing}）は数え方が違うため一致しないことがあります。`
-                + '合否は両方が 0 かどうかで判断してください。');
-        }
-        dom.resultCautions.innerHTML = cautions.length === 0 ? '' :
-            `<div class="alert alert-warning small mb-0"><strong>注意:</strong><ul class="mb-0 mt-1">${cautions.map((text) => `<li>${escapeHtml(text)}</li>`).join('')
-            }</ul></div>`;
-
-        // timeline
-        const bins = C.buildTimelineBins(analysis, TIMELINE_BINS);
-        drawTimeline(bins);
-        const perBin = analysis.expected > 0 ? Math.max(1, Math.round(analysis.expected / Math.max(1, bins.length))) : 0;
-        dom.timelineCaption.textContent = analysis.expected === 0
-            ? 'serialが取得できませんでした。'
-            : `serial ${analysis.first} → ${analysis.last} を ${bins.length} 個のbinに集約（1bin ≒ ${perBin} serial）。`
-            + `緑=received / 赤=missing。欠損の正確な番号は下の欠損rangeを参照してください。`;
-
-        if (analysis.missingRanges.length > 0) {
-            dom.missingRangesWrap.hidden = false;
-            dom.missingRanges.textContent = C.formatMissingRanges(analysis.missingRanges, 30);
-        } else {
-            dom.missingRangesWrap.hidden = true;
-            dom.missingRanges.textContent = '';
-        }
-
-        dom.csvButton.disabled = samples === 0;
-        dom.jsonButton.disabled = false;
-        dom.exportHint.textContent = samples === 0
-            ? 'sampleが無いためCSVを保存できません。'
-            : 'CSVは正式計測区間（開始〜drain完了）のsampleだけを含みます。1 serial = 4行です。';
-    }
-
-    function setText(key, value) {
-        if (dom[key]) dom[key].textContent = value;
-    }
-
-    function markMetric(key, level) {
-        const el = dom[key];
-        if (!el) return;
-        const metric = el.closest('.metric');
-        if (!metric) return;
-        metric.classList.remove('metric-ok', 'metric-warn', 'metric-bad');
-        metric.classList.add(`metric-${level === 'bad' ? 'bad' : level === 'warn' ? 'warn' : 'ok'}`);
-    }
-
-    // ── 描画 ────────────────────────────────────────────────────────────
-    function queueLiveRender() {
-        if (state.renderQueued) return;
-        state.renderQueued = true;
-        requestAnimationFrame(() => {
-            state.renderQueued = false;
-            renderLive();
-        });
-    }
-
-    function renderLive() {
-        if (state.press) {
-            const rows = dom.pressBars.querySelectorAll('.press-row');
-            let total = 0;
-            for (let i = 0; i < rows.length; i += 1) {
-                const value = Number(state.press[i]) || 0;
-                total += value;
-                const percent = Math.min(100, (value / 20000) * 100);
-                rows[i].querySelector('.press-fill').style.width = `${percent}%`;
-                rows[i].querySelector('.press-value').textContent = String(value);
-            }
-            dom.pressTotal.textContent = String(total);
-        }
-        dom.batchCount.textContent = String(state.batchCount);
-        dom.batchSize.textContent = String(state.lastBatchSize);
-        dom.batchGap.textContent = state.lastBatchGapMs === null
-            ? '-' : `${Math.round(state.lastBatchGapMs)} ms`;
-        const sample = state.latestSample;
-        dom.latestSample.textContent = sample
-            ? [
-                `serial_number : ${sample.serial_number}  (packet_number ${sample.packet_number})`,
-                `t             : ${sample.t} ms`,
-                `gyro   [dps]  : ${fmtVec(sample.converted_gyro)}`,
-                `acc    [G]    : ${fmtVec(sample.converted_acc)}`,
-                `press  [ADC]  : ${sample.press && sample.press.values ? sample.press.values.join(', ') : '-'}`,
-                'quat          : FIFOには含まれません',
-            ].join('\n')
-            : '-';
-        drawAcc();
-    }
-
-    function fmtVec(v) {
-        if (!v) return '-';
-        return `x=${v.x.toFixed(2)} y=${v.y.toFixed(2)} z=${v.z.toFixed(2)}`;
-    }
-
-    function prepareCanvas(canvas) {
-        const ratio = window.devicePixelRatio || 1;
-        const width = Math.max(1, canvas.clientWidth);
-        const height = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute('height')) || 60);
-        const pixelWidth = Math.floor(width * ratio);
-        const pixelHeight = Math.floor(height * ratio);
-        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-            canvas.width = pixelWidth;
-            canvas.height = pixelHeight;
-        }
-        const ctx = canvas.getContext('2d');
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        ctx.clearRect(0, 0, width, height);
-        return { ctx, width, height };
-    }
-
-    /** timeline は bin 単位で Canvas に描く（serialごとのDOM要素は作らない） */
-    function drawTimeline(bins) {
-        const canvas = dom.timelineCanvas;
-        if (!canvas) return;
-        const { ctx, width, height } = prepareCanvas(canvas);
-        if (!bins || bins.length === 0) {
-            ctx.fillStyle = '#e9ecef';
-            ctx.fillRect(0, 0, width, height);
-            return;
-        }
-        const binWidth = width / bins.length;
-        for (let i = 0; i < bins.length; i += 1) {
-            const bin = bins[i];
-            const x = i * binWidth;
-            const w = Math.max(1, binWidth + 0.5);
-            if (bin.missing > 0) {
-                // 欠損が1つでもあるbinは赤で塗り、割合を濃さで示す（見落とし防止）
-                const ratio = bin.total > 0 ? bin.missing / bin.total : 1;
-                ctx.fillStyle = '#198754';
-                ctx.fillRect(x, 0, w, height);
-                ctx.fillStyle = '#dc3545';
-                ctx.fillRect(x, 0, w, Math.max(height * 0.45, height * ratio));
-            } else {
-                ctx.fillStyle = '#198754';
-                ctx.fillRect(x, 0, w, height);
-            }
-        }
-    }
-
-    function drawAcc() {
-        const canvas = dom.accCanvas;
-        if (!canvas) return;
-        const { ctx, width, height } = prepareCanvas(canvas);
-        ctx.strokeStyle = '#dee2e6';
-        ctx.beginPath();
-        ctx.moveTo(0, height / 2);
-        ctx.lineTo(width, height / 2);
-        ctx.stroke();
-        if (state.accCount === 0) return;
-        const maxScale = 4; // G
-        ctx.strokeStyle = '#0d6efd';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (let i = 0; i < state.accCount; i += 1) {
-            const index = (state.accHead - state.accCount + i + ACC_HISTORY_SIZE * 2) % ACC_HISTORY_SIZE;
-            const value = state.accHistory[index];
-            const x = (i / Math.max(1, state.accCount - 1)) * width;
-            const y = height - Math.min(1, value / maxScale) * height;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-    }
-
-    // ── 状態表示 ─────────────────────────────────────────────────────────
-    const PHASE_TEXT = {
-        idle: ['待機中', 'まず ORPHE INSOLE を1台接続してください。'],
-        connected: ['接続済み', '計測時間を選んで「収録開始」を押してください。'],
-        preparing: ['準備中', 'FIFOモードへ切り替え、端末内バッファを消去しています（数秒）。お待ちください。'],
-        recording: ['収録中', '収録しています。タブを閉じたり、PCをスリープさせないでください。'],
-        draining: ['回収中（drain）', '停止しました。端末内に残ったデータを回収しています。完了までお待ちください。'],
-        done: ['完了', '収録が完了しました。結果を確認して CSV を保存できます。'],
+  function setSourceCopy(source, titleKey, detailKey, options = {}) {
+    state.sourceCopy = {
+      source,
+      titleKey,
+      detailKey,
+      titleParams: options.titleParams || null,
+      detailParams: options.detailParams || null,
+      detailRaw: Object.prototype.hasOwnProperty.call(options, "detailRaw") ? options.detailRaw : null
     };
+    refreshSourceCopy();
+  }
 
-    function setPhase(phase) {
-        state.phase = phase;
-        const [label, text] = PHASE_TEXT[phase] || PHASE_TEXT.idle;
-        setStatus(phase, label, text);
-        const order = ['connect', 'duration', 'record', 'drain', 'save'];
-        const activeIndex = {
-            idle: 0, connected: 1, preparing: 2, recording: 2, draining: 3, done: 4,
-        }[phase] ?? 0;
-        void order;
-        const items = dom.stepStrip.querySelectorAll('li');
-        items.forEach((item, index) => {
-            item.classList.toggle('step-active', index === activeIndex);
-            item.classList.toggle('step-done', index < activeIndex);
-        });
-        applyButtonState();
-    }
+  function refreshSourceCopy() {
+    const copy = state.sourceCopy;
+    if (!copy) return;
+    const detail = copy.detailRaw !== null
+      ? copy.detailRaw
+      : (copy.detailKey ? t(copy.detailKey, copy.detailParams) : "");
+    renderSource(copy.source, t(copy.titleKey, copy.titleParams), detail);
+  }
 
-    /** 収録開始/停止ボタンの有効・無効は phase から一元的に決める */
-    function applyButtonState() {
-        const phase = state.phase;
-        if (phase === 'recording') {
-            dom.recordButton.disabled = false;
-            return;
-        }
-        dom.recordButton.disabled = phase === 'preparing' || phase === 'draining' || !state.connected;
+  // ── ログ / エクスポート ──────────────────────────────────────────────
+  function log(level, key, params) {
+    logEntries.push({ at: new Date(), level, key, params: params || null });
+    if (logEntries.length > MAX_LOG_ENTRIES) {
+      logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
     }
+    renderLog();
+  }
 
-    function setStatus(phase, label, text) {
-        dom.statusBanner.className = `status-banner status-${phase}`;
-        dom.statusLabel.textContent = label;
-        dom.statusText.textContent = text;
-    }
+  function logText(entry) {
+    return t(entry.key, entry.params);
+  }
 
-    // ── ログ / エクスポート ──────────────────────────────────────────────
-    function log(level, message) {
-        const entry = {
-            t: new Date().toISOString(),
-            level,
-            message,
-        };
-        logEntries.push(entry);
-        if (logEntries.length > MAX_LOG_ENTRIES) logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
-        renderLog();
-    }
+  function renderLog() {
+    dom.eventLog.innerHTML = logEntries.map((entry) => (
+      `<div class="log-line log-${entry.level}">`
+      + `${escapeHtml(entry.at.toTimeString().slice(0, 8))} ${escapeHtml(logText(entry))}`
+      + "</div>"
+    )).join("");
+    dom.eventLog.scrollTop = dom.eventLog.scrollHeight;
+  }
 
-    function renderLog() {
-        const lines = logEntries.map((entry) =>
-            `<div class="log-line log-${entry.level}">${escapeHtml(entry.t.slice(11, 23))} ${escapeHtml(entry.message)}</div>`);
-        dom.eventLog.innerHTML = lines.join('');
-        dom.eventLog.scrollTop = dom.eventLog.scrollHeight;
-    }
+  function environmentLines() {
+    return [
+      `platform=${root.navigator.platform}`,
+      `userAgent=${root.navigator.userAgent}`,
+      `webBluetooth=${typeof root.navigator.bluetooth !== "undefined" ? "available" : "unavailable"}`,
+      `language=${I18n.getLanguage()}`,
+      `plannedDurationMs=${state.plannedMs}`,
+      "deviceCount=1",
+      "profile=fifo-recording"
+    ];
+  }
 
-    function environmentLines() {
-        return [
-            `platform=${navigator.platform}`,
-            `userAgent=${navigator.userAgent}`,
-            `webBluetooth=${typeof navigator.bluetooth !== 'undefined' ? 'available' : 'unavailable'}`,
-            `plannedDurationMs=${state.plannedMs}`,
-            `deviceCount=1`,
-            `profile=fifo-recording`,
-        ];
-    }
+  function renderEnvLine() {
+    dom.envLine.textContent = environmentLines().join(" / ");
+  }
 
-    function renderEnvLine() {
-        dom.envLine.textContent = environmentLines().join(' / ');
+  async function copyLog() {
+    const text = [
+      "# ORPHE INSOLE fifo-guide log",
+      ...environmentLines().map((line) => `# ${line}`),
+      ...logEntries.map((entry) => `${entry.at.toISOString()} [${entry.level}] ${logText(entry)}`)
+    ].join("\n");
+    const original = dom.copyLogButton.innerHTML;
+    dom.copyLogButton.disabled = true;
+    try {
+      if (root.navigator.clipboard && root.navigator.clipboard.writeText) {
+        await root.navigator.clipboard.writeText(text);
+      } else {
+        fallbackCopy(text);
+      }
+      dom.copyLogButton.textContent = t("copyLogDone", { count: logEntries.length });
+    } catch (error) {
+      void error;
+      dom.copyLogButton.textContent = t("copyLogFailed");
+    } finally {
+      root.setTimeout(() => {
+        dom.copyLogButton.innerHTML = original;
+        dom.copyLogButton.disabled = false;
+      }, 1600);
     }
+  }
 
-    async function copyLog() {
-        const text = [
-            '# ORPHE INSOLE fifo-guide log',
-            ...environmentLines().map((line) => `# ${line}`),
-            ...logEntries.map((entry) => `${entry.t} [${entry.level}] ${entry.message}`),
-        ].join('\n');
-        const original = dom.copyLogButton.innerHTML;
-        dom.copyLogButton.disabled = true;
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(text);
-            } else {
-                fallbackCopy(text);
-            }
-            dom.copyLogButton.textContent = `コピーしました（${logEntries.length}行）`;
-        } catch (error) {
-            dom.copyLogButton.textContent = 'コピーできませんでした';
-            void error;
-        } finally {
-            setTimeout(() => {
-                dom.copyLogButton.innerHTML = original;
-                dom.copyLogButton.disabled = false;
-            }, 1600);
-        }
-    }
+  function fallbackCopy(text) {
+    const area = root.document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    root.document.body.appendChild(area);
+    area.select();
+    root.document.execCommand("copy");
+    root.document.body.removeChild(area);
+  }
 
-    function fallbackCopy(text) {
-        const area = document.createElement('textarea');
-        area.value = text;
-        area.style.position = 'fixed';
-        area.style.opacity = '0';
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand('copy');
-        document.body.removeChild(area);
-    }
+  function downloadCsv() {
+    if (!state.csv) return;
+    saveBlob(state.csv, "text/csv", `orphe-insole-fifo-guide-${timestampSuffix()}.csv`);
+    log("success", "logCsvSaved");
+  }
 
-    function downloadCsv() {
-        if (!state.csv) return;
-        saveBlob(state.csv, 'text/csv', `orphe-insole-fifo-guide-${timestampSuffix()}.csv`);
-        log('success', 'FIFO CSV を保存しました（正式計測区間のみ / 1 serial = 4行）。');
-    }
+  function downloadJson() {
+    const analysis = state.analysis;
+    const result = state.result;
+    const payload = {
+      page: "fifo-guide",
+      savedAt: new Date().toISOString(),
+      environment: environmentLines(),
+      plannedDurationMs: state.plannedMs,
+      durationMs: result ? result.durationMs : null,
+      profileId: result ? result.profileId : null,
+      verdict: state.verdict ? state.verdict.label : null,
+      samples: result && Array.isArray(result.raw.samples) ? result.raw.samples.length : 0,
+      truncated: result ? !!result.raw.truncated : false,
+      serial: analysis ? {
+        first: analysis.first,
+        last: analysis.last,
+        expected: analysis.expected,
+        received: analysis.received,
+        missing: analysis.missing,
+        missingRate: analysis.missingRate,
+        duplicates: analysis.duplicates,
+        outOfOrder: analysis.outOfOrder,
+        missingRanges: analysis.missingRanges.map((range) => range.label)
+      } : null,
+      sdkSerial: result && result.raw ? result.raw.serial : null,
+      fifo: {
+        droppedTotal: state.droppedTotal,
+        droppedLiveCumulative: state.droppedLive,
+        checkpointDropped: result && result.fifo ? result.fifo.dropped : null,
+        drainRecovered: state.drainRecovered,
+        drainMs: state.drainMs,
+        maxLag: state.maxLag,
+        ringBufferCapacity: C.RING_BUFFER_CAPACITY,
+        bufferWindowMs: C.BUFFER_WINDOW_MS
+      },
+      log: logEntries.map((entry) => ({
+        at: entry.at.toISOString(),
+        level: entry.level,
+        message: logText(entry)
+      }))
+    };
+    saveBlob(JSON.stringify(payload, null, 2), "application/json",
+      `orphe-insole-fifo-guide-${timestampSuffix()}.json`);
+    log("success", "logJsonSaved");
+  }
 
-    function downloadJson() {
-        const analysis = state.analysis;
-        const result = state.result;
-        const payload = {
-            page: 'fifo-guide',
-            savedAt: new Date().toISOString(),
-            environment: environmentLines(),
-            plannedDurationMs: state.plannedMs,
-            durationMs: result ? result.durationMs : null,
-            profileId: result ? result.profileId : null,
-            samples: result && Array.isArray(result.raw.samples) ? result.raw.samples.length : 0,
-            truncated: result ? !!result.raw.truncated : false,
-            serial: analysis ? {
-                first: analysis.first,
-                last: analysis.last,
-                expected: analysis.expected,
-                received: analysis.received,
-                missing: analysis.missing,
-                missingRate: analysis.missingRate,
-                duplicates: analysis.duplicates,
-                outOfOrder: analysis.outOfOrder,
-                missingRanges: analysis.missingRanges.map((range) => range.label),
-            } : null,
-            sdkSerial: result && result.raw ? result.raw.serial : null,
-            fifo: {
-                droppedFinal: result && result.fifo ? result.fifo.dropped : null,
-                droppedLiveCumulative: state.droppedLive,
-                drainRecovered: state.drainRecovered,
-                drainMs: state.drainMs,
-                maxLag: state.maxLag,
-                ringBufferCapacity: C.RING_BUFFER_CAPACITY,
-                bufferWindowMs: C.BUFFER_WINDOW_MS,
-            },
-            log: logEntries,
-        };
-        saveBlob(JSON.stringify(payload, null, 2), 'application/json',
-            `orphe-insole-fifo-guide-${timestampSuffix()}.json`);
-        log('success', '結果JSON を保存しました。');
-    }
+  function timestampSuffix() {
+    return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  }
 
-    function timestampSuffix() {
-        return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    }
+  function saveBlob(content, type, filename) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const anchor = root.document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = "none";
+    root.document.body.appendChild(anchor);
+    anchor.click();
+    root.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+    }, 1000);
+  }
 
-    function saveBlob(content, type, filename) {
-        const blob = new Blob([content], { type });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = filename;
-        anchor.style.display = 'none';
-        document.body.appendChild(anchor);
-        anchor.click();
-        setTimeout(() => {
-            URL.revokeObjectURL(url);
-            if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
-        }, 1000);
-    }
-
-    function renderCodeSnippet() {
-        dom.codeSnippet.textContent = [
-            "// 1. 接続UIを作る（Realtimeで接続しておく）",
-            "buildInsoleToolkit(document.querySelector('#toolkit_placeholder'), 'ORPHE INSOLE', 0, {",
-            "  streamingMode: 4, sensorDataMode: 'realtime',",
-            '  fifo: { startupDelayMs: 1000, drainTimeoutMs: 5000,',
-            '          onSamples, onProgress, onDataLoss, onStopped },',
-            '});',
-            'insoles[0].setup();   // 必須。忘れると接続時に落ちる',
-            'const session = getInsoleToolkitSession(0);',
-            '',
-            '// 2. FIFO収録を開始（read modeの切替・バッファ消去はSDKが行う）',
-            "await session.startMeasurement({ profile: 'fifo-recording', restoreProfile: true });",
-            '',
-            '// 3. 停止。drain（未回収データの回収）が終わってから resolve する',
-            'const result = await session.stopMeasurement();',
-            'console.log(result.raw.serial);   // { first, last, expected, received, missing, missingRate }',
-            'console.log(result.fifo.dropped); // 回復不能ロス（missing とは別指標）',
-            '',
-            '// 4. 正式計測区間だけのCSV',
-            "const csv = insoleToolkitMeasurementToCSV(result, 'raw');",
-        ].join('\n');
-    }
-
-    function escapeHtml(text) {
-        return String(text).replace(/[&<>"']/g, (c) => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-        })[c]);
-    }
-})();
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[character]);
+  }
+})(typeof globalThis !== "undefined" ? globalThis : window);

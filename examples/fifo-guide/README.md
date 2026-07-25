@@ -1,49 +1,39 @@
-# はじめてのFIFO収録（fifo-guide）
+# FIFO Recording + Loss Check
 
-ORPHE INSOLE を買ったばかりの方・これから FIFO を使うプログラムを書く方が、
-**Realtime と FIFO の違い / FIFO の利点と限界 / 欠損の見かた**を短時間で理解し、
-その場で実機を試せる公開サンプルです。
+`InsoleToolkit.js` の `fifo-recording` profile を使い、INSOLE 1台で
+**FIFO（端末内バッファ）収録 → drain（未回収データの回収）→ serial連続性の確認 → CSV保存**
+までを1ページで試せるexampleです。FIFO を初めて使う方が、Realtime との違い・
+FIFO の利点と限界（**端末内バッファ約30秒**）・欠損の見かたを短時間で把握できます。
 
-- 対象: **INSOLE 1台**
-- 操作: 接続 → 計測時間を選ぶ → 収録開始 → drain（回収）待ち → 結果確認 → CSV保存
-- 出力: FIFO CSV（正式計測区間のみ）／結果JSON／イベントログ
+ヘッダーの `JA` / `EN` で、説明・状態表示・結果表・グラフ内ラベルを切り替えられます。
+URLの `?lang=ja` / `?lang=en` でも指定できます。指定がない場合は、端末のタイムゾーンが
+`Asia/Tokyo` なら日本語、それ以外は英語で表示します。
 
-> 本サンプルは医療機器ではなく、疾病の診断・治療・予防を目的としていません。
+レイアウト・デザイン・i18n の構成は [`examples/step-analysis/`](../step-analysis/) と同じ
+example テンプレート（header + control-strip + settings-guide + chart-card +
+table-frame + scope-note + code-card）に揃えています。
 
-## 起動
+## Toolkit UI の設定
 
-Web Bluetooth は `https` または `localhost` が必須です。
+FIFO収録を使いたいときは、Toolkit UI の歯車を開き、次のように設定してください。
 
-```bash
-cd ORPHE-INSOLE.js
-python3 -m http.server 8765 --bind 127.0.0.1
-# → http://localhost:8765/examples/fifo-guide/
-```
+- Data Outputs: `Raw Sensor Data` をON / `Step Analysis` はOFF
+- Raw Data Acquisition: `FIFO`
+- Realtime Streaming Format: FIFOでは使いません（quaternion は含まれません）
 
-デスクトップ版 Chrome / Edge で開いてください（Firefox / Safari は Web Bluetooth 非対応）。
-別マシンの LAN アドレスではなく `localhost` を使ってください。
+このデモプログラムでは、収録開始時に `fifo-recording` プロファイルへ自動で切り替え、
+停止・drain 完了後に Realtime へ戻します。
 
-## このページが伝えること
+## RealtimeとFIFOの違い
 
-| 論点 | 要点 |
-|---|---|
-| Realtime | FW がデータを垂れ流す（push）。低遅延。**取りこぼしは回収できない**。quat あり |
-| FIFO | FW 内部にいったん保存し、**serial 番号を指定して取り出す**（pull）。遅れても再要求で埋められる |
-| FIFO Raw の中身 | gyro / acc / 6ch pressure。**quaternion は含まれない** |
-| Step Analysis との関係 | 現行FWでは **FIFO Raw と Step Analysis は同時取得しない**。順番に使う |
-| drain | stop 後も未回収データを回収してから記録完了になる |
-| CSV の行数 | **1 serial packet = 4 フレーム = CSV 4行**。行数と serial 数を混同しない |
-| `dropped` と `missing` | 別指標（下記） |
-
-### `dropped` と `missing` を同じ指標として扱わない
-
-| 指標 | 意味 | 取得元 |
+| 観点 | Realtime（push） | FIFO（pull） |
 |---|---|---|
-| `dropped` | 収録中に「もう取り戻せない」と判定された**累計イベント数**（`ring_overflow` / `carryover_overflow` / `fw_nodata` / `resync_backlog` / `stopped_pending`） | `fifo.onDataLoss(info.cumulative)` / `onStopped(info.dropped)` |
-| `missing` | **最終CSVの区間**で expected に対して足りなかった serial 数 | `stopMeasurement()` の結果 + 本ページの再計算 |
-
-プレビュー中に確定した分や、あとから再要求で回収された分の数え方が違うため、
-両者は一致しないことがあります。**合否は両方が 0 かどうかで判断してください。**
+| 送り方 | FWが計測と同時に垂れ流す | 本体に貯め、hostが「serial ○番から○個」と要求して取り出す |
+| 取りこぼし | **回収できない** | **再要求で埋められる** |
+| 遅延 | 非常に小さい | 数百msごとにバースト到着 |
+| quaternion | あり | **なし** |
+| Step Analysis | 同時に使える（`realtime-full-step`） | **現行FWでは同時取得しない**（順番に使う） |
+| 停止時 | 即終了 | **drain（未回収データの回収）後に完了** |
 
 ## 約30秒のバッファ限界（根拠と換算式）
 
@@ -61,9 +51,8 @@ src/InsoleFifo.js:
 （等価: 200 sample/s ÷ 4 sample/packet = 50 packet/s → 1500 ÷ 50 = 30 s）
 ```
 
-この換算は `tests/fifo-guide-continuity.test.js` が
-`src/InsoleFifo.js` の定数と `decodePacket()` の実測フレーム間隔に対して検証しています
-（定数が変わったらテストが落ちます）。
+この換算は `tests/fifo-guide-continuity.test.js` が `src/InsoleFifo.js` の定数と
+`decodePacket()` の実測フレーム間隔に対して検証しています（定数が変わればテストが落ちます）。
 
 ### 運用上の注意
 
@@ -73,25 +62,43 @@ src/InsoleFifo.js:
   回復不能な欠損が発生しえます**。
 - **「30秒以内なら絶対に無欠損」という保証ではありません。** 30秒以内でも回収が滞れば欠損し、
   30秒を超えても追いつけていれば欠損しません。
-- 長時間計測では、必ず本ページの欠損表示（missing / dropped / timeline）と、
+- 長時間計測では、必ず結果表の欠損表示（missing / dropped / timeline）と、
   保存した CSV の中身を確認してください。
 
-## 欠損の可視化
+## `dropped` と `missing` を同じ指標として扱わない
 
-- **結果カード**: 欠損0かつ30秒以内 → 緑 / 欠損あり → 赤 / 30秒超過またはバッファ逼迫 → 黄
-- **PASS・WARN・FAIL のテキスト表記**も併記（色だけに依存しない）
+| 指標 | 意味 | 取得元 |
+|---|---|---|
+| `dropped` | 収録中に「もう取り戻せない」と判定された**累計イベント数**（`ring_overflow` / `carryover_overflow` / `fw_nodata` / `resync_backlog` / `stopped_pending`） | `fifo.onDataLoss(info.cumulative)` / `onStopped(info.dropped)` |
+| `missing` | **最終CSVの区間**で expected に対して足りなかった serial 数 | `stopMeasurement()` の結果 + 本ページの再計算 |
+
+プレビュー中に確定した分や、あとから再要求で回収された分の数え方が違うため、
+両者は一致しないことがあります。**合否は両方が 0 かどうかで判断してください。**
+
+## 表示する値
+
+- **結果表**: 計測時間 / FIFO samples / 最初と最後のserial / expected / received / missing /
+  missing rate / dropped / drain recovered / drain時間 / 最大lag / CSV保存可否
+- **判定バー**: 欠損0かつ30秒以内 → 緑 `PASS` / 欠損あり → 赤 `FAIL` /
+  30秒超過またはバッファ逼迫 → 黄 `WARN`（色だけでなくテキストでも表記）
 - **Serial continuity timeline**: received を緑、missing を赤で横方向に表示。
-  数千 serial でも DOM 要素を作らず、Canvas へ**固定数の bin**（既定240）に集約して描画。
+  数千 serial でも DOM 要素を作らず、Canvas へ**固定数の bin**（既定240）に集約して描画します。
   bin ごとの missing 合計は再計算した missing と常に一致します（テスト済み）。
-- **欠損range**: `1200–1208` のように正確な serial 番号で一覧表示（集約表示でも数値を確認できる）
+- **欠損range**: `1200–1208` のように正確な serial 番号で一覧表示（集約表示でも数値を確認できます）
+- **FIFO BATCH グラフ**: 圧力合計と加速度ノルム。FIFOがバッチで届くことが分かります
+- **最新sample**: serial / packet_number / gyro / acc / press のテキスト表示
 - uint16 の `65535 → 0` wraparound、重複 serial、drain による順不同到着をすべて正しく扱います。
 
-## 再利用している公開API（FIFOプロトコルはページ側で再実装しない）
+CSV は正式計測区間（開始〜drain完了）の sample だけを含みます。
+1 serial packet は4フレーム（5ms間隔）なので **CSV では 1 serial = 4行**です。
+欠損を数えるときは行数ではなく serial 番号の連続性を見てください。
+ページ側でも保存CSVから欠損数を数え直して画面表示と照合し、結果をイベントログに出します。
+
+## このexampleが使う公開API（FIFOプロトコルはページ側で再実装しない）
 
 ```js
-buildInsoleToolkit(document.querySelector('#toolkit_placeholder'), 'ORPHE INSOLE', 0, {
-  streamingMode: 4,
-  sensorDataMode: 'realtime',
+buildInsoleToolkit(toolkit, "INSOLE 01", 0, {
+  profile: "realtime-full",
   fifo: { startupDelayMs: 1000, drainTimeoutMs: 5000,
           onSamples, onProgress, onDataLoss, onStopped },
 });
@@ -99,14 +106,14 @@ insoles[0].setup();   // 必須（buildInsoleToolkit は setup() を呼びませ
 const session = getInsoleToolkitSession(0);
 
 // FIFO収録（read mode 切替・バッファ消去・ポーリング・再要求はSDKが担当）
-await session.startMeasurement({ profile: 'fifo-recording', restoreProfile: true });
+await session.startMeasurement({ profile: "fifo-recording", restoreProfile: true });
 
 // drain（未回収データの回収）完了後に resolve する
 const result = await session.stopMeasurement();
 result.raw.serial;   // { first, last, expected, received, missing, missingRate }
 
 // 正式計測区間だけのCSV
-const csv = insoleToolkitMeasurementToCSV(result, 'raw');
+const csv = insoleToolkitMeasurementToCSV(result, "raw");
 ```
 
 | 参照先 | 役割 |
@@ -114,21 +121,47 @@ const csv = insoleToolkitMeasurementToCSV(result, 'raw');
 | [`src/InsoleFifo.js`](../../src/InsoleFifo.js) | FIFO 収集ループ、再要求、drain、`createCheckpoint()` / `summarizeSince()` / `serialsSince()` |
 | [`src/InsoleToolkit.js`](../../src/InsoleToolkit.js) | 接続UI、`fifo-recording` プロファイル、`startMeasurement()` / `stopMeasurement()`、`insoleToolkitMeasurementToCSV()` |
 | [`./continuity.js`](./continuity.js) | 本ページの判定ロジック（serial連続性・欠損range・timeline集約・30秒判定）。純関数のみで Node からテスト可能 |
+| [`./i18n.js`](./i18n.js) | ja / en の表示文言（step-analysis と同じ仕組み） |
 
-## 実機での確認手順
+## 起動
 
-1. **1台・10秒** — 欠損0（緑・PASS）を期待
-2. **1台・30秒** — 欠損0（緑・PASS）を期待
-3. **1台・60秒** — バッファ超過。黄の警告表示になり、欠損が出る場合もある
-4. 保存した CSV の serial を数え直し、画面の missing と一致することを確認
-   （ページ側でも自動照合し、結果をイベントログに出します）
-5. 30秒超過時に警告帯・警告表示が出ることを確認
+Web Bluetooth には localhost または HTTPS が必要です。
+
+```bash
+cd ORPHE-INSOLE.js
+python3 -m http.server 8080
+```
+
+Chrome / Edge で次を開きます。
+
+```text
+http://localhost:8080/examples/fifo-guide/
+```
+
+別マシンの LAN アドレスではなく `localhost` を使ってください。
+Firefox / Safari は Web Bluetooth 非対応です。
+
+## 実機テスト
+
+1. タイトル横の `INSOLE 01` をONにして1台接続します（`READY` 表示になります）。
+2. 計測時間 `10秒` を選び「収録開始」を押します。`PREPARING` → `RECORDING` → `DRAINING` → `DONE` と進みます。
+3. `DONE` になったら判定バーと結果表を確認します（**10秒は欠損0 / 緑 `PASS` を期待**）。
+4. `30秒` で同じ手順を実行します（**欠損0 / 緑 `PASS` を期待**）。
+5. `60秒` で実行します。バッファガイドが**警告帯**になり、判定は `WARN` または欠損ありの `FAIL` になります。
+6. 「FIFO CSV」を保存し、CSVの serial と画面の missing が一致することを確認します
+   （ページ側でも自動照合してイベントログに出します）。
 
 10秒・30秒では欠損0を期待しますが、**無欠損はコード上で保証していません**。
 60秒で欠損が出ても不具合ではなく、限界と可視化が正しく表現されていることを確認する項目です。
 
-## 関連サンプル
+2台同時のFIFO収録は本exampleの対象外です（1台接続を前提としています）。
+Realtime との実測比較や2台での挙動は [`examples/fifo-vs-realtime/`](../fifo-vs-realtime/) を使ってください。
 
-- [`examples/fifo-vs-realtime/`](../fifo-vs-realtime/) — 2台同時での通常/FIFO 比較・実測
-- [`examples/showcase/`](../showcase/) — FIFO 収録パネルを含む全部入りデモ
-- [`docs/ai/`](../../docs/) — センサ仕様・トラブルシューティング
+## テスト
+
+```bash
+node tests/fifo-guide-continuity.test.js
+node --check examples/fifo-guide/app.js
+```
+
+> このページは研究・開発用のexampleです。医療機器ではなく、診断・治療・予防を目的としません。

@@ -1,88 +1,47 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img"
-  aria-label="FIFO Guide: device buffer, serial-addressed pull, and a serial continuity timeline">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f8f9fa" />
-      <stop offset="1" stop-color="#e9ecef" />
-    </linearGradient>
-  </defs>
-  <rect width="640" height="400" fill="url(#bg)" />
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">FIFO recording and loss check example</title>
+  <desc id="desc">A serial continuity timeline and a buffer gauge above a loss metrics table.</desc>
+  <rect width="640" height="400" fill="#edf1f4"/>
+  <rect x="0" y="0" width="640" height="70" fill="#ffffff"/>
+  <text x="28" y="28" fill="#66717a" font-family="Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2">TOOLKIT EXAMPLE / FIFO RECORDING</text>
+  <text x="28" y="54" fill="#17212a" font-family="Arial, sans-serif" font-size="24" font-weight="700">FIFO Recording + Loss Check</text>
 
-  <text x="32" y="52" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#212529">
-    FIFO Guide
-  </text>
-  <text x="32" y="78" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#6c757d">
-    Buffered recording, continuity, and the ~30 s limit
-  </text>
+  <!-- buffer gauge -->
+  <rect x="28" y="86" width="584" height="46" rx="10" fill="#ffffff" stroke="#d8e0e5"/>
+  <text x="42" y="104" fill="#2763e7" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">DEVICE BUFFER ≈ 30 s</text>
+  <rect x="42" y="112" width="285" height="10" rx="5" fill="#dff5ef"/>
+  <rect x="327" y="112" width="271" height="10" rx="5" fill="#fff3cd"/>
+  <rect x="326" y="110" width="2" height="14" fill="#0a9a84"/>
+  <rect x="238" y="108" width="3" height="18" rx="1.5" fill="#2763e7"/>
+  <text x="470" y="105" fill="#8a6a09" font-family="Arial, sans-serif" font-size="9" font-weight="700">over 30 s → caution</text>
 
-  <!-- device buffer -->
-  <rect x="32" y="104" width="250" height="96" rx="10" fill="#ffffff" stroke="#fd7e14" stroke-width="2" />
-  <text x="48" y="128" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#fd7e14">
-    INSOLE buffer ≈ 30 s
-  </text>
-  <g fill="#ffe5d0" stroke="#fd7e14" stroke-width="1">
-    <rect x="48" y="142" width="20" height="40" rx="3" />
-    <rect x="73" y="142" width="20" height="40" rx="3" />
-    <rect x="98" y="142" width="20" height="40" rx="3" />
-    <rect x="123" y="142" width="20" height="40" rx="3" />
-    <rect x="148" y="142" width="20" height="40" rx="3" />
-    <rect x="173" y="142" width="20" height="40" rx="3" />
-    <rect x="198" y="142" width="20" height="40" rx="3" />
-    <rect x="223" y="142" width="20" height="40" rx="3" />
-    <rect x="248" y="142" width="20" height="40" rx="3" />
-  </g>
+  <!-- serial continuity timeline -->
+  <rect x="28" y="140" width="584" height="96" rx="10" fill="#0b141b"/>
+  <text x="42" y="160" fill="#7fa4ff" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">SERIAL CONTINUITY</text>
+  <text x="512" y="160" fill="#9fb0bc" font-family="Arial, sans-serif" font-size="9" font-weight="700">missing 10 / 3000</text>
+  <rect x="42" y="170" width="556" height="34" rx="4" fill="#35d1b6"/>
+  <rect x="268" y="170" width="14" height="34" fill="#ff7559"/>
+  <rect x="402" y="170" width="5" height="34" fill="#ff7559"/>
+  <text x="42" y="224" fill="#35d1b6" font-family="Arial, sans-serif" font-size="10" font-weight="700">received</text>
+  <text x="112" y="224" fill="#ff7559" font-family="Arial, sans-serif" font-size="10" font-weight="700">missing 1200–1208</text>
 
-  <!-- pull arrow -->
-  <line x1="292" y1="152" x2="352" y2="152" stroke="#0d6efd" stroke-width="2.5" marker-end="url(#arrow)" />
-  <text x="322" y="142" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#0d6efd">
-    request
-  </text>
-  <line x1="352" y1="176" x2="292" y2="176" stroke="#198754" stroke-width="2.5" marker-end="url(#arrowG)" />
-  <text x="322" y="196" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#198754">
-    serial 1200…
-  </text>
-  <defs>
-    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-      <path d="M0,0 L6,3 L0,6 Z" fill="#0d6efd" />
-    </marker>
-    <marker id="arrowG" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-      <path d="M0,0 L6,3 L0,6 Z" fill="#198754" />
-    </marker>
-  </defs>
+  <!-- verdict + metrics table -->
+  <rect x="28" y="248" width="584" height="30" rx="8" fill="#f4fbf7" stroke="#0a9a84" stroke-width="2"/>
+  <rect x="40" y="256" width="96" height="16" rx="8" fill="#0a9a84"/>
+  <text x="88" y="268" fill="#ffffff" font-family="Arial, sans-serif" font-size="9" font-weight="700" text-anchor="middle">PASS / no loss</text>
+  <text x="148" y="268" fill="#17212a" font-family="Arial, sans-serif" font-size="10">missing and dropped are both 0</text>
 
-  <!-- host -->
-  <rect x="358" y="104" width="250" height="96" rx="10" fill="#ffffff" stroke="#0d6efd" stroke-width="2" />
-  <text x="374" y="128" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d6efd">
-    Browser (pull + re-request)
-  </text>
-  <text x="374" y="152" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#495057">
-    gyro / acc / 6ch pressure
-  </text>
-  <text x="374" y="172" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#adb5bd">
-    no quaternion
-  </text>
-  <text x="374" y="190" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#495057">
-    drain after stop → CSV
-  </text>
-
-  <!-- continuity timeline -->
-  <text x="32" y="240" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#212529">
-    Serial continuity timeline
-  </text>
-  <rect x="32" y="250" width="576" height="44" rx="5" fill="#198754" />
-  <rect x="284" y="250" width="16" height="44" fill="#dc3545" />
-  <rect x="412" y="250" width="6" height="44" fill="#dc3545" />
-  <text x="32" y="314" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#198754">received</text>
-  <text x="92" y="314" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#dc3545">missing 1200–1208</text>
-
-  <!-- verdict chips -->
-  <rect x="32" y="332" width="128" height="32" rx="6" fill="#198754" />
-  <text x="96" y="353" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13"
-    font-weight="700" fill="#ffffff">PASS / no loss</text>
-  <rect x="170" y="332" width="150" height="32" rx="6" fill="#ffc107" />
-  <text x="245" y="353" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13"
-    font-weight="700" fill="#212529">WARN / over 30 s</text>
-  <rect x="330" y="332" width="128" height="32" rx="6" fill="#dc3545" />
-  <text x="394" y="353" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13"
-    font-weight="700" fill="#ffffff">FAIL / loss</text>
+  <rect x="28" y="288" width="584" height="90" rx="10" fill="#ffffff" stroke="#d8e0e5"/>
+  <rect x="28" y="288" width="584" height="26" rx="10" fill="#e7ecef"/>
+  <path d="M28 314 H612 M28 340 H612" stroke="#d8e0e5"/>
+  <path d="M188 288 V378 M330 288 V378" stroke="#d8e0e5"/>
+  <text x="42" y="306" fill="#56616a" font-family="Arial, sans-serif" font-size="10" font-weight="700">Metric</text>
+  <text x="202" y="306" fill="#56616a" font-family="Arial, sans-serif" font-size="10" font-weight="700">Value</text>
+  <text x="344" y="306" fill="#56616a" font-family="Arial, sans-serif" font-size="10" font-weight="700">Meaning</text>
+  <text x="42" y="332" fill="#26323b" font-family="Arial, sans-serif" font-size="10">missing serials</text>
+  <text x="202" y="332" fill="#0b7a69" font-family="Arial, sans-serif" font-size="10" font-weight="700">0</text>
+  <text x="344" y="332" fill="#66717a" font-family="Arial, sans-serif" font-size="9">absent from the exported CSV window</text>
+  <text x="42" y="358" fill="#26323b" font-family="Arial, sans-serif" font-size="10">dropped</text>
+  <text x="202" y="358" fill="#0b7a69" font-family="Arial, sans-serif" font-size="10" font-weight="700">0</text>
+  <text x="344" y="358" fill="#66717a" font-family="Arial, sans-serif" font-size="9">a different metric from missing</text>
 </svg>
