@@ -392,11 +392,26 @@
     if (!options.preserveSource) updateConnectionSource();
   }
 
-  function noteLiveData(deviceId) {
-    if (state.demo.running) stopDemo({ preserveSource: true });
+  function activateLiveConnection(deviceId, options = {}) {
+    const demoWasRunning = state.demo.running;
+    if (demoWasRunning) {
+      stopDemo({ preserveSource: true });
+      clearData({ preserveSource: true });
+    }
     state.connected[deviceId] = true;
+    state.reconnecting[deviceId] = false;
     resolveDeviceSide(deviceId);
-    if (state.source !== "live" && state.source !== "warning") updateConnectionSource();
+    if (
+      options.forceSource
+      || demoWasRunning
+      || (state.source !== "live" && state.source !== "warning")
+    ) {
+      updateConnectionSource();
+    }
+  }
+
+  function noteLiveData(deviceId) {
+    activateLiveConnection(deviceId);
   }
 
   function handleStepRow(deviceId, incomingRow, options = {}) {
@@ -506,9 +521,13 @@
           }
         },
         onStateChange(snapshot) {
-          state.connected[deviceId] = Boolean(snapshot.connected);
-          resolveDeviceSide(deviceId);
-          updateConnectionSource();
+          if (snapshot.connected) {
+            activateLiveConnection(deviceId, { forceSource: true });
+          } else {
+            state.connected[deviceId] = false;
+            resolveDeviceSide(deviceId);
+            updateConnectionSource();
+          }
         },
         onError(error) {
           if (error && error.name === "NotFoundError") {
@@ -543,10 +562,7 @@
       commitLiveRaw(this.id);
     };
     insole.onConnect = function onConnect() {
-      state.connected[this.id] = true;
-      state.reconnecting[this.id] = false;
-      resolveDeviceSide(this.id);
-      updateConnectionSource();
+      activateLiveConnection(this.id, { forceSource: true });
     };
     insole.onDisconnect = function onDisconnect() {
       state.reconnecting[this.id] = true;
@@ -577,10 +593,7 @@
       }
     };
     insole.onReconnectSuccess = function onReconnectSuccess() {
-      state.connected[this.id] = true;
-      state.reconnecting[this.id] = false;
-      resolveDeviceSide(this.id);
-      updateConnectionSource();
+      activateLiveConnection(this.id, { forceSource: true });
     };
     insole.onReconnectFailed = function onReconnectFailed(info) {
       state.connected[this.id] = false;
@@ -1144,7 +1157,8 @@
     updateSideMeta();
     updateConnectionSource();
     root.requestAnimationFrame(animationLoop);
-    if (new URLSearchParams(root.location.search).get("demo") === "1") startDemo();
+    const demoParam = new URLSearchParams(root.location.search).get("demo");
+    if (demoParam !== "0") startDemo();
   }
 
   root.StepAnalysisLive = {

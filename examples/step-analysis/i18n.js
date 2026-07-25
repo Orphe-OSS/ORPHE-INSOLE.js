@@ -250,6 +250,24 @@
 
   let currentLanguage = "ja";
 
+  function detectDefaultLanguage(timeZone, browserLanguage) {
+    if (timeZone) return timeZone === "Asia/Tokyo" ? "ja" : "en";
+    return String(browserLanguage || "").toLowerCase().startsWith("ja")
+      ? "ja"
+      : "en";
+  }
+
+  function systemDefaultLanguage() {
+    let timeZone = "";
+    try {
+      timeZone = root.Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch {
+      // Fall back to the browser language when the timezone is unavailable.
+    }
+    const browserLanguage = root.navigator ? root.navigator.language : "";
+    return detectDefaultLanguage(timeZone, browserLanguage);
+  }
+
   function interpolate(text, params) {
     if (!params) return text;
     return String(text).replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => (
@@ -310,6 +328,7 @@
   }
 
   const api = {
+    detectDefaultLanguage,
     getLanguage: () => currentLanguage,
     setLanguage,
     t,
@@ -319,7 +338,10 @@
   if (root.document) {
     root.document.addEventListener("DOMContentLoaded", () => {
       const requestedLanguage = new URLSearchParams(root.location.search).get("lang");
-      setLanguage(translations[requestedLanguage] ? requestedLanguage : currentLanguage);
+      const initialLanguage = translations[requestedLanguage]
+        ? requestedLanguage
+        : systemDefaultLanguage();
+      setLanguage(initialLanguage);
       root.document.querySelectorAll("[data-lang-button]").forEach((button) => {
         button.addEventListener("click", () => {
           setLanguage(button.dataset.langButton, { updateUrl: true });
