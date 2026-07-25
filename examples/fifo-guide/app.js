@@ -1,4 +1,4 @@
-/* global buildInsoleToolkit, getInsoleToolkitSession, insoleToolkitMeasurementToCSV, FifoGuideContinuity */
+/* global buildInsoleToolkit, getInsoleToolkitSession, insoles, insoleToolkitMeasurementToCSV, FifoGuideContinuity */
 /**
  * FIFO Guide — 初めてFIFOを使う人向けの実機ページ。
  *
@@ -82,6 +82,10 @@
             },
         });
         state.session = getInsoleToolkitSession(DEVICE_ID);
+        // buildInsoleToolkit() は setup() を呼ばない（simulator 指定時のみ内部で呼ぶ）。
+        // setup() を忘れると hashUUID が空のままで、接続時に
+        // 「Cannot read properties of undefined (reading 'serviceUUID')」で失敗する。
+        insoles[DEVICE_ID].setup();
 
         setPhase('idle');
         drawTimeline([]);
@@ -841,7 +845,8 @@
             '  fifo: { startupDelayMs: 1000, drainTimeoutMs: 5000,',
             '          onSamples, onProgress, onDataLoss, onStopped },',
             '});',
-            "const session = getInsoleToolkitSession(0);",
+            'insoles[0].setup();   // 必須。忘れると接続時に落ちる',
+            'const session = getInsoleToolkitSession(0);',
             '',
             '// 2. FIFO収録を開始（read modeの切替・バッファ消去はSDKが行う）',
             "await session.startMeasurement({ profile: 'fifo-recording', restoreProfile: true });",

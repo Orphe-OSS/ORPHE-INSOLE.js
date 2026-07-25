@@ -339,6 +339,9 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     const app = read('app.js');
     assert.match(app, /buildInsoleToolkit\(/);
     assert.match(app, /getInsoleToolkitSession\(/);
+    // setup() を忘れると hashUUID が空で接続時に serviceUUID 参照で落ちる
+    // （buildInsoleToolkit は simulator 指定時以外 setup() を呼ばない）。実機で踏んだので固定する。
+    assert.match(app, /insoles\[DEVICE_ID\]\.setup\(\)/);
     assert.match(app, /startMeasurement\(\{[\s\S]*?profile: 'fifo-recording'/);
     assert.match(app, /stopMeasurement\(/);
     assert.match(app, /insoleToolkitMeasurementToCSV\(result, 'raw'\)/);

@@ -95,6 +95,7 @@ buildInsoleToolkit(document.querySelector('#toolkit_placeholder'), 'ORPHE INSOLE
   fifo: { startupDelayMs: 1000, drainTimeoutMs: 5000,
           onSamples, onProgress, onDataLoss, onStopped },
 });
+insoles[0].setup();   // 必須（buildInsoleToolkit は setup() を呼びません）
 const session = getInsoleToolkitSession(0);
 
 // FIFO収録（read mode 切替・バッファ消去・ポーリング・再要求はSDKが担当）
