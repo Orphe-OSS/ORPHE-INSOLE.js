@@ -17,6 +17,8 @@ Happy hacking for ORPHE INSOLE module on javascript.
 
 製品スペック・取得できるデータ・使い方をまとめて知りたい場合は [showcase](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/showcase) ページがおすすめです（実機が無くてもデモ再生で全ビジュアルが動きます）。
 
+左右1歩ごとの Step Analysis と Realtime Raw を同時に確認する場合は [step-analysis](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/step-analysis) ページを利用できます（明示的なデモ再生付き）。
+
 INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-shoe](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe) へ（クリック/キーボードでも試奏できます。ジェスチャ収録ツール [GESTURE LAB](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/music-shoe/lab.html) 付き）。
 
 通常モード（リアルタイム通知）と FIFO（ロスレス収録）だけを比較する旧サンプルは

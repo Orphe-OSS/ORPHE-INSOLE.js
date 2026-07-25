@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Step Analysis and realtime raw data example</title>
+  <desc id="desc">Two compact charts above a left and right gait analysis table.</desc>
+  <rect width="640" height="400" fill="#edf1f4"/>
+  <rect x="0" y="0" width="640" height="70" fill="#ffffff"/>
+  <text x="28" y="28" fill="#66717a" font-family="Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2">TOOLKIT EXAMPLE / REALTIME FULL + STEP</text>
+  <text x="28" y="54" fill="#17212a" font-family="Arial, sans-serif" font-size="24" font-weight="700">Step Analysis + RAW Data</text>
+  <rect x="28" y="88" width="584" height="94" rx="10" fill="#0b141b"/>
+  <text x="42" y="108" fill="#7fa4ff" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">LAST 10 STEPS</text>
+  <path d="M50 157 L105 143 L160 149 L215 126 L270 137 L325 117 L380 130 L435 111 L490 121 L545 102 L595 112" fill="none" stroke="#35d1b6" stroke-width="3"/>
+  <path d="M50 164 L105 154 L160 159 L215 145 L270 151 L325 139 L380 145 L435 132 L490 141 L545 127 L595 135" fill="none" stroke="#ff7559" stroke-width="3"/>
+  <g fill="#35d1b6">
+    <circle cx="50" cy="157" r="3"/><circle cx="215" cy="126" r="3"/><circle cx="380" cy="130" r="3"/><circle cx="545" cy="102" r="3"/>
+  </g>
+  <g fill="#ff7559">
+    <circle cx="105" cy="154" r="3"/><circle cx="270" cy="151" r="3"/><circle cx="435" cy="132" r="3"/><circle cx="595" cy="135" r="3"/>
+  </g>
+  <rect x="28" y="190" width="584" height="64" rx="10" fill="#0b141b"/>
+  <text x="42" y="209" fill="#7fa4ff" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">REALTIME RAW</text>
+  <path d="M45 235 L70 225 L95 239 L120 218 L145 232 L170 215 L195 235 L220 221 L245 230 L270 212 L295 233 L320 217 L345 238 L370 220 L395 231 L420 214 L445 236 L470 219 L495 234 L520 216 L545 232 L570 220 L595 229" fill="none" stroke="#35d1b6" stroke-width="2"/>
+  <path d="M45 244 L70 237 L95 247 L120 231 L145 242 L170 228 L195 245 L220 234 L245 244 L270 229 L295 246 L320 232 L345 247 L370 233 L395 243 L420 230 L445 246 L470 232 L495 244 L520 230 L545 243 L570 234 L595 241" fill="none" stroke="#ff7559" stroke-width="2"/>
+  <rect x="28" y="266" width="584" height="112" rx="10" fill="#ffffff" stroke="#d8e0e5"/>
+  <rect x="28" y="266" width="584" height="30" rx="10" fill="#e7ecef"/>
+  <path d="M28 296 H612 M28 323 H612 M28 350 H612" stroke="#d8e0e5"/>
+  <path d="M250 266 V378 M405 266 V378" stroke="#d8e0e5"/>
+  <text x="42" y="286" fill="#56616a" font-family="Arial, sans-serif" font-size="11" font-weight="700">Parameters</text>
+  <text x="298" y="286" fill="#1c7f70" font-family="Arial, sans-serif" font-size="11" font-weight="700">Left side</text>
+  <text x="450" y="286" fill="#b94735" font-family="Arial, sans-serif" font-size="11" font-weight="700">Right side</text>
+  <text x="42" y="315" fill="#26323b" font-family="Arial, sans-serif" font-size="11">Gait speed (m/s)</text>
+  <text x="42" y="342" fill="#26323b" font-family="Arial, sans-serif" font-size="11">Step length (m)</text>
+  <text x="42" y="369" fill="#26323b" font-family="Arial, sans-serif" font-size="11">Cadence (step/min)</text>
+  <text x="302" y="315" fill="#17212a" font-family="Arial, sans-serif" font-size="12" font-weight="700">0.88</text>
+  <text x="457" y="315" fill="#17212a" font-family="Arial, sans-serif" font-size="12" font-weight="700">0.86</text>
+  <text x="302" y="342" fill="#17212a" font-family="Arial, sans-serif" font-size="12" font-weight="700">0.51</text>
+  <text x="457" y="342" fill="#17212a" font-family="Arial, sans-serif" font-size="12" font-weight="700">0.47</text>
+  <text x="302" y="369" fill="#17212a" font-family="Arial, sans-serif" font-size="12" font-weight="700">107.4</text>
+  <text x="457" y="369" fill="#17212a" font-family="Arial, sans-serif" font-size="12" font-weight="700">107.4</text>
+</svg>
