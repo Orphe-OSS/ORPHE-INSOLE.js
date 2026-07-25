@@ -487,9 +487,9 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(i18n.translations.en.m_dropped_note, /different metric from missing/);
 
     // 収録スパンが予定より短くなる理由を両言語で説明している（missing ではないこと）
-    assert.match(i18n.translations.ja.cautionShortSpan, /未要求/);
+    assert.match(i18n.translations.ja.cautionShortSpan, /未要求分（停止時のlag）/);
     assert.match(i18n.translations.ja.cautionShortSpan, /欠損（missing）ではなく末尾が短いだけ/);
-    assert.match(i18n.translations.en.cautionShortSpan, /still unrequested at stop/);
+    assert.match(i18n.translations.en.cautionShortSpan, /still unrequested when recording stopped/);
     assert.match(i18n.translations.en.cautionShortSpan, /rather than loss/);
 
     // CSV 1行と serial packet の関係
