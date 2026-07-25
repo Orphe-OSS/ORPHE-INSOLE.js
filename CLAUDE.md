@@ -37,6 +37,8 @@ ORPHE-INSOLE.js/
 │   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
 │   ├── VISUALIZE/             # センサ可視化（推奨スターター）
+│   ├── fifo-guide/            # FIFO収録の入門（初心者向け・1台・欠損可視化）
+│   ├── fifo-vs-realtime/      # 通常(push)/FIFO(pull)の実測比較
 │   ├── showcase/              # 製品紹介ショーケース（デモ再生つき）
 │   ├── sensor-dashboard/      # 2台同時ダッシュボード
 │   ├── balance-sway/          # 重心動揺の可視化
@@ -195,6 +197,29 @@ CSV は timestamp 昇順・1パケット4行（フレーム5ms間隔）で、参
 `tools/check_tokoroten_data.py`（4行/serial・欠損なしを検証）と互換。
 実機（device 00000161/right）で欠損0のロスレス収録を確認済み。
 showcase の「ロスレス収録（FIFO）」パネルが利用例（収録データで各可視化がライブ更新）。
+
+**端末内バッファは約30秒分**（`RING_BUFFER_CAPACITY`(1500) packet × 20 ms/packet = 30,000 ms。
+1 packet = 4 frame × 5 ms。等価に 50 packet/s × 30 s = 1500）。
+30秒以内の短時間計測は計測区間全体をバッファに保持しやすく安定した記録に向くが、
+**「30秒以内なら無欠損」という保証ではない**（回収が滞れば30秒以内でも上書きされ、
+追いつけていれば30秒超でも欠損しない）。長時間計測では欠損表示とCSVの確認が必要。
+初心者向けの解説・実機お試しページは `examples/fifo-guide/`。
+
+**`dropped` と最終CSVの `missing` は別指標**（同じ数値として表示しないこと）:
+`dropped` は収録中に回復不能と判定された累計イベント数（`onDataLoss`/`onStopped`）、
+`missing` は最終CSV区間で expected に対して足りなかった serial 数
+（`stopMeasurement()` の `result.raw.serial`）。プレビュー中の確定分や再要求での後追い回収があるため
+一致しないことがある。**両方が 0 のときだけ「欠損なし」**と判定する。
+
+新規アプリでは `OrpheInsoleFifo` を直接 new せず、Toolkit の計測プロファイル経由が推奨:
+
+```javascript
+const session = getInsoleToolkitSession(0);
+await session.startMeasurement({ profile: 'fifo-recording', restoreProfile: true });
+// ... 収録 ...
+const result = await session.stopMeasurement();       // drain 完了後に resolve
+const csv = insoleToolkitMeasurementToCSV(result, 'raw');  // 正式計測区間のみ
+```
 
 ## 歩容解析（Gait Analysis） - `src/InsoleGait.js`
 
@@ -660,6 +685,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | ジェスチャ楽器 | examples/music-shoe | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、イベントルーパー、加算残光ビジュアライザ |
 | ジェスチャ収録 | examples/music-shoe/lab.html | ラベル付きCSV記録（しきい値設計用） |
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
+| FIFO入門（初心者向け） | examples/fifo-guide | `fifo-recording` プロファイル + startMeasurement/stopMeasurement、drain待ちUI、約30秒バッファの明示、serial continuity（Canvas集約 + 欠損range）、dropped と missing の区別、CSV照合 |
 | 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 

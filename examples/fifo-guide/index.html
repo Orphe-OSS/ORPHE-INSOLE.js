@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>はじめてのFIFO収録 - ORPHE INSOLE</title>
+  <meta name="description"
+    content="ORPHE INSOLE の FIFO（バッファ収録）を初めて使う人向けのガイド。Realtimeとの違い、約30秒のバッファ、欠損の見かたを実機で確認できます。">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+  <div class="container py-4" style="max-width: 1040px;">
+
+    <header class="mb-4">
+      <h1 class="h3"><i class="bi bi-inboxes"></i> はじめてのFIFO収録</h1>
+      <p class="text-muted mb-0">
+        ORPHE INSOLE を買ったばかりの方・これから FIFO を使うプログラムを書く方向けのページです。
+        <strong>1台のINSOLEを接続して、その場でFIFO収録を試し、欠損があったかどうかを確認して CSV を保存</strong>できます。
+      </p>
+    </header>
+
+    <!-- ============================================================ -->
+    <!-- 1. 操作パネル（ここだけ読めば操作できる）                     -->
+    <!-- ============================================================ -->
+    <section class="card border-primary mb-4">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-play-circle"></i> やることは5つだけ
+      </div>
+      <div class="card-body">
+
+        <ol class="step-strip mb-3" id="step_strip">
+          <li data-step="connect"><span class="step-no">1</span>接続</li>
+          <li data-step="duration"><span class="step-no">2</span>時間を選ぶ</li>
+          <li data-step="record"><span class="step-no">3</span>収録開始</li>
+          <li data-step="drain"><span class="step-no">4</span>回収（drain）を待つ</li>
+          <li data-step="save"><span class="step-no">5</span>CSV保存</li>
+        </ol>
+
+        <!-- 現在の状態 -->
+        <div id="status_banner" class="status-banner status-idle mb-3" role="status" aria-live="polite">
+          <span class="status-label" id="status_label">待機中</span>
+          <span id="status_text">まず ORPHE INSOLE を1台接続してください。</span>
+        </div>
+
+        <div class="row g-3">
+          <!-- ① 接続 -->
+          <div class="col-lg-5">
+            <div class="panel h-100">
+              <div class="panel-title"><span class="badge bg-secondary">1</span> ORPHE INSOLE を接続</div>
+              <div id="toolkit_placeholder" class="mb-2"></div>
+              <p class="small text-muted mb-0">
+                トグルをONにすると Chrome のデバイス選択ダイアログが開きます。
+                このページは<strong>1台接続</strong>を対象にしています。
+              </p>
+            </div>
+          </div>
+
+          <!-- ② 時間 + ③ 開始 -->
+          <div class="col-lg-7">
+            <div class="panel h-100">
+              <div class="panel-title"><span class="badge bg-secondary">2</span> 計測時間を選ぶ</div>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm-6">
+                  <label class="form-label small mb-1" for="duration_select">計測時間</label>
+                  <select class="form-select form-select-sm" id="duration_select">
+                    <option value="10000">10秒（まず最初はこれ）</option>
+                    <option value="30000" selected>30秒（推奨の上限）</option>
+                    <option value="60000">60秒（バッファ超過。限界の確認用）</option>
+                    <option value="custom">任意（秒を入力）</option>
+                  </select>
+                </div>
+                <div class="col-sm-3">
+                  <label class="form-label small mb-1" for="duration_custom">秒</label>
+                  <input type="number" class="form-control form-control-sm" id="duration_custom" min="3" max="600"
+                    step="1" value="30" disabled>
+                </div>
+                <div class="col-sm-3">
+                  <button type="button" class="btn btn-primary btn-sm w-100" id="record_button" disabled>
+                    <i class="bi bi-record-circle"></i> 収録開始
+                  </button>
+                </div>
+              </div>
+
+              <!-- タイマー & バッファガイド -->
+              <div class="mt-3">
+                <div class="d-flex justify-content-between align-items-end small">
+                  <span>経過時間 <strong id="elapsed_text" class="mono">0.0 s</strong></span>
+                  <span id="buffer_guide_text" class="text-muted"></span>
+                </div>
+                <div class="buffer-bar mt-1" id="buffer_bar" role="img"
+                  aria-label="計測時間と端末内バッファ（約30秒）の関係">
+                  <div class="buffer-bar-safe" title="約30秒までは端末内バッファに収まりやすい範囲"></div>
+                  <div class="buffer-bar-warn" title="約30秒を超える範囲。回収が追いつかないと古いデータが上書きされます"></div>
+                  <div class="buffer-bar-cursor" id="buffer_bar_cursor"></div>
+                  <div class="buffer-bar-mark" id="buffer_bar_mark"></div>
+                </div>
+                <div class="d-flex justify-content-between buffer-bar-scale mt-1">
+                  <span>0s</span><span class="text-success">30s（推奨の上限）</span><span>60s+</span>
+                </div>
+              </div>
+
+              <div class="alert alert-warning small mt-3 mb-0">
+                <strong>収録中の注意:</strong> このページのタブを閉じたり別タブにしたままにしない／PCをスリープさせない／
+                INSOLE から離れすぎない（1〜2m以内）。回収が遅れると古いデータが上書きされて戻せません。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 2. 結果                                                       -->
+    <!-- ============================================================ -->
+    <section class="mb-4">
+      <h2 class="h5 border-bottom pb-2"><i class="bi bi-clipboard-data"></i> 結果と欠損の確認</h2>
+
+      <div class="card result-card result-empty mb-3" id="result_card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-file-earmark-bar-graph"></i> 収録結果</span>
+          <span class="verdict-badge" id="result_verdict">未計測</span>
+        </div>
+        <div class="card-body">
+          <p class="small mb-3" id="result_summary">まだ収録していません。上のパネルから収録を開始してください。</p>
+
+          <div class="metric-grid" id="metric_grid">
+            <div class="metric"><span class="metric-label">計測時間</span><span class="metric-value mono"
+                id="m_duration">-</span></div>
+            <div class="metric"><span class="metric-label">FIFO samples</span><span class="metric-value mono"
+                id="m_samples">-</span></div>
+            <div class="metric"><span class="metric-label">最初のserial</span><span class="metric-value mono"
+                id="m_first">-</span></div>
+            <div class="metric"><span class="metric-label">最後のserial</span><span class="metric-value mono"
+                id="m_last">-</span></div>
+            <div class="metric"><span class="metric-label">expected serial数</span><span class="metric-value mono"
+                id="m_expected">-</span></div>
+            <div class="metric"><span class="metric-label">received serial数</span><span class="metric-value mono"
+                id="m_received">-</span></div>
+            <div class="metric"><span class="metric-label">missing serial数</span><span class="metric-value mono"
+                id="m_missing">-</span></div>
+            <div class="metric"><span class="metric-label">missing rate</span><span class="metric-value mono"
+                id="m_missing_rate">-</span></div>
+            <div class="metric"><span class="metric-label">dropped（収録中の累計）</span><span class="metric-value mono"
+                id="m_dropped">-</span></div>
+            <div class="metric"><span class="metric-label">drain recovered</span><span class="metric-value mono"
+                id="m_drain_recovered">-</span></div>
+            <div class="metric"><span class="metric-label">drain時間</span><span class="metric-value mono"
+                id="m_drain_ms">-</span></div>
+            <div class="metric"><span class="metric-label">最大lag</span><span class="metric-value mono"
+                id="m_max_lag">-</span></div>
+            <div class="metric"><span class="metric-label">CSV保存</span><span class="metric-value" id="m_csv">-</span>
+            </div>
+          </div>
+
+          <div id="result_cautions" class="mt-3"></div>
+
+          <!-- serial continuity timeline -->
+          <div class="mt-4">
+            <div class="d-flex justify-content-between align-items-end flex-wrap gap-2">
+              <h3 class="h6 mb-0">Serial continuity timeline</h3>
+              <span class="small" id="timeline_legend">
+                <span class="legend-swatch legend-received"></span>received
+                <span class="legend-swatch legend-missing ms-2"></span>missing
+              </span>
+            </div>
+            <canvas id="timeline_canvas" class="timeline-canvas mt-2" height="56"
+              aria-label="回収したserialを緑、欠損したserialを赤で示した横方向のタイムライン"></canvas>
+            <p class="small text-muted mb-1" id="timeline_caption">
+              収録するとここに serial の連続性が表示されます。
+            </p>
+            <div class="small" id="missing_ranges_wrap" hidden>
+              <strong class="text-danger">欠損range:</strong>
+              <span class="mono" id="missing_ranges"></span>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mt-4">
+            <button type="button" class="btn btn-success btn-sm" id="csv_button" disabled>
+              <i class="bi bi-filetype-csv"></i> FIFO CSVを保存
+            </button>
+            <button type="button" class="btn btn-outline-success btn-sm" id="json_button" disabled>
+              <i class="bi bi-filetype-json"></i> 結果JSONを保存
+            </button>
+            <span class="small text-muted align-self-center" id="export_hint">
+              CSVボタンは収録停止＆drain完了まで無効です。
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 3. ライブデータ                                                -->
+    <!-- ============================================================ -->
+    <section class="mb-4">
+      <h2 class="h5 border-bottom pb-2"><i class="bi bi-activity"></i> 届いているデータ</h2>
+      <p class="small text-muted">
+        FIFO は<strong>数百msごとにまとめて（バッチで）</strong>届きます。リアルタイム表示のようになめらかには動きません。
+        これは遅れているのではなく、取りこぼしを再要求して埋めるための仕組みです。
+      </p>
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="panel h-100">
+            <div class="panel-title">6ch 圧力（ADC生値）</div>
+            <div id="press_bars" class="press-bars"></div>
+            <div class="small mt-2">合計 <strong class="mono" id="press_total">-</strong></div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="panel h-100">
+            <div class="panel-title">加速度ノルム [G] / バッチ到着</div>
+            <canvas id="acc_canvas" class="mini-canvas" height="90"
+              aria-label="加速度ノルムの推移（直近のみ表示）"></canvas>
+            <div class="row g-2 small mt-2">
+              <div class="col-6">バッチ数 <strong class="mono" id="batch_count">0</strong></div>
+              <div class="col-6">直近バッチ <strong class="mono" id="batch_size">-</strong> samples</div>
+              <div class="col-6">バッチ間隔 <strong class="mono" id="batch_gap">-</strong></div>
+              <div class="col-6">現在のlag <strong class="mono" id="live_lag">-</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="panel">
+            <div class="panel-title">最新sample（テキスト）</div>
+            <pre class="latest-sample mono mb-0" id="latest_sample">-</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 4. FIFOの説明                                                  -->
+    <!-- ============================================================ -->
+    <section class="mb-4">
+      <h2 class="h5 border-bottom pb-2"><i class="bi bi-book"></i> FIFOとは（かんたん解説）</h2>
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><i class="bi bi-broadcast"></i> Realtime（垂れ流し）</div>
+            <div class="card-body small">
+              <p>INSOLE が計測したデータを、そのまま次々に送ってきます（push）。</p>
+              <ul class="mb-2">
+                <li>遅延がとても小さい。可視化やゲームに向く</li>
+                <li>クォータニオン（姿勢）も取れる</li>
+                <li><strong>電波で取りこぼしたデータは、もう戻ってこない</strong></li>
+              </ul>
+              <p class="mb-0 text-muted">「多少抜けてもいいから今すぐ欲しい」用途向け。</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-warning-subtle"><i class="bi bi-inboxes"></i> FIFO（いったん貯める）</div>
+            <div class="card-body small">
+              <p>
+                INSOLE が計測データを<strong>本体の中にいったん保存</strong>し、PC側が
+                <strong>「serial番号 ○番から○個ください」と指定して取り出す</strong>方式です（pull）。
+              </p>
+              <ul class="mb-2">
+                <li>通信が一時的に遅れても、<strong>届かなかったserialを再要求</strong>して埋められる</li>
+                <li>停止したあとも、まだ本体に残っている分を<strong>drain（回収）</strong>してから記録完了になる</li>
+                <li>データはまとめて届くので、画面はカクカク更新される</li>
+              </ul>
+              <p class="mb-0 text-muted">「あとで解析するから抜けを減らしたい」用途向け。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 30秒バッファ -->
+      <div class="card border-warning mt-3">
+        <div class="card-header bg-warning-subtle">
+          <i class="bi bi-hourglass-split"></i> 端末内バッファは<strong>約30秒分</strong>
+        </div>
+        <div class="card-body small">
+          <p>
+            ORPHE INSOLE の FIFO バッファが保持できる長さは<strong>約30秒分</strong>です。
+            SDK の実装定数から次のように換算しています（<code>src/InsoleFifo.js</code>）。
+          </p>
+          <pre class="mono calc-box mb-3">1 serial packet = 4 frame × 5 ms          = 20 ms
+バッファ上限     = 1500 packet (RING_BUFFER_CAPACITY)
+保持できる長さ   = 1500 × 20 ms = 30,000 ms  ≒ 30 秒
+（別の言い方: 200 sample/s ÷ 4 sample/packet = 50 packet/s → 1500 ÷ 50 = 30 s）</pre>
+          <ul>
+            <li>
+              <strong>30秒以内の短時間計測</strong>は、計測区間の全体が端末内バッファに収まりやすいため、
+              安定した記録に向いています。
+            </li>
+            <li>
+              <strong>30秒を超える計測も可能</strong>です。ただし接続するPCの性能・Bluetooth環境・
+              他のBLE機器との競合・タブのバックグラウンド化などで
+              <strong>回収速度が生成速度に追いつかないと、古いデータが上書きされ回復不能な欠損になります</strong>。
+            </li>
+            <li>
+              <strong>「30秒以内なら絶対に無欠損」という保証ではありません。</strong>
+              30秒以内でも回収が滞れば欠損しますし、逆に30秒を超えても追いつけていれば欠損しません。
+              長時間計測では必ずこのページの欠損表示と、保存したCSVの中身を確認してください。
+            </li>
+          </ul>
+          <p class="mb-0">
+            収録中は <code>lag</code>（まだ取り出せていないserial数）が上限 1500 に近づくほど危険です。
+            このページでは最大lagも表示します。
+          </p>
+        </div>
+      </div>
+
+      <!-- 混同しやすい点 -->
+      <div class="card mt-3">
+        <div class="card-header bg-light"><i class="bi bi-exclamation-diamond"></i> 混同しやすい3つのポイント</div>
+        <div class="card-body small">
+          <h3 class="h6">① <code>dropped</code> と CSVの <code>missing</code> は別の指標</h3>
+          <ul>
+            <li>
+              <code>dropped</code> … 収録中に「もう取り戻せない」と判断された<strong>累計イベント数</strong>。
+              再同期やバッファ上書きのたびに加算されます。プレビュー中の分や、あとから再要求で回収された分の
+              数え方の違いで、最終的なCSVの欠損数と一致しないことがあります。
+            </li>
+            <li>
+              <code>missing</code> … <strong>保存されるCSVの区間</strong>（正式計測の開始〜drain完了）で、
+              expected に対して実際に足りなかった serial 数。CSVの中身と直接対応します。
+            </li>
+            <li>合否は <code>missing</code> と <code>dropped</code> の<strong>両方が 0</strong> かどうかで判断してください。</li>
+          </ul>
+
+          <h3 class="h6 mt-3">② CSVの1行 ≠ FIFOの1 serial packet</h3>
+          <p class="mb-0">
+            1つの serial packet には <strong>4フレーム</strong>（5ms間隔）が入っています。
+            CSVはフレーム単位で書き出すので、<strong>1 serial = 4行</strong>になります。
+            「CSVが4000行あるのにserialが1000しかない」のは正常です。
+            欠損を数えるときは行数ではなく serial 番号の連続性を見てください。
+          </p>
+
+          <h3 class="h6 mt-3">③ FIFO Raw に入るもの・入らないもの</h3>
+          <ul class="mb-0">
+            <li>入る: <strong>ジャイロ・加速度・6ch圧力</strong></li>
+            <li>入らない: <strong>クォータニオン（姿勢）</strong> — 姿勢が必要なら Realtime を使ってください</li>
+            <li>
+              現行ファームウェアでは <strong>FIFO Raw と Step Analysis は同時に取得できません</strong>。
+              「FIFOで収録 → 止めてから Step Analysis」のように順番に使ってください。
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- コード -->
+      <div class="card mt-3">
+        <div class="card-header bg-light"><i class="bi bi-code-slash"></i> このページが実行しているコード</div>
+        <div class="card-body">
+          <pre class="mono code-box mb-0" id="code_snippet"></pre>
+          <p class="small text-muted mt-2 mb-0">
+            FIFO のプロトコル（serial指定・再要求・drain）は <code>src/InsoleFifo.js</code> と
+            <code>src/InsoleToolkit.js</code> が担当します。アプリ側で実装する必要はありません。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 5. ログ                                                        -->
+    <!-- ============================================================ -->
+    <section class="mb-4">
+      <h2 class="h5 border-bottom pb-2"><i class="bi bi-list-ul"></i> イベントログ</h2>
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="copy_log_button">
+          <i class="bi bi-clipboard"></i> ログをコピー
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="clear_log_button">
+          <i class="bi bi-eraser"></i> クリア
+        </button>
+      </div>
+      <div class="event-log mono" id="event_log" role="log" aria-live="polite"></div>
+      <p class="small text-muted mt-2 mb-0" id="env_line"></p>
+    </section>
+
+    <footer class="text-muted small border-top pt-3">
+      <p class="mb-1">
+        必要環境: Web Bluetooth 対応ブラウザ（Chrome / Edge）。<code>https</code> または <code>localhost</code> で開いてください。
+        Firefox / Safari では動作しません。
+      </p>
+      <p class="mb-0">
+        本ページは医療機器ではなく、疾病の診断・治療・予防を目的としていません。
+        関連: <a href="../fifo-vs-realtime/">通常モード vs FIFO収録</a> /
+        <a href="../showcase/">Showcase</a> /
+        <a href="../README.md">examples一覧</a>
+      </p>
+    </footer>
+  </div>
+
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./continuity.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>

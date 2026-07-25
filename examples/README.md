@@ -10,6 +10,8 @@
 | サンプル | 目的 | 必要機材 | 実機なし確認 | 主な実装パターン |
 |---|---|---|---|---|
 | [VISUALIZE](./VISUALIZE/) | 6chチャート+IMU可視化（推奨スターター） | INSOLE ×1 | ―（実機推奨） | rAF描画スロットリング |
+| [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた） | INSOLE ×1 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、serial continuity可視化 |
+| [fifo-vs-realtime](./fifo-vs-realtime/) | 通常(push)/FIFO(pull)の実測比較 | INSOLE ×1〜2 | ―（実機推奨） | 欠損率、シリアル連続性マップ、droppedCount照合 |
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
 | [step-analysis](./step-analysis/) | 1歩ごとの歩容表 + Realtime Rawグラフ | INSOLE ×1〜2 | `?demo=1` またはデモ再生ボタン | `realtime-full-step`、左右自動割当、10歩統計 |
 | [sensor-dashboard](./sensor-dashboard/) | 2台同時ダッシュボード | INSOLE ×2 | ―（実機推奨） | L/R自動マッピング（mount_position） |
@@ -19,6 +21,13 @@
 | [device-test](./device-test/) | **リリース前の実機チェックリスト** | INSOLE ×1 | ―（実機検証が目的） | 通知中read/write、モード切替、自動判定 |
 | [quaternion-validation](./quaternion-validation/) | **quat修正の長時間実機検証** | INSOLE ×1〜2 | `?sim=1` | norm・yaw drift・欠損率、CSV逐次保存、数値レポート |
 | [terminal](./terminal/) | 生データ（gotData）のデバッグ | INSOLE ×1 | ― | プロトコル解析 |
+
+## FIFO（ロスレス収録）を使いたいとき
+
+1. まず [fifo-guide](./fifo-guide/) で仕組みと限界（**端末内バッファ約30秒**）を確認しながら1台で試す
+2. Realtime との違いを実測で比べたい／2台で試したいなら [fifo-vs-realtime](./fifo-vs-realtime/)
+3. `dropped`（収録中の回復不能ロス累計）と最終CSVの `missing`（区間内の欠損serial数）は
+   定義が違うため一致しないことがあります。**両方が 0 のときだけ「欠損なし」**と判断してください。
 
 ## 実機がない場合
 

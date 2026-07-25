@@ -1,0 +1,432 @@
+/* FIFO Guide — 初めてFIFOを使う人向けのページ */
+
+body {
+    background-color: #f8f9fa;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.panel {
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: #fff;
+}
+
+.panel-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #495057;
+}
+
+/* ── ステップ表示 ─────────────────────────────────────────── */
+.step-strip {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.step-strip li {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid #dee2e6;
+    border-radius: 999px;
+    background: #fff;
+    color: #6c757d;
+}
+
+.step-strip .step-no {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    background: #e9ecef;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.step-strip li.step-active {
+    border-color: #0d6efd;
+    color: #0d6efd;
+    font-weight: 600;
+}
+
+.step-strip li.step-active .step-no {
+    background: #0d6efd;
+    color: #fff;
+}
+
+.step-strip li.step-done {
+    border-color: #198754;
+    color: #198754;
+}
+
+.step-strip li.step-done .step-no {
+    background: #198754;
+    color: #fff;
+}
+
+/* ── 現在の状態 ───────────────────────────────────────────── */
+.status-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid #dee2e6;
+    padding: 0.6rem 0.8rem;
+    background: #fff;
+    font-size: 0.9rem;
+}
+
+.status-banner .status-label {
+    font-weight: 700;
+    padding: 0.05rem 0.5rem;
+    border-radius: 0.35rem;
+    background: #e9ecef;
+    color: #343a40;
+    white-space: nowrap;
+}
+
+.status-idle {
+    border-color: #dee2e6;
+}
+
+.status-connected {
+    border-color: #0d6efd;
+    background: #eef5ff;
+}
+
+.status-connected .status-label {
+    background: #0d6efd;
+    color: #fff;
+}
+
+.status-preparing,
+.status-draining {
+    border-color: #fd7e14;
+    background: #fff5eb;
+}
+
+.status-preparing .status-label,
+.status-draining .status-label {
+    background: #fd7e14;
+    color: #fff;
+}
+
+.status-recording {
+    border-color: #dc3545;
+    background: #fff0f1;
+}
+
+.status-recording .status-label {
+    background: #dc3545;
+    color: #fff;
+}
+
+.status-recording .status-label::before {
+    content: "● ";
+}
+
+.status-done {
+    border-color: #198754;
+    background: #eefaf2;
+}
+
+.status-done .status-label {
+    background: #198754;
+    color: #fff;
+}
+
+.status-banner.status-over-buffer {
+    box-shadow: inset 0 0 0 2px #ffc107;
+}
+
+/* ── バッファガイドバー ───────────────────────────────────── */
+.buffer-bar {
+    position: relative;
+    display: flex;
+    height: 14px;
+    border-radius: 7px;
+    overflow: hidden;
+    background: #e9ecef;
+}
+
+.buffer-bar-safe {
+    flex: 1 1 50%;
+    background: repeating-linear-gradient(45deg, #d1e7dd, #d1e7dd 6px, #c3e0cd 6px, #c3e0cd 12px);
+}
+
+.buffer-bar-warn {
+    flex: 1 1 50%;
+    background: repeating-linear-gradient(45deg, #fff3cd, #fff3cd 6px, #ffe8a1 6px, #ffe8a1 12px);
+}
+
+.buffer-bar-cursor {
+    position: absolute;
+    top: -3px;
+    width: 3px;
+    height: 20px;
+    background: #0d6efd;
+    transform: translateX(-1px);
+    transition: left 0.1s linear;
+}
+
+.buffer-bar-cursor.over {
+    background: #dc3545;
+}
+
+.buffer-bar-mark {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 14px;
+    background: #198754;
+}
+
+.buffer-bar-scale {
+    font-size: 0.72rem;
+    color: #6c757d;
+}
+
+/* ── 結果カード ───────────────────────────────────────────── */
+.result-card {
+    border-width: 2px;
+}
+
+.result-empty {
+    border-color: #dee2e6;
+}
+
+.result-pass {
+    border-color: #198754;
+    background: #f4fbf7;
+}
+
+.result-caution {
+    border-color: #ffc107;
+    background: #fffdf3;
+}
+
+.result-fail {
+    border-color: #dc3545;
+    background: #fff6f6;
+}
+
+.verdict-badge {
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 0.15rem 0.6rem;
+    border-radius: 0.35rem;
+    background: #e9ecef;
+    color: #495057;
+}
+
+.verdict-pass {
+    background: #198754;
+    color: #fff;
+}
+
+.verdict-caution {
+    background: #ffc107;
+    color: #212529;
+}
+
+.verdict-fail {
+    background: #dc3545;
+    color: #fff;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+}
+
+.metric {
+    border: 1px solid #dee2e6;
+    border-left-width: 4px;
+    border-radius: 0.35rem;
+    background: #fff;
+    padding: 0.4rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.metric-label {
+    font-size: 0.7rem;
+    color: #6c757d;
+}
+
+.metric-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.metric-ok {
+    border-left-color: #198754;
+}
+
+.metric-warn {
+    border-left-color: #ffc107;
+}
+
+.metric-bad {
+    border-left-color: #dc3545;
+}
+
+/* ── timeline ─────────────────────────────────────────────── */
+.timeline-canvas {
+    width: 100%;
+    height: 56px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.35rem;
+    background: #e9ecef;
+    display: block;
+}
+
+.legend-swatch {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 2px;
+    vertical-align: -1px;
+    margin-right: 0.15rem;
+}
+
+.legend-received {
+    background: #198754;
+}
+
+.legend-missing {
+    background: #dc3545;
+}
+
+/* ── ライブデータ ─────────────────────────────────────────── */
+.press-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.press-row {
+    display: grid;
+    grid-template-columns: 1.2rem 1fr 4rem;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+}
+
+.press-label {
+    color: #6c757d;
+    text-align: right;
+}
+
+.press-track {
+    height: 12px;
+    background: #e9ecef;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.press-fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #0d6efd, #6ea8fe);
+    transition: width 0.1s linear;
+}
+
+.press-value {
+    text-align: right;
+}
+
+.mini-canvas {
+    width: 100%;
+    height: 90px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.35rem;
+    background: #fff;
+    display: block;
+}
+
+.latest-sample {
+    font-size: 0.78rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.35rem;
+    padding: 0.5rem;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ── コード / 計算ボックス ────────────────────────────────── */
+.code-box,
+.calc-box {
+    font-size: 0.78rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.35rem;
+    padding: 0.6rem;
+    margin: 0;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+/* ── ログ ─────────────────────────────────────────────────── */
+.event-log {
+    height: 220px;
+    overflow-y: auto;
+    font-size: 0.76rem;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.35rem;
+    padding: 0.5rem;
+}
+
+.log-line {
+    padding: 0.05rem 0;
+    border-bottom: 1px solid #f1f3f5;
+    word-break: break-word;
+}
+
+.log-info {
+    color: #495057;
+}
+
+.log-success {
+    color: #146c43;
+}
+
+.log-warn {
+    color: #997404;
+}
+
+.log-error {
+    color: #b02a37;
+    font-weight: 600;
+}
+
+@media (max-width: 575.98px) {
+    .metric-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    }
+
+    .step-strip {
+        font-size: 0.78rem;
+    }
+}
