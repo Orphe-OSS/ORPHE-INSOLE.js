@@ -33,10 +33,14 @@
           </div>
           <div class="toolkit-cluster" aria-label="ORPHE INSOLE 接続" data-i18n-aria-label="toolkitLabel">
             <div id="toolkit0" class="toolkit-slot"></div>
+            <div id="toolkit1" class="toolkit-slot"></div>
           </div>
         </div>
         <p class="lead-copy" data-i18n="leadCopy">
-          INSOLE 1台を接続し、FIFO（端末内バッファ）で収録して、serialの連続性から欠損があったかどうかを確認しCSVを保存します。
+          INSOLE を1台または2台（左右同時）接続し、FIFO（端末内バッファ）で収録して、serialの連続性から欠損があったかどうかをデバイスごとに確認しCSVを保存します。
+        </p>
+        <p class="lead-note" data-i18n="dualHint">
+          2台つなぐと同時収録します。片側だけ欠損が出ることがあるため、1台での結果と見比べてください。
         </p>
       </div>
     </div>
@@ -117,29 +121,55 @@
     </section>
 
     <section class="graphs-section" aria-label="収録の可視化" data-i18n-aria-label="graphsLabel">
-      <div class="chart-card">
+      <div class="chart-card device-card" data-device="0">
         <div class="chart-toolbar">
           <strong class="chart-title">
             <span data-i18n="continuityKicker">SERIAL CONTINUITY</span>
-            <b data-i18n="continuityTitle">serialの連続性</b>
+            <b class="device-name" id="continuity-name-0">INSOLE 01</b>
           </strong>
           <div class="chart-meta">
             <div class="chart-legend" aria-label="連続性グラフ凡例" data-i18n-aria-label="continuityLegendLabel">
               <span><i class="legend-line received"></i> <span data-i18n="legendReceived">received</span></span>
               <span><i class="legend-line missing"></i> <span data-i18n="legendMissing">missing</span></span>
             </div>
-            <span id="continuity-rate">missing 0 / expected 0</span>
+            <span id="continuity-rate-0">missing 0 / expected 0</span>
           </div>
         </div>
-        <canvas id="timeline-canvas" width="1200" height="120"
+        <canvas id="timeline-canvas-0" width="1200" height="120"
           aria-label="回収したserialを緑、欠損したserialを赤で示す横方向のタイムライン"
           data-i18n-aria-label="continuityCanvasLabel"></canvas>
-        <p class="chart-footnote" id="timeline-caption" data-i18n="continuityEmpty">
+        <p class="chart-footnote" id="timeline-caption-0" data-i18n="continuityEmpty">
           収録するとここに serial の連続性を表示します
         </p>
-        <div class="missing-ranges" id="missing-ranges-wrap">
+        <div class="missing-ranges clean" id="missing-ranges-wrap-0">
           <strong data-i18n="missingRangesLabel">欠損range</strong>
-          <span class="mono" id="missing-ranges" data-i18n="missingRangesNone">なし</span>
+          <span class="mono" id="missing-ranges-0" data-i18n="missingRangesNone">なし</span>
+        </div>
+      </div>
+
+      <div class="chart-card device-card" data-device="1" hidden>
+        <div class="chart-toolbar">
+          <strong class="chart-title">
+            <span data-i18n="continuityKicker">SERIAL CONTINUITY</span>
+            <b class="device-name" id="continuity-name-1">INSOLE 02</b>
+          </strong>
+          <div class="chart-meta">
+            <div class="chart-legend" aria-label="連続性グラフ凡例" data-i18n-aria-label="continuityLegendLabel">
+              <span><i class="legend-line received"></i> <span data-i18n="legendReceived">received</span></span>
+              <span><i class="legend-line missing"></i> <span data-i18n="legendMissing">missing</span></span>
+            </div>
+            <span id="continuity-rate-1">missing 0 / expected 0</span>
+          </div>
+        </div>
+        <canvas id="timeline-canvas-1" width="1200" height="120"
+          aria-label="回収したserialを緑、欠損したserialを赤で示す横方向のタイムライン"
+          data-i18n-aria-label="continuityCanvasLabel"></canvas>
+        <p class="chart-footnote" id="timeline-caption-1" data-i18n="continuityEmpty">
+          収録するとここに serial の連続性を表示します
+        </p>
+        <div class="missing-ranges clean" id="missing-ranges-wrap-1">
+          <strong data-i18n="missingRangesLabel">欠損range</strong>
+          <span class="mono" id="missing-ranges-1" data-i18n="missingRangesNone">なし</span>
         </div>
       </div>
 
@@ -151,20 +181,15 @@
           </strong>
           <div class="chart-meta">
             <div class="chart-legend" aria-label="生データグラフ凡例" data-i18n-aria-label="liveLegendLabel">
-              <span><i class="legend-line pressure"></i> <span data-i18n="legendPressure">圧力合計</span></span>
-              <span><i class="legend-line acc"></i> <span data-i18n="legendAcc">加速度ノルム</span></span>
+              <span><i class="legend-line device0"></i> <span class="device-name" id="live-name-0">INSOLE 01</span></span>
+              <span><i class="legend-line device1"></i> <span class="device-name" id="live-name-1">INSOLE 02</span></span>
             </div>
             <span id="live-rate"></span>
           </div>
         </div>
         <canvas id="live-canvas" width="1200" height="160"
           aria-label="FIFOで回収した圧力合計と加速度ノルムの推移" data-i18n-aria-label="liveCanvasLabel"></canvas>
-        <div class="live-meta">
-          <span><i data-i18n="liveBatches">バッチ</i><strong id="batch-count">0</strong></span>
-          <span><i data-i18n="liveBatchSize">直近バッチ</i><strong id="batch-size">—</strong></span>
-          <span><i data-i18n="liveBatchGap">バッチ間隔</i><strong id="batch-gap">—</strong></span>
-          <span><i data-i18n="liveLag">現在のlag</i><strong id="live-lag">—</strong></span>
-        </div>
+        <div class="live-meta" id="live-meta"></div>
         <details class="latest-sample-box">
           <summary data-i18n="latestSampleTitle">最新sample</summary>
           <pre class="mono" id="latest-sample">—</pre>
@@ -197,7 +222,8 @@
           <thead>
             <tr>
               <th scope="col" class="parameter-column" data-i18n="tableHeaderMetric">項目</th>
-              <th scope="col" class="value-column" data-i18n="tableHeaderValue">値</th>
+              <th scope="col" class="value-column device-column" id="metric-head-0">INSOLE 01</th>
+              <th scope="col" class="value-column device-column" id="metric-head-1" hidden>INSOLE 02</th>
               <th scope="col" class="meaning-column" data-i18n="tableHeaderMeaning">意味</th>
             </tr>
           </thead>

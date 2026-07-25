@@ -311,6 +311,37 @@
         };
     }
 
+    /**
+     * device_information.mount_position の bit0 から装着位置を返す。
+     * 0 = LEFT / 1 = RIGHT。未取得なら null（表示側で「装着位置不明」にする）。
+     * insoles[0] が左とは限らないため、デバイス番号から推測はしない。
+     */
+    function sideFromMountPosition(mountPosition) {
+        // Number(null) は 0 になってしまうため、未取得は数値化する前に弾く
+        if (mountPosition === null || mountPosition === undefined || mountPosition === '') return null;
+        const value = Number(mountPosition);
+        if (!Number.isFinite(value)) return null;
+        return (Math.trunc(value) & 0b1) === 1 ? 'right' : 'left';
+    }
+
+    /**
+     * 複数デバイスの判定をまとめる。1台でも fail があれば全体 fail、
+     * caution があれば caution。2台走行中の欠損は片側だけに出ることがあるため、
+     * デバイスごとの判定は保持したまま全体判定を返す。
+     */
+    function combineVerdicts(verdicts) {
+        const list = (verdicts || []).filter(Boolean);
+        if (list.length === 0) return { level: 'pass', label: 'PASS', devices: [] };
+        const level = list.some((verdict) => verdict.level === 'fail')
+            ? 'fail'
+            : list.some((verdict) => verdict.level === 'caution') ? 'caution' : 'pass';
+        return {
+            level,
+            label: level === 'fail' ? 'FAIL' : level === 'caution' ? 'WARN' : 'PASS',
+            devices: list,
+        };
+    }
+
     /** 欠損rangeを表示用の文字列にする（多すぎるときは先頭だけ出して残数を添える） */
     function formatMissingRanges(ranges, limit = 20) {
         if (!ranges || ranges.length === 0) return '';
@@ -356,6 +387,8 @@
         buildTimelineBins,
         bufferGuidance,
         spanCoverage,
+        sideFromMountPosition,
+        combineVerdicts,
         evaluateRecording,
         formatMissingRanges,
         extractSerialsFromCsv,

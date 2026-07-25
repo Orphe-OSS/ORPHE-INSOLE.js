@@ -304,6 +304,46 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 30003 }).level, 'pass');
 }
 
+// ── 装着位置（mount_position bit0）とデバイス番号 ─────────────────────────
+{
+    assert.equal(C.sideFromMountPosition(0), 'left');
+    assert.equal(C.sideFromMountPosition(1), 'right');
+    assert.equal(C.sideFromMountPosition(0b10), 'left');    // bit1 は足背/足底なので無視
+    assert.equal(C.sideFromMountPosition(0b11), 'right');
+    // 未取得ならデバイス番号から推測しない（insoles[0] が左とは限らない）
+    assert.equal(C.sideFromMountPosition(null), null);
+    assert.equal(C.sideFromMountPosition(undefined), null);
+    assert.equal(C.sideFromMountPosition('x'), null);
+}
+
+// ── 2台同時: デバイスごとに判定し、全体は最も悪い側に合わせる ────────────────
+{
+    const clean = C.analyzeSerials(Array.from({ length: 500 }, (_, i) => 1000 + i));
+    const lossy = C.analyzeSerials(
+        Array.from({ length: 500 }, (_, i) => 1000 + i).filter((serial) => serial !== 1200)
+    );
+    const pass = C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 10000 });
+    const warn = C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 60000 });
+    const fail = C.evaluateRecording({ analysis: lossy, dropped: 1, durationMs: 10000 });
+
+    assert.equal(C.combineVerdicts([pass, pass]).level, 'pass');
+    assert.equal(C.combineVerdicts([pass, pass]).label, 'PASS');
+    // 片側だけ欠損 → 全体 FAIL（2台走行では片側だけ落ちることがある）
+    assert.equal(C.combineVerdicts([pass, fail]).level, 'fail');
+    assert.equal(C.combineVerdicts([fail, pass]).label, 'FAIL');
+    // caution は fail に負ける
+    assert.equal(C.combineVerdicts([warn, fail]).level, 'fail');
+    assert.equal(C.combineVerdicts([pass, warn]).level, 'caution');
+    // デバイスごとの判定は保持される
+    assert.equal(C.combineVerdicts([pass, fail]).devices.length, 2);
+    assert.equal(C.combineVerdicts([pass, fail]).devices[1].continuity.level, 'fail');
+    // 1台・0台
+    assert.equal(C.combineVerdicts([fail]).level, 'fail');
+    assert.equal(C.combineVerdicts([]).level, 'pass');
+    assert.deepEqual(C.combineVerdicts([]).devices, []);
+    assert.equal(C.combineVerdicts([null, pass]).devices.length, 1);
+}
+
 // ── 空データ ────────────────────────────────────────────────────────────
 {
     const empty = C.analyzeSerials([]);
@@ -381,6 +421,55 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     );
 }
 
+// ── 2台ぶんのCSVを device_id 列つきで1ファイルにまとめられること ───────────
+{
+    const makeSamples = (deviceId, serial) => Array.from({ length: 4 }, (_, packetNumber) => ({
+        serial_number: serial,
+        packet_number: packetNumber,
+        timestamp: serial * 20 + packetNumber * 5,
+        converted_gyro: { x: 1, y: 2, z: 3 },
+        converted_acc: { x: 0, y: 0, z: 1 },
+        press: { values: [deviceId, 2, 3, 4, 5, 6] },
+    }));
+    const makeResult = (deviceId, serials) => ({
+        deviceId,
+        profileId: 'fifo-recording',
+        durationMs: 10000,
+        raw: { samples: serials.flatMap((serial) => makeSamples(deviceId, serial)), truncated: false },
+        step: { rows: [] },
+    });
+
+    const csv0 = insoleToolkitMeasurementToCSV(makeResult(0, [1000, 1001]), 'raw');
+    const csv1 = insoleToolkitMeasurementToCSV(makeResult(1, [5000, 5001]), 'raw');
+    const header = csv0.split('\n')[0];
+    assert.equal(header.split(',')[0], 'device_id');
+
+    // app.js の combinedCsv() と同じ結合手順
+    const rows = [csv0, csv1].flatMap((csv) => csv.split('\n').slice(1)).filter((line) => line.length > 0);
+    const combined = [header, ...rows].join('\n');
+
+    const lines = combined.split('\n');
+    assert.equal(lines.length, 1 + 16);                       // header + 4 serial × 4行
+    assert.equal(lines.filter((line) => line === header).length, 1);   // ヘッダは1行だけ
+    const deviceIds = new Set(lines.slice(1).map((line) => line.split(',')[0]));
+    assert.deepEqual([...deviceIds].sort(), ['0', '1']);
+
+    // 結合しても各デバイスの serial 連続性は独立に数えられる
+    const all = C.extractSerialsFromCsv(combined);
+    assert.equal(all.length, 16);
+    const perDevice = { 0: [], 1: [] };
+    for (const line of lines.slice(1)) {
+        const columns = line.split(',');
+        perDevice[columns[0]].push(Number(columns[3]));
+    }
+    for (const id of ['0', '1']) {
+        const analysis = C.analyzeSerials(perDevice[id]);
+        assert.equal(analysis.expected, 2);
+        assert.equal(analysis.received, 2);
+        assert.equal(analysis.missing, 0);
+    }
+}
+
 // ── ページ側の実装が公開APIを再利用していること（FIFO再実装の防止） ────────
 {
     const app = read('app.js');
@@ -388,7 +477,18 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(app, /getInsoleToolkitSession\(/);
     // setup() を忘れると hashUUID が空で接続時に serviceUUID 参照で落ちる
     // （buildInsoleToolkit は simulator 指定時以外 setup() を呼ばない）。実機で踏んだので固定する。
-    assert.match(app, /insoles\[DEVICE_ID\]\.setup\(\)/);
+    assert.match(app, /root\.insoles\[id\]\.setup\(\)/);
+    // 2台ぶんの Toolkit を作り、収録は接続中の全デバイスで同時に開始・停止する
+    assert.match(app, /const DEVICE_IDS = \[0, 1\]/);
+    assert.match(app, /for \(const id of DEVICE_IDS\) installDevice\(id\)/);
+    assert.match(app, /Promise\.allSettled\(ids\.map\(\(id\) => device\(id\)\.session\.startMeasurement/);
+    assert.match(app, /Promise\.allSettled\(\s*ids\.map\(\(id\) => device\(id\)\.session\.stopMeasurement/);
+    // 左右は mount_position から判定する（デバイス番号から推測しない）
+    assert.match(app, /C\.sideFromMountPosition\(mountPositionOf\(id\)\)/);
+    // 全体判定はデバイスごとの判定を合成する
+    assert.match(app, /C\.combineVerdicts\(/);
+    // 2台ぶんのCSVは device_id 列つきで1ファイルにまとめる
+    assert.match(app, /function combinedCsv\(\)/);
     assert.match(app, /startMeasurement\(\{[\s\S]*?profile: "fifo-recording"/);
     assert.match(app, /stopMeasurement\(/);
     assert.match(app, /insoleToolkitMeasurementToCSV\(result, "raw"\)/);
@@ -397,7 +497,7 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.doesNotMatch(app, /createGetSensorDataRequest|0x0B|SUB_GET_DATA/);
     // CSV ボタンは stop/drain 完了まで無効
     assert.match(app, /csvButton\.disabled = true/);
-    // ライブ表示・ログは固定長バッファ
+    // ライブ表示・ログは固定長バッファ（デバイスごと）
     assert.match(app, /LIVE_HISTORY_SIZE/);
     assert.match(app, /MAX_LOG_ENTRIES/);
     // Bluetooth chooser のキャンセルを error 表示にしない
@@ -414,6 +514,7 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(html, /data-lang-button="en"/);
     assert.match(html, /class="eyebrow"/);
     assert.match(html, /id="toolkit0" class="toolkit-slot"/);
+    assert.match(html, /id="toolkit1" class="toolkit-slot"/);
     // 操作 → 設定ガイド → 可視化 → 結果 → 解説 → コード → ログ → footer の順
     const order = [
         'class="control-strip"',
@@ -438,9 +539,13 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
         'table-frame', 'notify-strip', 'scope-note', 'code-card']) {
         assert.ok(html.includes(needle), `index.html に ${needle} がない`);
     }
-    // 数千serialをDOM化せず Canvas で描く
-    assert.match(html, /<canvas id="timeline-canvas"/);
+    // 数千serialをDOM化せず Canvas で描く（デバイスごとに1本）
+    assert.match(html, /<canvas id="timeline-canvas-0"/);
+    assert.match(html, /<canvas id="timeline-canvas-1"/);
     assert.match(html, /<canvas id="live-canvas"/);
+    // 2台目のカード・列は既定で隠し、接続時に出す
+    assert.match(html, /class="chart-card device-card" data-device="1" hidden/);
+    assert.match(html, /id="metric-head-1" hidden/);
     // 結果テーブルは app.js が i18n ラベルで組み立てる
     assert.match(html, /id="metric-table-body"/);
     // 静的テキストは i18n キー経由（ハードコードした日本語だけの画面にしない）
@@ -501,6 +606,18 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(i18n.translations.ja.fifoCardBody, /Step Analysisと同時に取得できません/);
     assert.match(i18n.translations.en.fifoCardBody, /No quaternion/);
     assert.match(i18n.translations.en.fifoCardBody, /cannot run together with Step Analysis/);
+
+    // 2台同時のときの注意（片側だけ欠損しうる）が両言語にある
+    assert.match(i18n.translations.ja.cautionDualLoad, /片側だけに欠損が出た場合/);
+    assert.match(i18n.translations.ja.cautionDualLoad, /1台収録と比べ/);
+    assert.match(i18n.translations.en.cautionDualLoad, /loss appeared on only one side/);
+    assert.match(i18n.translations.en.cautionDualLoad, /single-device run/);
+    // 左右が同じ mount position のときの警告
+    assert.match(i18n.translations.ja.cautionSameSide, /同じ装着位置/);
+    assert.match(i18n.translations.en.cautionSameSide, /same mount position/);
+    // デバイス名は L / R を添えられる
+    assert.equal(i18n.t('deviceLabel', { n: 1 }), 'INSOLE 01');
+    assert.equal(i18n.t('deviceLabelWithSide', { n: 2, side: i18n.t('sideRight') }), 'INSOLE 02 (R)');
 
     // 医療・診断を断定せず免責を明記
     for (const language of ['ja', 'en']) {

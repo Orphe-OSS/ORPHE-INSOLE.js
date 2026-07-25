@@ -37,7 +37,7 @@ ORPHE-INSOLE.js/
 │   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
 │   ├── VISUALIZE/             # センサ可視化（推奨スターター）
-│   ├── fifo-guide/            # FIFO収録の入門（初心者向け・1台・欠損可視化）
+│   ├── fifo-guide/            # FIFO収録の入門（初心者向け・1〜2台・欠損可視化）
 │   ├── fifo-vs-realtime/      # 通常(push)/FIFO(pull)の実測比較
 │   ├── showcase/              # 製品紹介ショーケース（デモ再生つき）
 │   ├── sensor-dashboard/      # 2台同時ダッシュボード
@@ -685,7 +685,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | ジェスチャ楽器 | examples/music-shoe | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、イベントルーパー、加算残光ビジュアライザ |
 | ジェスチャ収録 | examples/music-shoe/lab.html | ラベル付きCSV記録（しきい値設計用） |
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
-| FIFO入門（初心者向け） | examples/fifo-guide | `fifo-recording` プロファイル + startMeasurement/stopMeasurement、drain待ちUI、約30秒バッファの明示、serial continuity（Canvas集約 + 欠損range）、dropped と missing の区別、CSV照合 |
+| FIFO入門（初心者向け） | examples/fifo-guide | `fifo-recording` プロファイル + startMeasurement/stopMeasurement、drain待ちUI、約30秒バッファの明示、serial continuity（Canvas集約 + 欠損range）、dropped と missing の区別、CSV照合、1〜2台同時収録のデバイス別比較 |
 | 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 

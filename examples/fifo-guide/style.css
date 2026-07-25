@@ -173,6 +173,14 @@ h1 span {
   font-size: 0.95rem;
 }
 
+.lead-note {
+  max-width: 660px;
+  margin: 6px 0 0;
+  color: var(--signal);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .toolkit-cluster {
   display: flex;
   align-items: stretch;
@@ -559,6 +567,14 @@ h1 span {
   box-shadow: var(--shadow);
 }
 
+.device-card[data-device="0"] {
+  box-shadow: var(--shadow), inset 3px 0 0 #7fa4ff;
+}
+
+.device-card[data-device="1"] {
+  box-shadow: var(--shadow), inset 3px 0 0 #f6c860;
+}
+
 .chart-toolbar {
   display: flex;
   align-items: center;
@@ -618,11 +634,11 @@ h1 span {
   background: #ff7559;
 }
 
-.legend-line.pressure {
+.legend-line.device0 {
   background: #7fa4ff;
 }
 
-.legend-line.acc {
+.legend-line.device1 {
   background: #f6c860;
 }
 
@@ -681,9 +697,14 @@ h1 span {
 
 .live-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   padding: 8px 2px 0;
+}
+
+.live-meta .live-meta-name {
+  font-style: normal;
+  font-weight: 900;
 }
 
 .live-meta > span {
@@ -884,15 +905,28 @@ h1 span {
 }
 
 .parameter-column {
-  width: 26%;
+  width: 22%;
 }
 
 .value-column {
-  width: 26%;
+  width: 19%;
 }
 
 .meaning-column {
-  width: 48%;
+  width: 40%;
+}
+
+/* デバイス列は接続台数に応じて hidden 属性で出し入れする */
+.metric-table .device-column {
+  background: #16222b;
+}
+
+.metric-table td[data-device="0"] {
+  box-shadow: inset 2px 0 0 rgba(127, 164, 255, 0.35);
+}
+
+.metric-table td[data-device="1"] {
+  box-shadow: inset 2px 0 0 rgba(246, 200, 96, 0.35);
 }
 
 .metric-table tbody th {
@@ -920,17 +954,17 @@ h1 span {
   line-height: 1.5;
 }
 
-.metric-table tr.level-ok td.metric-value {
+.metric-table td.level-ok {
   box-shadow: inset 3px 0 0 var(--ok);
   color: #0b7a69;
 }
 
-.metric-table tr.level-warn td.metric-value {
+.metric-table td.level-warn {
   box-shadow: inset 3px 0 0 var(--warn);
   color: #8a6a09;
 }
 
-.metric-table tr.level-bad td.metric-value {
+.metric-table td.level-bad {
   box-shadow: inset 3px 0 0 var(--bad);
   color: #c0392b;
 }
@@ -1194,10 +1228,6 @@ footer {
 
   .settings-guide p span {
     white-space: normal;
-  }
-
-  .live-meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chart-toolbar,

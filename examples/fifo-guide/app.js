@@ -2,15 +2,18 @@
   "use strict";
 
   /**
-   * FIFO Guide — 初めてFIFOを使う人向けの実機example。
+   * FIFO Guide — 初めてFIFOを使う人向けの実機example。1台でも2台（左右同時）でも収録できる。
    *
    * FIFOプロトコル（serial指定・再要求・drain）はこのファイルでは一切実装しない。
-   *   - src/InsoleFifo.js    … FIFO収集ループ本体
+   *   - src/InsoleFifo.js    … FIFO収集ループ本体（デバイスごとに1インスタンス）
    *   - src/InsoleToolkit.js … 接続UI / 'fifo-recording' プロファイル /
    *                            startMeasurement()・stopMeasurement()（drain待ち込み）/
    *                            insoleToolkitMeasurementToCSV()
-   * 判定ロジック（serial連続性・欠損range・timeline集約・30秒バッファ判定）は
-   * ./continuity.js に純関数として切り出し、Node で単体テストしている。
+   * 判定ロジック（serial連続性・欠損range・timeline集約・30秒バッファ判定・
+   * 複数デバイスの判定合成）は ./continuity.js に純関数として切り出し、Node で単体テストしている。
+   *
+   * 2台同時収録はホスト側の Bluetooth 負荷が上がり、片側だけ欠損することがある。
+   * デバイスごとに独立して集計・表示し、全体判定は最も悪い側に合わせる。
    */
 
   const C = root.FifoGuideContinuity;
@@ -19,14 +22,14 @@
   if (!C) throw new Error("fifo-guide: continuity.js must be loaded before app.js");
   if (!I18n) throw new Error("fifo-guide: i18n.js must be loaded before app.js");
 
-  const DEVICE_ID = 0;
+  const DEVICE_IDS = [0, 1];
   const MAX_LOG_ENTRIES = 400;
-  const LIVE_HISTORY_SIZE = 600;   // 固定長リングバッファ（長時間開いてもメモリが増えない）
+  const LIVE_HISTORY_SIZE = 600;   // デバイスごとの固定長リングバッファ
   const MAX_SAMPLES = 120000;      // 600 s 相当。超えたら結果に truncated 注意を出す
   const TIMELINE_BINS = C.DEFAULT_BIN_COUNT;
   const BAR_FULL_SCALE_MS = 60000; // バッファガイドバーの右端
   const PRESSURE_FULL_SCALE = 20000;
-  const ACC_FULL_SCALE = 4;        // G
+  const DEVICE_COLORS = ["#7fa4ff", "#f6c860"];
 
   /** 結果テーブルの行定義。key = i18n キー、note = 説明の i18n キー */
   const METRIC_ROWS = [
@@ -48,62 +51,75 @@
 
   const dom = {};
   const logEntries = [];
+
+  function createDeviceState(id) {
+    return {
+      id,
+      session: null,
+      connected: false,
+      side: null,             // 'left' | 'right' | null（mount_position 未取得）
+      inRun: false,           // 現在の収録に参加しているか
+      drainStartedAt: 0,
+      drainMs: null,
+      drainRecovered: 0,
+      maxLag: 0,
+      lag: 0,
+      droppedLive: 0,         // onDataLoss(info.cumulative) の最新値
+      droppedTotal: null,     // onStopped(info.dropped) = この収録の回復不能ロス累計
+      batchCount: 0,
+      lastBatchAt: 0,
+      lastBatchGapMs: null,
+      lastBatchSize: 0,
+      latestSample: null,
+      live: { pressure: new Float32Array(LIVE_HISTORY_SIZE), count: 0, head: 0 },
+      result: null,
+      analysis: null,
+      verdict: null,
+      coverage: null,
+      dropped: 0,
+      cautions: [],
+      csv: ""
+    };
+  }
+
   const state = {
     phase: "idle",           // idle | ready | preparing | recording | draining | done
-    session: null,
-    connected: false,
     recording: false,
     plannedMs: 30000,
     startedAt: 0,
     stopTimer: null,
     tickTimer: null,
-    drainStartedAt: 0,
-    drainMs: null,
-    drainRecovered: 0,
-    maxLag: 0,
-    lag: 0,
-    droppedLive: 0,          // onDataLoss(info.cumulative) の最新値
-    droppedTotal: null,      // onStopped(info.dropped) = この収録の回復不能ロス累計
-    batchCount: 0,
-    lastBatchAt: 0,
-    lastBatchGapMs: null,
-    lastBatchSize: 0,
-    latestSample: null,
-    live: {
-      pressure: new Float32Array(LIVE_HISTORY_SIZE),
-      acc: new Float32Array(LIVE_HISTORY_SIZE),
-      count: 0,
-      head: 0
-    },
-    result: null,
-    analysis: null,
-    verdict: null,
-    coverage: null,
-    dropped: 0,
-    cautions: [],
-    csv: "",
+    devices: DEVICE_IDS.map(createDeviceState),
+    runDeviceIds: [],        // 直近の収録に参加したデバイス
+    overallVerdict: null,
     lastUpdateAt: null,
     sourceCopy: null,
     renderQueued: false
   };
 
   const t = (key, params) => I18n.t(key, params);
+  const device = (id) => state.devices[id];
+  const connectedIds = () => DEVICE_IDS.filter((id) => device(id).connected);
+  const shownIds = () => (state.runDeviceIds.length > 0 ? state.runDeviceIds : connectedIds());
 
   // ── 起動 ────────────────────────────────────────────────────────────
   root.document.addEventListener("DOMContentLoaded", () => {
     cacheDom();
     buildMetricTable();
+    buildLiveMeta();
     wireControls();
     renderEnvLine();
-    installDevice();
+    for (const id of DEVICE_IDS) installDevice(id);
     setPhase("idle");
-    drawTimeline([]);
+    for (const id of DEVICE_IDS) drawTimeline(id, []);
     renderLive();
     log("info", "logPageReady");
 
     // 言語切替時は、動的に組み立てた文字列も作り直す
     root.addEventListener("fifo-guide:languagechange", () => {
       buildMetricTable();
+      buildLiveMeta();
+      refreshDeviceNames();
       refreshSourceCopy();
       renderResult();
       renderLive();
@@ -116,22 +132,61 @@
 
   function cacheDom() {
     const ids = [
-      "toolkit0", "source-badge", "source-title", "source-detail",
+      "toolkit0", "toolkit1", "source-badge", "source-title", "source-detail",
       "duration-select", "duration-custom", "record-button", "csv-button", "json-button",
       "elapsed-text", "buffer-guide-text", "buffer-bar-cursor", "buffer-bar-mark",
-      "timeline-canvas", "timeline-caption", "continuity-rate",
-      "missing-ranges", "missing-ranges-wrap",
-      "live-canvas", "live-rate", "batch-count", "batch-size", "batch-gap", "live-lag",
-      "latest-sample",
+      "live-canvas", "live-rate", "live-meta", "latest-sample",
       "result-card", "result-verdict", "result-summary", "result-cautions",
-      "metric-table-body", "last-update-time",
+      "metric-table-body", "metric-head-0", "metric-head-1", "last-update-time",
       "event-log", "env-line", "copy-log-button", "clear-log-button"
     ];
     for (const id of ids) dom[camel(id)] = root.document.getElementById(id);
+    // デバイス別要素
+    dom.deviceCards = DEVICE_IDS.map((id) => root.document.querySelector(`.device-card[data-device="${id}"]`));
+    dom.timelineCanvas = DEVICE_IDS.map((id) => root.document.getElementById(`timeline-canvas-${id}`));
+    dom.timelineCaption = DEVICE_IDS.map((id) => root.document.getElementById(`timeline-caption-${id}`));
+    dom.continuityRate = DEVICE_IDS.map((id) => root.document.getElementById(`continuity-rate-${id}`));
+    dom.missingRanges = DEVICE_IDS.map((id) => root.document.getElementById(`missing-ranges-${id}`));
+    dom.missingRangesWrap = DEVICE_IDS.map((id) => root.document.getElementById(`missing-ranges-wrap-${id}`));
+    dom.continuityName = DEVICE_IDS.map((id) => root.document.getElementById(`continuity-name-${id}`));
+    dom.liveName = DEVICE_IDS.map((id) => root.document.getElementById(`live-name-${id}`));
+    dom.metricHead = [dom.metricHead0, dom.metricHead1];
   }
 
   function camel(id) {
     return id.replace(/-([a-z0-9])/g, (_, character) => character.toUpperCase());
+  }
+
+  /** デバイス表示名。mount_position が取れていれば L / R も添える */
+  function deviceLabel(id) {
+    const side = device(id).side;
+    if (!side) return t("deviceLabel", { n: id + 1 });
+    return t("deviceLabelWithSide", {
+      n: id + 1,
+      side: t(side === "right" ? "sideRight" : "sideLeft")
+    });
+  }
+
+  function refreshDeviceNames() {
+    for (const id of DEVICE_IDS) {
+      const label = deviceLabel(id);
+      if (dom.continuityName[id]) dom.continuityName[id].textContent = label;
+      if (dom.liveName[id]) dom.liveName[id].textContent = label;
+      if (dom.metricHead[id]) dom.metricHead[id].textContent = label;
+    }
+  }
+
+  /** 表示するデバイス列・カードを、収録に参加した（または接続済みの）デバイスに合わせる */
+  function syncDeviceVisibility() {
+    const visible = shownIds();
+    for (const id of DEVICE_IDS) {
+      const show = visible.includes(id) || id === 0;
+      if (dom.deviceCards[id]) dom.deviceCards[id].hidden = !show;
+      if (dom.metricHead[id]) dom.metricHead[id].hidden = !show;
+      root.document.querySelectorAll(`#metric-table-body td[data-device="${id}"]`)
+        .forEach((cell) => { cell.hidden = !show; });
+    }
+    refreshDeviceNames();
   }
 
   /** 結果テーブルを i18n ラベルで組み立てる（言語切替時は値を保ったまま作り直す） */
@@ -141,28 +196,49 @@
     const previous = new Map();
     body.querySelectorAll("tr").forEach((row) => {
       previous.set(row.dataset.metric, {
-        value: row.querySelector(".metric-value").textContent,
-        level: row.className
+        values: DEVICE_IDS.map((id) => {
+          const cell = row.querySelector(`td[data-device="${id}"]`);
+          return cell ? { text: cell.textContent, level: cell.className } : null;
+        })
       });
     });
     body.innerHTML = "";
     for (const metric of METRIC_ROWS) {
       const row = root.document.createElement("tr");
       row.dataset.metric = metric.key;
-      const restored = previous.get(metric.key);
-      if (restored) row.className = restored.level;
       const label = root.document.createElement("th");
       label.scope = "row";
       label.textContent = t(metric.key);
-      const value = root.document.createElement("td");
-      value.className = "metric-value";
-      value.textContent = restored ? restored.value : t("valueEmpty");
+      row.appendChild(label);
+      for (const id of DEVICE_IDS) {
+        const cell = root.document.createElement("td");
+        cell.dataset.device = String(id);
+        const restored = previous.get(metric.key);
+        const saved = restored ? restored.values[id] : null;
+        cell.className = saved ? saved.level : "metric-value";
+        cell.textContent = saved ? saved.text : t("valueEmpty");
+        row.appendChild(cell);
+      }
       const note = root.document.createElement("td");
       note.className = "metric-note";
       note.textContent = t(metric.note);
-      row.append(label, value, note);
+      row.appendChild(note);
       body.appendChild(row);
     }
+    syncDeviceVisibility();
+  }
+
+  function buildLiveMeta() {
+    const container = dom.liveMeta;
+    if (!container) return;
+    container.innerHTML = "";
+    for (const id of DEVICE_IDS) {
+      const cell = root.document.createElement("span");
+      cell.dataset.device = String(id);
+      cell.innerHTML = `<i class="live-meta-name"></i><strong></strong>`;
+      container.appendChild(cell);
+    }
+    renderLiveMeta();
   }
 
   function wireControls() {
@@ -185,39 +261,42 @@
       renderLog();
     });
     root.addEventListener("resize", () => {
-      drawTimeline(state.analysis ? C.buildTimelineBins(state.analysis, TIMELINE_BINS) : []);
+      for (const id of DEVICE_IDS) {
+        const analysis = device(id).analysis;
+        drawTimeline(id, analysis ? C.buildTimelineBins(analysis, TIMELINE_BINS) : []);
+      }
       drawLive();
     });
     updateBufferGuide(0);
   }
 
-  function installDevice() {
+  function installDevice(id) {
     if (typeof root.buildInsoleToolkit !== "function" || !Array.isArray(root.insoles)) {
       setSourceCopy("error", "toolkitLoadErrorTitle", "toolkitLoadErrorDetail");
       return;
     }
-    root.buildInsoleToolkit(dom.toolkit0, "INSOLE 01", DEVICE_ID, {
+    root.buildInsoleToolkit(dom[`toolkit${id}`], `INSOLE 0${id + 1}`, id, {
       // 接続時は Realtime。収録開始時に 'fifo-recording' へ切り替え、停止後に戻す。
       profile: "realtime-full",
       autoReconnect: true,
       reconnectIntervalMs: 2000,
-      onStateChange: handleSessionState,
-      onError: handleSessionError,
+      onStateChange(snapshot) { handleSessionState(id, snapshot); },
+      onError(error) { handleSessionError(id, error); },
       fifo: {
         startupDelayMs: 1000,
         drainTimeoutMs: 5000,
-        onSamples: handleFifoSamples,
-        onProgress: handleFifoProgress,
-        onDataLoss: handleFifoDataLoss,
-        onStopped: handleFifoStopped,
-        onAnomaly: handleFifoAnomaly,
-        onError: handleSessionError
+        onSamples(deviceId, samples) { handleFifoSamples(deviceId, samples); },
+        onProgress(info) { handleFifoProgress(id, info); },
+        onDataLoss(info) { handleFifoDataLoss(id, info); },
+        onStopped(info) { handleFifoStopped(id, info); },
+        onAnomaly(info) { handleFifoAnomaly(id, info); },
+        onError(error) { handleSessionError(id, error); }
       }
     });
-    state.session = root.getInsoleToolkitSession(DEVICE_ID);
+    device(id).session = root.getInsoleToolkitSession(id);
     // buildInsoleToolkit() は setup() を呼ばない（simulator 指定時のみ内部で呼ぶ）。
     // 未呼び出しだと hashUUID が空のままで、接続時に serviceUUID 参照で失敗する。
-    root.insoles[DEVICE_ID].setup();
+    root.insoles[id].setup();
   }
 
   // ── 計測時間とバッファガイド ─────────────────────────────────────────
@@ -248,38 +327,62 @@
       : t("bufferOverWindow", params);
   }
 
-  // ── 収録 ────────────────────────────────────────────────────────────
+  // ── 収録（接続中の全デバイスを同時に開始・停止する） ──────────────────
   async function startRecording() {
-    if (!state.session || !state.connected) {
+    const ids = connectedIds();
+    if (ids.length === 0) {
       log("warn", "logNotConnected");
       return;
     }
     state.plannedMs = selectedDurationMs();
-    resetRunState();
+    resetRunState(ids);
     setPhase("preparing");
-    log("info", "logPreparing", { seconds: state.plannedMs / 1000 });
+    log("info", ids.length > 1 ? "logPreparingDual" : "logPreparing", {
+      seconds: state.plannedMs / 1000,
+      count: ids.length
+    });
 
-    try {
-      await state.session.startMeasurement({
-        profile: "fifo-recording",
-        restoreProfile: true,
-        maxSamples: MAX_SAMPLES,
-        metadata: {
-          page: "fifo-guide",
-          plannedDurationMs: state.plannedMs,
-          platform: root.navigator.platform
-        }
-      });
-    } catch (error) {
-      setPhase(state.connected ? "ready" : "idle");
-      log("error", "logStartFailed", { message: describeError(error) });
+    const started = await Promise.allSettled(ids.map((id) => device(id).session.startMeasurement({
+      profile: "fifo-recording",
+      restoreProfile: true,
+      maxSamples: MAX_SAMPLES,
+      metadata: {
+        page: "fifo-guide",
+        plannedDurationMs: state.plannedMs,
+        deviceCount: ids.length,
+        platform: root.navigator.platform
+      }
+    })));
+
+    const failed = [];
+    started.forEach((outcome, index) => {
+      const id = ids[index];
+      if (outcome.status === "fulfilled") {
+        device(id).inRun = true;
+      } else {
+        failed.push(id);
+        log("error", "logStartFailedDevice", {
+          device: deviceLabel(id),
+          message: describeError(outcome.reason)
+        });
+      }
+    });
+    const active = ids.filter((id) => device(id).inRun);
+    if (active.length === 0) {
+      state.runDeviceIds = [];
+      setPhase(connectedIds().length > 0 ? "ready" : "idle");
       return;
+    }
+    if (failed.length > 0) {
+      // 一部だけ開始できたときは、開始できたデバイスだけで続行する
+      state.runDeviceIds = active;
+      syncDeviceVisibility();
     }
 
     state.recording = true;
     state.startedAt = Date.now();
     setPhase("recording");
-    log("success", "logStarted");
+    log("success", "logStarted", { count: active.length });
     state.tickTimer = root.setInterval(onTick, 100);
     state.stopTimer = root.setTimeout(() => stopRecording("duration"), state.plannedMs);
   }
@@ -294,26 +397,43 @@
     if (!state.recording) return;
     state.recording = false;
     clearTimers();
-    state.drainStartedAt = Date.now();
+    const ids = state.runDeviceIds.slice();
+    const stoppedAt = Date.now();
+    for (const id of ids) device(id).drainStartedAt = stoppedAt;
     setPhase("draining");
     log("info", reason === "duration" ? "logStoppedByDuration" : "logStoppedManually");
 
-    let result = null;
-    try {
-      result = await state.session.stopMeasurement({ reason });
-    } catch (error) {
-      log("error", "logStopFailed", { message: describeError(error) });
-      // Toolkit はプロファイル復元に失敗しても直近の計測結果を保持する
-      result = state.session.lastMeasurement || null;
-    }
-    if (state.drainMs === null) state.drainMs = Date.now() - state.drainStartedAt;
+    const results = await Promise.allSettled(
+      ids.map((id) => device(id).session.stopMeasurement({ reason }))
+    );
 
-    if (!result) {
-      setPhase(state.connected ? "ready" : "idle");
-      log("error", "logNoResult");
+    let finalized = 0;
+    results.forEach((outcome, index) => {
+      const id = ids[index];
+      const entry = device(id);
+      if (entry.drainMs === null) entry.drainMs = Date.now() - entry.drainStartedAt;
+      let result = outcome.value || null;
+      if (outcome.status === "rejected") {
+        log("error", "logStopFailedDevice", {
+          device: deviceLabel(id),
+          message: describeError(outcome.reason)
+        });
+        // Toolkit はプロファイル復元に失敗しても直近の計測結果を保持する
+        result = entry.session.lastMeasurement || null;
+      }
+      if (!result) {
+        log("error", "logNoResultDevice", { device: deviceLabel(id) });
+        return;
+      }
+      finalizeDeviceResult(id, result);
+      finalized += 1;
+    });
+
+    if (finalized === 0) {
+      setPhase(connectedIds().length > 0 ? "ready" : "idle");
       return;
     }
-    finalizeResult(result);
+    finalizeRun();
     setPhase("done");
   }
 
@@ -322,77 +442,68 @@
     if (state.tickTimer) { root.clearInterval(state.tickTimer); state.tickTimer = null; }
   }
 
-  function resetRunState() {
-    state.drainStartedAt = 0;
-    state.drainMs = null;
-    state.drainRecovered = 0;
-    state.maxLag = 0;
-    state.lag = 0;
-    state.droppedLive = 0;
-    state.droppedTotal = null;
-    state.batchCount = 0;
-    state.lastBatchAt = 0;
-    state.lastBatchGapMs = null;
-    state.lastBatchSize = 0;
-    state.latestSample = null;
-    state.live.count = 0;
-    state.live.head = 0;
-    state.result = null;
-    state.analysis = null;
-    state.verdict = null;
-    state.coverage = null;
-    state.dropped = 0;
-    state.cautions = [];
-    state.csv = "";
+  function resetRunState(ids) {
+    state.runDeviceIds = ids.slice();
+    state.overallVerdict = null;
+    for (const id of DEVICE_IDS) {
+      const entry = device(id);
+      const wasSession = entry.session;
+      const connected = entry.connected;
+      const side = entry.side;
+      Object.assign(entry, createDeviceState(id), { session: wasSession, connected, side });
+      entry.inRun = false;
+    }
     dom.elapsedText.textContent = "0.0 s";
     dom.csvButton.disabled = true;
     dom.jsonButton.disabled = true;
     resetMetricTable();
+    syncDeviceVisibility();
     renderResult();
-    drawTimeline([]);
+    for (const id of DEVICE_IDS) drawTimeline(id, []);
     renderLive();
   }
 
   function resetMetricTable() {
-    dom.metricTableBody.querySelectorAll("tr").forEach((row) => {
-      row.className = "";
-      row.querySelector(".metric-value").textContent = t("valueEmpty");
+    dom.metricTableBody.querySelectorAll("td[data-device]").forEach((cell) => {
+      cell.className = "metric-value";
+      cell.textContent = t("valueEmpty");
     });
-    dom.continuityRate.textContent = "missing 0 / expected 0";
-    dom.timelineCaption.textContent = t("continuityEmpty");
-    dom.missingRanges.textContent = t("missingRangesNone");
-    dom.missingRangesWrap.className = "missing-ranges clean";
+    for (const id of DEVICE_IDS) {
+      dom.continuityRate[id].textContent = "missing 0 / expected 0";
+      dom.timelineCaption[id].textContent = t("continuityEmpty");
+      dom.missingRanges[id].textContent = t("missingRangesNone");
+      dom.missingRangesWrap[id].className = "missing-ranges clean";
+    }
   }
 
-  // ── FIFO コールバック ────────────────────────────────────────────────
-  function handleFifoSamples(deviceId, samples) {
+  // ── FIFO コールバック（デバイスごと） ─────────────────────────────────
+  function handleFifoSamples(id, samples) {
     if (!Array.isArray(samples) || samples.length === 0) return;
+    const entry = device(id);
     const now = root.performance.now();
-    state.batchCount += 1;
-    state.lastBatchSize = samples.length;
-    if (state.lastBatchAt > 0) state.lastBatchGapMs = now - state.lastBatchAt;
-    state.lastBatchAt = now;
-    state.latestSample = samples[samples.length - 1];
+    entry.batchCount += 1;
+    entry.lastBatchSize = samples.length;
+    if (entry.lastBatchAt > 0) entry.lastBatchGapMs = now - entry.lastBatchAt;
+    entry.lastBatchAt = now;
+    entry.latestSample = samples[samples.length - 1];
     state.lastUpdateAt = new Date();
 
     for (const sample of samples) {
       const press = sample && sample.press && Array.isArray(sample.press.values)
         ? sample.press.values.reduce((sum, value) => sum + (Number(value) || 0), 0)
         : 0;
-      const acc = sample && sample.converted_acc;
-      const norm = acc ? Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z) : 0;
-      state.live.pressure[state.live.head] = press;
-      state.live.acc[state.live.head] = norm;
-      state.live.head = (state.live.head + 1) % LIVE_HISTORY_SIZE;
-      if (state.live.count < LIVE_HISTORY_SIZE) state.live.count += 1;
+      entry.live.pressure[entry.live.head] = press;
+      entry.live.head = (entry.live.head + 1) % LIVE_HISTORY_SIZE;
+      if (entry.live.count < LIVE_HISTORY_SIZE) entry.live.count += 1;
     }
     queueLiveRender();
   }
 
-  function handleFifoProgress(info) {
+  function handleFifoProgress(id, info) {
+    const entry = device(id);
     const lag = Number(info && info.lag) || 0;
-    state.lag = lag;
-    if (lag > state.maxLag) state.maxLag = lag;
+    entry.lag = lag;
+    if (lag > entry.maxLag) entry.maxLag = lag;
     if (info && info.draining) {
       setSourceCopy("draining", "sourceDrainingTitle", "sourceDrainingProgress", {
         detailParams: { collected: info.collected, lag }
@@ -401,31 +512,36 @@
     queueLiveRender();
   }
 
-  function handleFifoDataLoss(info) {
-    state.droppedLive = Number(info && info.cumulative) || state.droppedLive;
-    log("error", "logDataLoss", {
+  function handleFifoDataLoss(id, info) {
+    const entry = device(id);
+    entry.droppedLive = Number(info && info.cumulative) || entry.droppedLive;
+    log("error", "logDataLossDevice", {
+      device: deviceLabel(id),
       dropped: info.dropped,
       cumulative: info.cumulative,
       reason: info.reason
     });
   }
 
-  function handleFifoStopped(info) {
-    state.drainRecovered = Number(info && info.drainRecovered) || 0;
-    state.droppedTotal = Number(info && info.dropped) || 0;
-    if (state.drainStartedAt > 0 && state.drainMs === null) {
-      state.drainMs = Date.now() - state.drainStartedAt;
+  function handleFifoStopped(id, info) {
+    const entry = device(id);
+    entry.drainRecovered = Number(info && info.drainRecovered) || 0;
+    entry.droppedTotal = Number(info && info.dropped) || 0;
+    if (entry.drainStartedAt > 0 && entry.drainMs === null) {
+      entry.drainMs = Date.now() - entry.drainStartedAt;
     }
-    log("info", "logFifoStopped", {
+    log("info", "logFifoStoppedDevice", {
+      device: deviceLabel(id),
       collected: info.collected,
       dropped: info.dropped,
-      recovered: state.drainRecovered
+      recovered: entry.drainRecovered
     });
   }
 
-  function handleFifoAnomaly(info) {
+  function handleFifoAnomaly(id, info) {
     // 到着待ちの再要求は正常動作。記録はするが警告扱いにはしない。
-    log("info", "logReRequest", {
+    log("info", "logReRequestDevice", {
+      device: deviceLabel(id),
       expected: info.expected,
       received: info.received,
       noData: info.noData
@@ -436,39 +552,51 @@
    * 接続状態の遷移は Toolkit の onStateChange 経由で拾う。
    * insole.on* を上書きしないので、Toolkit のヘッダ表示や自動再接続と競合しない。
    */
-  function handleSessionState(snapshot) {
-    const wasConnected = state.connected;
-    state.connected = !!snapshot.connected;
-    if (snapshot.measurementPhase === "draining" && state.drainStartedAt === 0) {
-      state.drainStartedAt = Date.now();
+  function handleSessionState(id, snapshot) {
+    const entry = device(id);
+    const wasConnected = entry.connected;
+    entry.connected = !!snapshot.connected;
+    if (snapshot.measurementPhase === "draining" && entry.drainStartedAt === 0) {
+      entry.drainStartedAt = Date.now();
     }
-    if (state.connected && !wasConnected) {
-      log("success", "logConnected");
-      if (state.phase === "idle") setPhase("ready");
+    if (entry.connected && !wasConnected) {
+      entry.side = C.sideFromMountPosition(mountPositionOf(id));
+      log("success", "logConnectedDevice", { device: deviceLabel(id) });
+      syncDeviceVisibility();
+      if (state.phase === "idle" || state.phase === "ready") setPhase("ready");
     }
-    if (!state.connected && wasConnected) {
-      if (state.recording) {
-        clearTimers();
-        state.recording = false;
-        log("error", "logDisconnectedWhileRecording");
+    if (!entry.connected && wasConnected) {
+      if (state.recording && entry.inRun) {
+        log("error", "logDisconnectedWhileRecording", { device: deviceLabel(id) });
         // 計測ウィンドウを閉じておく。閉じないと activeMeasurement が残り、
         // 再接続後に MEASUREMENT_ACTIVE で次の収録を開始できなくなる。
-        Promise.resolve(state.session.stopMeasurement({ reason: "disconnect" }))
+        Promise.resolve(entry.session.stopMeasurement({ reason: "disconnect" }))
           .catch((error) => log("warn", "logStopAfterDisconnect", { message: describeError(error) }));
+        entry.inRun = false;
+        state.runDeviceIds = state.runDeviceIds.filter((other) => other !== id);
+        if (state.runDeviceIds.length === 0) {
+          state.recording = false;
+          clearTimers();
+        }
       }
-      log("warn", "logDisconnected");
-      setPhase("disconnected");
+      log("warn", "logDisconnectedDevice", { device: deviceLabel(id) });
+      setPhase(connectedIds().length > 0 ? "ready" : "disconnected");
       return;
     }
     applyButtonState();
   }
 
-  function handleSessionError(error) {
+  function mountPositionOf(id) {
+    const insole = Array.isArray(root.insoles) ? root.insoles[id] : null;
+    return insole && insole.device_information ? insole.device_information.mount_position : null;
+  }
+
+  function handleSessionError(id, error) {
     if (isUserCancel(error)) {
       log("info", "logChooserCancelled");
       return;
     }
-    log("error", "logError", { message: describeError(error) });
+    log("error", "logErrorDevice", { device: deviceLabel(id), message: describeError(error) });
     setSourceCopy("error", "sourceErrorTitle", "", { detailRaw: describeError(error) });
   }
 
@@ -486,39 +614,38 @@
   }
 
   // ── 結果の確定 ───────────────────────────────────────────────────────
-  function finalizeResult(result) {
+  function finalizeDeviceResult(id, result) {
+    const entry = device(id);
     const samples = Array.isArray(result.raw && result.raw.samples) ? result.raw.samples : [];
     const analysis = C.analyzeSerials(samples.map((sample) => sample.serial_number));
     // dropped は「収録中に回復不能と判定された累計」。onStopped(info.dropped) が正。
     // result.fifo.dropped は checkpoint 区間の再集計値なので定義が異なる。
-    const dropped = state.droppedTotal !== null
-      ? state.droppedTotal
+    const dropped = entry.droppedTotal !== null
+      ? entry.droppedTotal
       : Math.max(0, Number(result.fifo && result.fifo.dropped) || 0);
     const verdict = C.evaluateRecording({
       analysis,
       missing: analysis.missing,
       dropped,
       durationMs: result.durationMs,
-      maxLag: state.maxLag
+      maxLag: entry.maxLag
     });
-
     // CSVが実際に覆う時間。停止時点で未要求だった分は収録スパンに入らない（missing ではない）
     const coverage = C.spanCoverage(analysis.expected, state.plannedMs);
 
-    state.result = result;
-    state.analysis = analysis;
-    state.verdict = verdict;
-    state.coverage = coverage;
-    state.dropped = dropped;
-    state.csv = samples.length > 0 ? root.insoleToolkitMeasurementToCSV(result, "raw") : "";
-    state.lastUpdateAt = new Date();
+    entry.result = result;
+    entry.analysis = analysis;
+    entry.verdict = verdict;
+    entry.coverage = coverage;
+    entry.dropped = dropped;
+    entry.csv = samples.length > 0 ? root.insoleToolkitMeasurementToCSV(result, "raw") : "";
 
-    state.cautions = verdict.cautions.map((text) => ({ raw: text }));
+    entry.cautions = verdict.cautions.map((text) => ({ raw: text }));
     if (result.raw.truncated) {
-      state.cautions.push({ key: "cautionTruncated", params: { max: MAX_SAMPLES } });
+      entry.cautions.push({ key: "cautionTruncated", params: { max: MAX_SAMPLES } });
     }
     if (coverage.level !== "ok") {
-      state.cautions.push({
+      entry.cautions.push({
         key: "cautionShortSpan",
         params: {
           spanSeconds: (coverage.spanMs / 1000).toFixed(1),
@@ -529,7 +656,7 @@
       });
     }
     if (dropped !== analysis.missing) {
-      state.cautions.push({
+      entry.cautions.push({
         key: "cautionDroppedMismatch",
         params: { dropped, missing: analysis.missing }
       });
@@ -541,10 +668,11 @@
       log("warn", "logSdkMismatch", { sdk: sdkSerial.missing, recomputed: analysis.missing });
     }
     // 保存するCSVから数え直した欠損数と画面表示が一致することを確認する
-    if (state.csv) {
-      const fromCsv = C.analyzeSerials(C.extractSerialsFromCsv(state.csv));
+    if (entry.csv) {
+      const fromCsv = C.analyzeSerials(C.extractSerialsFromCsv(entry.csv));
       const matched = fromCsv.missing === analysis.missing && fromCsv.expected === analysis.expected;
-      log(matched ? "success" : "error", "logCsvCrossCheck", {
+      log(matched ? "success" : "error", "logCsvCrossCheckDevice", {
+        device: deviceLabel(id),
         expected: fromCsv.expected,
         received: fromCsv.received,
         missing: fromCsv.missing,
@@ -552,30 +680,57 @@
       });
     }
 
+    log(verdict.level === "fail" ? "error" : verdict.level === "caution" ? "warn" : "success",
+      "logResultDevice", {
+        device: deviceLabel(id),
+        label: verdict.label,
+        seconds: (result.durationMs / 1000).toFixed(1),
+        samples: samples.length,
+        received: analysis.received,
+        expected: analysis.expected,
+        missing: analysis.missing,
+        dropped,
+        recovered: entry.drainRecovered,
+        drainMs: entry.drainMs,
+        maxLag: entry.maxLag
+      });
+  }
+
+  function finalizeRun() {
+    const ids = state.runDeviceIds.filter((id) => device(id).verdict);
+    state.overallVerdict = C.combineVerdicts(ids.map((id) => device(id).verdict));
+    state.lastUpdateAt = new Date();
+
+    // 2台同時は片側だけ欠損することがある。1台の基準と比べるよう促す。
+    if (ids.length > 1) {
+      const sides = ids.map((id) => device(id).side);
+      if (sides[0] && sides[0] === sides[1]) {
+        device(ids[0]).cautions.push({
+          key: "cautionSameSide",
+          params: { side: t(sides[0] === "right" ? "sideRight" : "sideLeft") }
+        });
+      }
+    }
+
     renderResult();
-    dom.csvButton.disabled = samples.length === 0;
+    const exportable = ids.some((id) => device(id).csv);
+    dom.csvButton.disabled = !exportable;
     dom.jsonButton.disabled = false;
 
-    log(verdict.level === "fail" ? "error" : verdict.level === "caution" ? "warn" : "success", "logResult", {
-      label: verdict.label,
-      seconds: (result.durationMs / 1000).toFixed(1),
-      samples: samples.length,
-      received: analysis.received,
-      expected: analysis.expected,
-      missing: analysis.missing,
-      dropped,
-      recovered: state.drainRecovered,
-      drainMs: state.drainMs,
-      maxLag: state.maxLag
-    });
+    log(state.overallVerdict.level === "fail" ? "error"
+      : state.overallVerdict.level === "caution" ? "warn" : "success",
+      "logResultOverall", {
+        label: state.overallVerdict.label,
+        count: ids.length,
+        seconds: (state.plannedMs / 1000).toFixed(0)
+      });
   }
 
   function renderResult() {
-    const result = state.result;
-    const analysis = state.analysis;
-    const verdict = state.verdict;
+    const overall = state.overallVerdict;
+    const ids = state.runDeviceIds.filter((id) => device(id).verdict);
 
-    if (!result || !analysis || !verdict) {
+    if (!overall || ids.length === 0) {
       dom.resultCard.className = "verdict-bar result-empty";
       dom.resultVerdict.className = "verdict-badge";
       dom.resultVerdict.textContent = t("verdictWaiting");
@@ -585,43 +740,29 @@
       return;
     }
 
-    const level = verdict.level;
+    const level = overall.level;
     dom.resultCard.className = `verdict-bar result-${level === "caution" ? "caution" : level}`;
     dom.resultVerdict.className = `verdict-badge verdict-${level}`;
     dom.resultVerdict.textContent = t(
       level === "fail" ? "verdictFail" : level === "caution" ? "verdictWarn" : "verdictPass"
     );
-    dom.resultSummary.textContent = t(
-      level === "fail" ? "resultSummaryFail"
-        : level === "caution" ? "resultSummaryWarn"
-          : "resultSummaryPass"
-    );
+    dom.resultSummary.textContent = ids.length > 1
+      ? `${t(level === "fail" ? "resultSummaryFail"
+        : level === "caution" ? "resultSummaryWarn" : "resultSummaryPass")} `
+        + ids.map((id) => `${deviceLabel(id)}: ${device(id).verdict.label}`).join(" / ")
+      : t(level === "fail" ? "resultSummaryFail"
+        : level === "caution" ? "resultSummaryWarn" : "resultSummaryPass");
 
-    const samples = Array.isArray(result.raw.samples) ? result.raw.samples.length : 0;
-    setMetric("m_duration", `${(result.durationMs / 1000).toFixed(1)} s`,
-      verdict.buffer.withinWindow ? "ok" : "warn");
-    setMetric("m_samples", String(samples), samples > 0 ? "ok" : "bad");
-    setMetric("m_first", analysis.first === null ? t("valueEmpty") : String(analysis.first));
-    setMetric("m_last", analysis.last === null ? t("valueEmpty") : String(analysis.last));
-    setMetric("m_expected", String(analysis.expected));
-    setMetric("m_received", String(analysis.received));
-    setMetric("m_missing", String(analysis.missing), analysis.missing === 0 ? "ok" : "bad");
-    setMetric("m_missing_rate", `${(analysis.missingRate * 100).toFixed(3)} %`,
-      analysis.missing === 0 ? "ok" : "bad");
-    const coverage = state.coverage || C.spanCoverage(analysis.expected, state.plannedMs);
-    setMetric("m_span",
-      `${(coverage.spanMs / 1000).toFixed(1)} s (${Math.round(coverage.ratio * 100)} %)`,
-      coverage.level);
-    setMetric("m_dropped", String(state.dropped), state.dropped === 0 ? "ok" : "bad");
-    setMetric("m_drain_recovered", String(state.drainRecovered));
-    setMetric("m_drain_ms", state.drainMs === null ? t("valueEmpty") : `${state.drainMs} ms`);
-    setMetric("m_max_lag", `${state.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
-      verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
-    setMetric("m_csv", samples > 0 ? t("csvAvailable") : t("csvUnavailable"), samples > 0 ? "ok" : "bad");
+    for (const id of DEVICE_IDS) renderDeviceMetrics(id);
 
-    const cautions = state.cautions.map((entry) => (
-      entry.raw !== undefined ? entry.raw : t(entry.key, entry.params)
-    ));
+    const cautions = [];
+    for (const id of ids) {
+      for (const entry of device(id).cautions) {
+        const text = entry.raw !== undefined ? entry.raw : t(entry.key, entry.params);
+        cautions.push(ids.length > 1 ? `${deviceLabel(id)}: ${text}` : text);
+      }
+    }
+    if (ids.length > 1) cautions.push(t("cautionDualLoad"));
     dom.resultCautions.innerHTML = cautions.length === 0 ? "" : [
       '<div class="caution-box">',
       `<strong>${escapeHtml(t("cautionsTitle"))}</strong><ul>`,
@@ -629,10 +770,52 @@
       "</ul></div>"
     ].join("");
 
+    dom.lastUpdateTime.textContent = state.lastUpdateAt
+      ? state.lastUpdateAt.toLocaleTimeString()
+      : "—";
+  }
+
+  function renderDeviceMetrics(id) {
+    const entry = device(id);
+    const inRun = state.runDeviceIds.includes(id);
+    if (!inRun || !entry.result || !entry.analysis || !entry.verdict) {
+      if (!inRun) {
+        for (const metric of METRIC_ROWS) setMetric(id, metric.key, t("deviceNotUsed"), null);
+      }
+      drawTimeline(id, []);
+      return;
+    }
+    const result = entry.result;
+    const analysis = entry.analysis;
+    const verdict = entry.verdict;
+    const coverage = entry.coverage || C.spanCoverage(analysis.expected, state.plannedMs);
+    const samples = Array.isArray(result.raw.samples) ? result.raw.samples.length : 0;
+
+    setMetric(id, "m_duration", `${(result.durationMs / 1000).toFixed(1)} s`,
+      verdict.buffer.withinWindow ? "ok" : "warn");
+    setMetric(id, "m_samples", String(samples), samples > 0 ? "ok" : "bad");
+    setMetric(id, "m_first", analysis.first === null ? t("valueEmpty") : String(analysis.first));
+    setMetric(id, "m_last", analysis.last === null ? t("valueEmpty") : String(analysis.last));
+    setMetric(id, "m_expected", String(analysis.expected));
+    setMetric(id, "m_received", String(analysis.received));
+    setMetric(id, "m_missing", String(analysis.missing), analysis.missing === 0 ? "ok" : "bad");
+    setMetric(id, "m_missing_rate", `${(analysis.missingRate * 100).toFixed(3)} %`,
+      analysis.missing === 0 ? "ok" : "bad");
+    setMetric(id, "m_span",
+      `${(coverage.spanMs / 1000).toFixed(1)} s (${Math.round(coverage.ratio * 100)} %)`,
+      coverage.level);
+    setMetric(id, "m_dropped", String(entry.dropped), entry.dropped === 0 ? "ok" : "bad");
+    setMetric(id, "m_drain_recovered", String(entry.drainRecovered));
+    setMetric(id, "m_drain_ms", entry.drainMs === null ? t("valueEmpty") : `${entry.drainMs} ms`);
+    setMetric(id, "m_max_lag", `${entry.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
+      verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
+    setMetric(id, "m_csv", samples > 0 ? t("csvAvailable") : t("csvUnavailable"),
+      samples > 0 ? "ok" : "bad");
+
     const bins = C.buildTimelineBins(analysis, TIMELINE_BINS);
-    drawTimeline(bins);
-    dom.continuityRate.textContent = `missing ${analysis.missing} / expected ${analysis.expected}`;
-    dom.timelineCaption.textContent = analysis.expected === 0
+    drawTimeline(id, bins);
+    dom.continuityRate[id].textContent = `missing ${analysis.missing} / expected ${analysis.expected}`;
+    dom.timelineCaption[id].textContent = analysis.expected === 0
       ? t("continuityEmpty")
       : t("continuityCaption", {
         first: analysis.first,
@@ -640,24 +823,20 @@
         bins: bins.length,
         perBin: Math.max(1, Math.round(analysis.expected / Math.max(1, bins.length)))
       });
-
     if (analysis.missingRanges.length > 0) {
-      dom.missingRangesWrap.className = "missing-ranges";
-      dom.missingRanges.textContent = C.formatMissingRanges(analysis.missingRanges, 30);
+      dom.missingRangesWrap[id].className = "missing-ranges";
+      dom.missingRanges[id].textContent = C.formatMissingRanges(analysis.missingRanges, 30);
     } else {
-      dom.missingRangesWrap.className = "missing-ranges clean";
-      dom.missingRanges.textContent = t("missingRangesNone");
+      dom.missingRangesWrap[id].className = "missing-ranges clean";
+      dom.missingRanges[id].textContent = t("missingRangesNone");
     }
-    dom.lastUpdateTime.textContent = state.lastUpdateAt
-      ? state.lastUpdateAt.toLocaleTimeString()
-      : "—";
   }
 
-  function setMetric(key, value, level) {
-    const row = dom.metricTableBody.querySelector(`tr[data-metric="${key}"]`);
-    if (!row) return;
-    row.querySelector(".metric-value").textContent = value;
-    row.className = level ? `level-${level}` : "";
+  function setMetric(id, key, value, level) {
+    const cell = dom.metricTableBody.querySelector(`tr[data-metric="${key}"] td[data-device="${id}"]`);
+    if (!cell) return;
+    cell.textContent = value;
+    cell.className = level ? `metric-value level-${level}` : "metric-value";
   }
 
   // ── 描画 ────────────────────────────────────────────────────────────
@@ -671,29 +850,51 @@
   }
 
   function renderLive() {
-    dom.batchCount.textContent = String(state.batchCount);
-    dom.batchSize.textContent = state.lastBatchSize > 0 ? String(state.lastBatchSize) : "—";
-    dom.batchGap.textContent = state.lastBatchGapMs === null
-      ? "—"
-      : `${Math.round(state.lastBatchGapMs)} ms`;
-    dom.liveLag.textContent = state.recording || state.phase === "draining"
-      ? `${state.lag} / ${C.RING_BUFFER_CAPACITY}`
-      : "—";
-    dom.liveLag.className = state.lag >= C.RING_BUFFER_CAPACITY * C.LAG_CAUTION_RATIO ? "alert" : "";
-    dom.liveRate.textContent = state.live.count > 0 ? `${state.live.count} samples plotted` : "";
+    renderLiveMeta();
+    const plotted = DEVICE_IDS.reduce((sum, id) => sum + device(id).live.count, 0);
+    dom.liveRate.textContent = plotted > 0 ? `${plotted} samples plotted` : "";
 
-    const sample = state.latestSample;
-    dom.latestSample.textContent = sample
-      ? [
-        `serial_number : ${sample.serial_number}  (packet_number ${sample.packet_number})`,
-        `t             : ${sample.t} ms`,
-        `gyro   [dps]  : ${formatVector(sample.converted_gyro)}`,
-        `acc    [G]    : ${formatVector(sample.converted_acc)}`,
-        `press  [ADC]  : ${sample.press && sample.press.values ? sample.press.values.join(", ") : "—"}`,
-        t("latestSampleQuatNote")
-      ].join("\n")
-      : t("latestSampleEmpty");
+    const lines = [];
+    for (const id of shownIds()) {
+      const sample = device(id).latestSample;
+      if (!sample) continue;
+      lines.push(
+        `${deviceLabel(id)}`,
+        `  serial_number : ${sample.serial_number}  (packet_number ${sample.packet_number})`,
+        `  t             : ${sample.t} ms`,
+        `  gyro   [dps]  : ${formatVector(sample.converted_gyro)}`,
+        `  acc    [G]    : ${formatVector(sample.converted_acc)}`,
+        `  press  [ADC]  : ${sample.press && sample.press.values ? sample.press.values.join(", ") : "—"}`
+      );
+    }
+    if (lines.length > 0) lines.push(t("latestSampleQuatNote"));
+    dom.latestSample.textContent = lines.length > 0 ? lines.join("\n") : t("latestSampleEmpty");
     drawLive();
+  }
+
+  function renderLiveMeta() {
+    const container = dom.liveMeta;
+    if (!container) return;
+    const visible = shownIds();
+    container.querySelectorAll("span[data-device]").forEach((cell) => {
+      const id = Number(cell.dataset.device);
+      const entry = device(id);
+      const show = visible.includes(id) || id === 0;
+      cell.hidden = !show;
+      cell.querySelector(".live-meta-name").textContent = deviceLabel(id);
+      const lag = state.recording || state.phase === "draining"
+        ? `${entry.lag} / ${C.RING_BUFFER_CAPACITY}`
+        : "—";
+      const gap = entry.lastBatchGapMs === null ? "—" : `${Math.round(entry.lastBatchGapMs)} ms`;
+      const strong = cell.querySelector("strong");
+      strong.textContent = [
+        `${t("liveBatches")} ${entry.batchCount}`,
+        `${t("liveBatchSize")} ${entry.lastBatchSize > 0 ? entry.lastBatchSize : "—"}`,
+        `${t("liveBatchGap")} ${gap}`,
+        `${t("liveLag")} ${lag}`
+      ].join(" · ");
+      strong.className = entry.lag >= C.RING_BUFFER_CAPACITY * C.LAG_CAUTION_RATIO ? "alert" : "";
+    });
   }
 
   function formatVector(vector) {
@@ -726,8 +927,8 @@
   }
 
   /** timeline は bin 単位で Canvas に描く（serialごとのDOM要素は作らない） */
-  function drawTimeline(bins) {
-    const canvas = dom.timelineCanvas;
+  function drawTimeline(id, bins) {
+    const canvas = dom.timelineCanvas[id];
     if (!canvas) return;
     const { ctx, width, height } = prepareCanvas(canvas);
     if (!bins || bins.length === 0) {
@@ -754,7 +955,8 @@
     const canvas = dom.liveCanvas;
     if (!canvas) return;
     const { ctx, width, height } = prepareCanvas(canvas);
-    if (state.live.count === 0) {
+    const total = DEVICE_IDS.reduce((sum, id) => sum + device(id).live.count, 0);
+    if (total === 0) {
       drawPlaceholder(ctx, width, height, t("liveEmpty"));
       return;
     }
@@ -765,19 +967,20 @@
     ctx.moveTo(0, height / 2);
     ctx.lineTo(width, height / 2);
     ctx.stroke();
-    drawSeries(ctx, width, height, state.live.pressure, PRESSURE_FULL_SCALE, "#7fa4ff");
-    drawSeries(ctx, width, height, state.live.acc, ACC_FULL_SCALE, "#f6c860");
+    for (const id of DEVICE_IDS) {
+      drawSeries(ctx, width, height, device(id).live, PRESSURE_FULL_SCALE, DEVICE_COLORS[id]);
+    }
   }
 
-  function drawSeries(ctx, width, height, buffer, fullScale, color) {
-    const { count, head } = state.live;
+  function drawSeries(ctx, width, height, live, fullScale, color) {
+    if (live.count === 0) return;
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    for (let i = 0; i < count; i += 1) {
-      const index = (head - count + i + LIVE_HISTORY_SIZE * 2) % LIVE_HISTORY_SIZE;
-      const value = Math.min(1, Math.max(0, buffer[index] / fullScale));
-      const x = (i / Math.max(1, count - 1)) * width;
+    for (let i = 0; i < live.count; i += 1) {
+      const index = (live.head - live.count + i + LIVE_HISTORY_SIZE * 2) % LIVE_HISTORY_SIZE;
+      const value = Math.min(1, Math.max(0, live.pressure[index] / fullScale));
+      const x = (i / Math.max(1, live.count - 1)) * width;
       const y = height - value * (height - 6) - 3;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -809,7 +1012,14 @@
   function setPhase(phase) {
     state.phase = phase === "disconnected" ? "idle" : phase;
     const entry = PHASE_SOURCE[phase] || PHASE_SOURCE.idle;
-    setSourceCopy(entry[0], entry[1], entry[2]);
+    const count = connectedIds().length;
+    if (phase === "ready" && count > 1) {
+      setSourceCopy("ready", "sourceReadyDualTitle", "sourceReadyDualDetail", {
+        titleParams: { count }
+      });
+    } else {
+      setSourceCopy(entry[0], entry[1], entry[2]);
+    }
     dom.recordButton.innerHTML = t(phase === "recording" ? "recordStopHtml" : "recordStartHtml");
     dom.recordButton.classList.toggle("active", phase === "recording");
     applyButtonState();
@@ -820,7 +1030,7 @@
     const phase = state.phase;
     dom.recordButton.disabled = phase === "recording"
       ? false
-      : phase === "preparing" || phase === "draining" || !state.connected;
+      : phase === "preparing" || phase === "draining" || connectedIds().length === 0;
     const busy = phase === "preparing" || phase === "recording" || phase === "draining";
     dom.durationSelect.disabled = busy;
     dom.durationCustom.disabled = busy || dom.durationSelect.value !== "custom";
@@ -883,7 +1093,9 @@
       `webBluetooth=${typeof root.navigator.bluetooth !== "undefined" ? "available" : "unavailable"}`,
       `language=${I18n.getLanguage()}`,
       `plannedDurationMs=${state.plannedMs}`,
-      "deviceCount=1",
+      `deviceCount=${state.runDeviceIds.length || connectedIds().length}`,
+      `devices=${(state.runDeviceIds.length ? state.runDeviceIds : connectedIds())
+        .map((id) => `${id}:${device(id).side || "unknown"}`).join(",") || "none"}`,
       "profile=fifo-recording"
     ];
   }
@@ -929,45 +1141,70 @@
     root.document.body.removeChild(area);
   }
 
+  /**
+   * 2台ぶんを1つのCSVにまとめる。insoleToolkitMeasurementToCSV() が先頭列に
+   * device_id を出すため、ヘッダ1行 + 各デバイスの行で1ファイルにできる。
+   */
+  function combinedCsv() {
+    const parts = state.runDeviceIds.map((id) => device(id).csv).filter(Boolean);
+    if (parts.length === 0) return "";
+    const header = parts[0].split("\n")[0];
+    const rows = parts.flatMap((csv) => csv.split("\n").slice(1)).filter((line) => line.length > 0);
+    return [header, ...rows].join("\n");
+  }
+
   function downloadCsv() {
-    if (!state.csv) return;
-    saveBlob(state.csv, "text/csv", `orphe-insole-fifo-guide-${timestampSuffix()}.csv`);
+    const csv = combinedCsv();
+    if (!csv) return;
+    saveBlob(csv, "text/csv", `orphe-insole-fifo-guide-${timestampSuffix()}.csv`);
     log("success", "logCsvSaved");
   }
 
   function downloadJson() {
-    const analysis = state.analysis;
-    const result = state.result;
     const payload = {
       page: "fifo-guide",
       savedAt: new Date().toISOString(),
       environment: environmentLines(),
       plannedDurationMs: state.plannedMs,
-      durationMs: result ? result.durationMs : null,
-      profileId: result ? result.profileId : null,
-      verdict: state.verdict ? state.verdict.label : null,
-      samples: result && Array.isArray(result.raw.samples) ? result.raw.samples.length : 0,
-      truncated: result ? !!result.raw.truncated : false,
-      serial: analysis ? {
-        first: analysis.first,
-        last: analysis.last,
-        expected: analysis.expected,
-        received: analysis.received,
-        missing: analysis.missing,
-        missingRate: analysis.missingRate,
-        duplicates: analysis.duplicates,
-        outOfOrder: analysis.outOfOrder,
-        missingRanges: analysis.missingRanges.map((range) => range.label)
-      } : null,
-      sdkSerial: result && result.raw ? result.raw.serial : null,
-      spanCoverage: state.coverage,
-      fifo: {
-        droppedTotal: state.droppedTotal,
-        droppedLiveCumulative: state.droppedLive,
-        checkpointDropped: result && result.fifo ? result.fifo.dropped : null,
-        drainRecovered: state.drainRecovered,
-        drainMs: state.drainMs,
-        maxLag: state.maxLag,
+      deviceCount: state.runDeviceIds.length,
+      overallVerdict: state.overallVerdict ? state.overallVerdict.label : null,
+      devices: state.runDeviceIds.map((id) => {
+        const entry = device(id);
+        const analysis = entry.analysis;
+        const result = entry.result;
+        return {
+          deviceId: id,
+          label: deviceLabel(id),
+          side: entry.side,
+          verdict: entry.verdict ? entry.verdict.label : null,
+          durationMs: result ? result.durationMs : null,
+          profileId: result ? result.profileId : null,
+          samples: result && Array.isArray(result.raw.samples) ? result.raw.samples.length : 0,
+          truncated: result ? !!result.raw.truncated : false,
+          serial: analysis ? {
+            first: analysis.first,
+            last: analysis.last,
+            expected: analysis.expected,
+            received: analysis.received,
+            missing: analysis.missing,
+            missingRate: analysis.missingRate,
+            duplicates: analysis.duplicates,
+            outOfOrder: analysis.outOfOrder,
+            missingRanges: analysis.missingRanges.map((range) => range.label)
+          } : null,
+          sdkSerial: result && result.raw ? result.raw.serial : null,
+          spanCoverage: entry.coverage,
+          fifo: {
+            droppedTotal: entry.droppedTotal,
+            droppedLiveCumulative: entry.droppedLive,
+            checkpointDropped: result && result.fifo ? result.fifo.dropped : null,
+            drainRecovered: entry.drainRecovered,
+            drainMs: entry.drainMs,
+            maxLag: entry.maxLag
+          }
+        };
+      }),
+      fifoLimits: {
         ringBufferCapacity: C.RING_BUFFER_CAPACITY,
         bufferWindowMs: C.BUFFER_WINDOW_MS
       },
