@@ -4,6 +4,11 @@
 根拠文書: [`IMPROVEMENT_PLAN.md`](./IMPROVEMENT_PLAN.md)（分析済み。行番号付きの課題一覧はそちら）
 最終更新: 2026-07-11
 
+> **追記 2026-07-25**: 本書が言及する examples のうち `sensor-dashboard-FSRvisualize` /
+> `UDON_fsr_20250724` / `p5.ORPHE.FSR_visualise_0327_submit` は削除済みです。
+> 該当箇所（§0 の前提・PR#1 の `test:syntax` / `ignores` 指示）は完了済み PR の作業指示なので
+> 当時のまま残していますが、これらのパスは現在存在しません。
+
 ---
 
 ## 現在の進捗（2026-07-12 時点）

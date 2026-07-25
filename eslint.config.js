@@ -6,9 +6,7 @@ module.exports = [
         ignores: [
             'dist/',
             'docs/',
-            'node_modules/',
-            'examples/p5.ORPHE.FSR_visualise_0327_submit/',
-            'examples/UDON_fsr_20250724/'
+            'node_modules/'
         ]
     },
     js.configs.recommended,
@@ -37,7 +35,6 @@ module.exports = [
                 getInsoleToolkitSession: 'readonly',
                 insoleToolkitSessions: 'readonly',
                 orphe_js_version_date: 'readonly',
-                updateFSRData: 'writable',
                 PRESSURE_SENSOR_LAYOUT: 'readonly',
                 ChartFeed: 'readonly',
                 makeLineChart: 'readonly',
