@@ -37,6 +37,7 @@ assert.equal(metrics.clinicalCadenceSpm({ duration_s: 0 }), null);
 assert.equal(metrics.estimatedStepLengthM({ stride_norm_m: null }), null);
 
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 const staticKeys = Array.from(html.matchAll(/data-i18n(?:-html|-aria-label)?="([^"]+)"/g))
   .map((match) => match[1]);
 const dynamicKeys = [
@@ -77,5 +78,14 @@ assert.equal(
 );
 i18n.setLanguage("ja", { notify: false });
 assert.equal(i18n.t("textWalk"), "歩行");
+
+assert.equal(i18n.detectDefaultLanguage("Asia/Tokyo", "en-US"), "ja");
+assert.equal(i18n.detectDefaultLanguage("America/New_York", "ja-JP"), "en");
+assert.equal(i18n.detectDefaultLanguage("", "ja-JP"), "ja");
+assert.equal(i18n.detectDefaultLanguage("", "en-US"), "en");
+
+assert.match(appSource, /function activateLiveConnection/);
+assert.match(appSource, /if \(demoWasRunning\) \{\s+stopDemo\(\{ preserveSource: true \}\);\s+clearData\(\{ preserveSource: true \}\);/);
+assert.match(appSource, /if \(demoParam !== "0"\) startDemo\(\);/);
 
 console.log("step-analysis metrics and i18n tests passed");
