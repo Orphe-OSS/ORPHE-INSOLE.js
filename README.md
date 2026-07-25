@@ -97,6 +97,11 @@ const stepCsv = insoleToolkitMeasurementToCSV(result, 'step');
 `realtime-pressure`（圧力+IMU 200 Hz）、`realtime-full-step`、`step-analysis`、
 `fifo-recording`です。FIFOの`stopMeasurement()`は未回収データのdrain完了まで待ちます。
 計測中のprofile変更は拒否されるため、正式計測区間のデータ形式を一定に保てます。
+ToolkitのStep profileは、BLEの購読APIが成功しただけでは開始完了にせず、実際に有効な
+STEP_ANALYSIS packetが到着するまで確認します。無通知時は自動で再購読し、解消しなければ
+`GAIT_NO_NOTIFICATIONS`、packetは届くがdecodeできなければ`GAIT_INVALID_PACKETS`を返します。
+FIFO停止後のStep復元に失敗した場合もFIFO結果は`session.lastMeasurement`に残り、
+セッションは意図しないFIFO再開を避けて`realtime-full`へ退避します。
 
 ### Tutorial
   * https://github.com/Orphe-OSS/ORPHE-INSOLE.js/wiki

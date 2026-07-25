@@ -224,6 +224,18 @@ const metrics = require('../examples/data-modes/metrics.js');
     const app = fs.readFileSync(path.join(pageRoot, 'app.js'), 'utf8');
     const attitude = fs.readFileSync(path.join(pageRoot, 'attitude-viz.js'), 'utf8');
     const examplesIndex = fs.readFileSync(path.join(__dirname, '..', 'examples', 'README.md'), 'utf8');
+    const showcaseApp = fs.readFileSync(
+        path.join(__dirname, '..', 'examples', 'showcase', 'app.js'),
+        'utf8'
+    );
+    const showcaseReadme = fs.readFileSync(
+        path.join(__dirname, '..', 'examples', 'showcase', 'README.md'),
+        'utf8'
+    );
+    const claudeGuide = fs.readFileSync(path.join(__dirname, '..', 'CLAUDE.md'), 'utf8');
+    const fifoRestoreRoot = path.join(__dirname, 'manual', 'showcase-fifo-restore');
+    const fifoRestoreHtml = fs.readFileSync(path.join(fifoRestoreRoot, 'index.html'), 'utf8');
+    const fifoRestoreApp = fs.readFileSync(path.join(fifoRestoreRoot, 'app.js'), 'utf8');
     const legacy = fs.readFileSync(
         path.join(__dirname, 'manual', 'toolkit-mode-validation', 'index.html'),
         'utf8'
@@ -267,6 +279,39 @@ const metrics = require('../examples/data-modes/metrics.js');
     assert.doesNotMatch(html, /data-preset="fifo-step"/);
     assert.doesNotMatch(examplesIndex, /\[data-modes\]/);
     assert.match(legacy, /examples\/data-modes/);
+    assert.match(
+        showcaseApp,
+        /session\.startMeasurement\(\{\s*profile:\s*'fifo-recording'/
+    );
+    assert.match(showcaseApp, /session\.stopMeasurement\(\{\s*reason:/);
+    assert.doesNotMatch(
+        showcaseApp,
+        /setSensorDataMode\('fifo'\)[\s\S]{0,200}stepAnalysis:\s*session\.outputs\.stepAnalysis/
+    );
+    assert.doesNotMatch(showcaseReadme, /FIFO 選択中も Step Analysis/);
+    assert.doesNotMatch(
+        claudeGuide,
+        /setSensorDataMode\('fifo'\)[\s\S]{0,200}stepAnalysis:\s*true/
+    );
+    assert.match(showcaseReadme, /FIFO RawとStep Analysisは\s*同時取得できない/);
+    assert.match(claudeGuide, /FIFO RawとStep Analysisは同時取得できない/);
+    assert.match(fifoRestoreHtml, /id="toolkit0"/);
+    assert.match(fifoRestoreHtml, /id="toolkit1"/);
+    assert.match(fifoRestoreHtml, /value="dual-realtime-step"/);
+    assert.match(fifoRestoreHtml, /value="dual-step-only"/);
+    assert.match(fifoRestoreHtml, /value="mixed"/);
+    assert.match(fifoRestoreHtml, /id="copy_log_button"/);
+    assert.match(fifoRestoreHtml, /id="download_json_button"/);
+    assert.match(fifoRestoreHtml, /id="download_csv_button"/);
+    assert.match(fifoRestoreApp, /profile:\s*'fifo-recording'/);
+    assert.match(fifoRestoreApp, /sessions\[device\.id\]\.stopMeasurement/);
+    assert.match(fifoRestoreApp, /verifyNotifications:\s*true/);
+    assert.match(fifoRestoreApp, /stepTransportPackets/);
+    assert.match(fifoRestoreApp, /stepInvalidPackets/);
+    assert.match(fifoRestoreApp, /error\?\.measurement \|\| sessions\[device\.id\]\.lastMeasurement/);
+    assert.match(fifoRestoreApp, /FIFO stop\/restore failed: code=/);
+    assert.match(fifoRestoreApp, /formatEventLogText/);
+    assert.doesNotMatch(fifoRestoreApp, /setSensorDataMode\('fifo'\)/);
 }
 
 console.log('toolkit-mode-validation tests: ok');

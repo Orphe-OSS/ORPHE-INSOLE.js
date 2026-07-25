@@ -261,6 +261,124 @@ async function main() {
   }
 
   {
+    const { insole, session } = createSession({
+      gait: { verifyTimeoutMs: 200, verifyRetries: 2 },
+    });
+    await session.connect();
+    session.gait.diagnostics = () => ({
+      transportNotifications: 1,
+      validPackets: 1,
+      invalidPackets: 0,
+    });
+    session.gait.waitForPacket = async () => {
+      insole.calls.push('gait:wait');
+      return true;
+    };
+    insole.calls.length = 0;
+
+    await session.applyProfile('step-analysis');
+    assert.deepEqual(insole.calls, [
+      'gait:start',
+      'gait:wait',
+      'notify:stop:SENSOR_VALUES',
+    ], 'Step-onlyは実packet確認後にSENSOR_VALUESを停止');
+    assert.equal(session.snapshot().gaitDiagnostics.validPackets, 1);
+
+    insole.calls.length = 0;
+    await session.applyProfile('step-analysis');
+    assert.deepEqual(
+      insole.calls,
+      ['mode:4', 'notify:start:SENSOR_VALUES', 'gait:wait', 'notify:stop:SENSOR_VALUES'],
+      '同じStep profileの再適用でも現在の実packetを確認'
+    );
+  }
+
+  {
+    const { insole, session } = createSession({
+      gait: { verifyTimeoutMs: 200, verifyRetries: 2 },
+    });
+    await session.connect();
+    let validPackets = 0;
+    let waits = 0;
+    session.gait.diagnostics = () => ({
+      transportNotifications: validPackets,
+      validPackets,
+      invalidPackets: 0,
+    });
+    session.gait.waitForPacket = async () => {
+      insole.calls.push('gait:wait');
+      waits++;
+      if (waits === 1) return false;
+      validPackets = 1;
+      return true;
+    };
+    insole.calls.length = 0;
+
+    await session.applyProfile('realtime-full-step');
+    assert.deepEqual(insole.calls, [
+      'gait:start',
+      'gait:wait',
+      'mode:4',
+      'gait:refresh',
+      'gait:wait',
+    ], '無通知時はmode再適用とSTEP_ANALYSIS再購読を行う');
+    assert.equal(session.gaitActive, true);
+  }
+
+  {
+    const { insole, session } = createSession({
+      gait: { verifyTimeoutMs: 200, verifyRetries: 2 },
+    });
+    await session.connect();
+    session.gait.diagnostics = () => ({
+      transportNotifications: 7,
+      validPackets: 5,
+      invalidPackets: 2,
+    });
+    session.gait.waitForPacket = async () => {
+      insole.calls.push('gait:wait');
+      return false;
+    };
+    insole.calls.length = 0;
+
+    await assert.rejects(
+      () => session.applyProfile('realtime-full-step'),
+      (error) => error.code === 'GAIT_NO_NOTIFICATIONS'
+    );
+    assert.equal(session.gaitActive, false);
+    assert.equal(session.profileId, 'realtime-full', '失敗時は元profileへrollback');
+    assert.deepEqual(session.outputs, { sensorValues: true, stepAnalysis: false });
+    assert.equal(insole.calls.filter((call) => call === 'gait:wait').length, 3);
+    assert.equal(insole.calls.filter((call) => call === 'gait:refresh').length, 2);
+    assert.equal(insole.calls.at(-1), 'gait:stop');
+  }
+
+  {
+    const { session } = createSession({
+      gait: { verifyTimeoutMs: 200, verifyRetries: 0 },
+    });
+    await session.connect();
+    let invalidTransportArrived = false;
+    session.gait.diagnostics = () => ({
+      transportNotifications: invalidTransportArrived ? 3 : 0,
+      validPackets: 0,
+      invalidPackets: invalidTransportArrived ? 3 : 0,
+    });
+    session.gait.waitForPacket = async () => {
+      invalidTransportArrived = true;
+      return false;
+    };
+    await assert.rejects(
+      () => session.applyProfile('step-analysis'),
+      (error) => (
+        error.code === 'GAIT_INVALID_PACKETS'
+        && error.transportDelta === 3
+        && error.invalidDelta === 3
+      )
+    );
+  }
+
+  {
     const { insole, session } = createSession();
     await session.connect();
     await session.setOutputs({ sensorValues: true, stepAnalysis: true });
@@ -414,6 +532,63 @@ async function main() {
     assert.equal(session.profileId, 'realtime-full');
     assert.equal(session.fifoActive, false);
     assert.equal(session.measurementPhase, 'idle');
+  }
+
+  for (const previousProfile of ['realtime-full-step', 'step-analysis']) {
+    const { session } = createSession();
+    await session.connect();
+    await session.applyProfile(previousProfile);
+    await session.startMeasurement({
+      profile: 'fifo-recording',
+      metadata: { source: 'showcase-fifo-card' },
+    });
+    assert.equal(session.profileId, 'fifo-recording');
+    assert.equal(session.fifoActive, true);
+    assert.equal(session.gaitActive, false);
+
+    await session.stopMeasurement({ reason: 'test' });
+    assert.equal(session.profileId, previousProfile);
+    assert.equal(session.fifoActive, false);
+    assert.equal(session.gaitActive, true);
+    assert.deepEqual(
+      session.outputs,
+      previousProfile === 'step-analysis'
+        ? { sensorValues: false, stepAnalysis: true }
+        : { sensorValues: true, stepAnalysis: true }
+    );
+  }
+
+  {
+    const { insole, session } = createSession({
+      gait: { verifyTimeoutMs: 200, verifyRetries: 0 },
+    });
+    await session.connect();
+    session.gait.diagnostics = () => ({
+      transportNotifications: 0,
+      validPackets: 0,
+      invalidPackets: 0,
+    });
+    let gaitPacketsAvailable = true;
+    session.gait.waitForPacket = async () => gaitPacketsAvailable;
+    await session.applyProfile('realtime-full-step');
+    await session.startMeasurement({ profile: 'fifo-recording' });
+    gaitPacketsAvailable = false;
+
+    await assert.rejects(
+      () => session.stopMeasurement({ reason: 'restore-liveness-failed' }),
+      (error) => (
+        error.code === 'GAIT_NO_NOTIFICATIONS'
+        && error.measurement?.status === 'completed'
+      )
+    );
+    assert.equal(session.profileId, 'realtime-full', '復元失敗時はFIFOへrollbackしない');
+    assert.equal(session.fifoActive, false);
+    assert.equal(session.gaitActive, false);
+    assert.equal(session.sensorNotifyActive, true);
+    assert.equal(session.activeMeasurement, null);
+    assert.equal(session.measurementPhase, 'idle');
+    assert.equal(session.lastMeasurement.status, 'completed');
+    assert.equal(insole.calls.filter((call) => call === 'fifo:start').length, 1);
   }
 
   {

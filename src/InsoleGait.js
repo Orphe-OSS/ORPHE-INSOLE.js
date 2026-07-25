@@ -319,17 +319,73 @@
       this._reconnectHook = null;  // 再接続後に再購読するフック
       this._disconnectDevice = null; // STEP_ANALYSIS 購読状態を無効化する切断監視先
       this._disconnectHandler = () => this._onPhysicalDisconnect();
+      this._transportNotifications = 0; // characteristicvaluechanged の到着数（decode前）
+      this._validPackets = 0;           // header/length/subheader が有効な packet 数
+      this._invalidPackets = 0;         // transport は来たが decode できなかった packet 数
+      this._lastTransportAt = null;
+      this._lastValidPacketAt = null;
+      this._lastTransport = null;
+      this._packetWaiters = new Set();
+      this._reportedInvalidSignatures = new Set();
 
       // コールバック（ユーザが上書き）
       this.onGait = null;     // (deviceId, row) 1歩ごとの歩容パラメーター（overview+stride+pronation 集約後）
       this.onMotion = null;   // (deviceId, motion) motion（クォータニオン・微小変位・歩行サイクル、〜50Hz）
       this.onRaw = null;      // (deviceId, packet) デコード済みの全パケット
+      this.onTransport = null; // (deviceId, info) decode前後のtransport診断
+      this.onDiagnostic = null; // (deviceId, info) 購読・初回packet・timeout等の低頻度イベント
       this.onError = null;    // (error)
     }
 
     get deviceId() { return this.insole ? this.insole.id : 0; }
     get stepCount() { return this.rows.length; }
     get isRunning() { return this._running; }
+
+    /**
+     * STEP_ANALYSIS transport の観測状態を返す。
+     * startNotifications() 成功と実データ到着を分けて診断するための読み取り専用snapshot。
+     */
+    diagnostics() {
+      return {
+        running: this._running,
+        subscribed: this._subscribed,
+        transportNotifications: this._transportNotifications,
+        validPackets: this._validPackets,
+        invalidPackets: this._invalidPackets,
+        lastTransportAt: this._lastTransportAt,
+        lastValidPacketAt: this._lastValidPacketAt,
+        lastTransport: this._lastTransport ? { ...this._lastTransport } : null,
+        connectionGeneration: this._connectionGeneration,
+        lifecycleGeneration: this._lifecycleGeneration,
+      };
+    }
+
+    /**
+     * 指定時点より後の有効packetを待つ。Toolkitが「購読開始＝受信成功」と誤認しないために使う。
+     * @param {{afterCount?:number,timeoutMs?:number}} [options]
+     * @returns {Promise<boolean>} timeout前に有効packetが到着したらtrue
+     */
+    waitForPacket(options = {}) {
+      const afterCount = Number.isFinite(Number(options.afterCount))
+        ? Number(options.afterCount)
+        : this._validPackets;
+      const timeoutMs = Number.isFinite(Number(options.timeoutMs))
+        ? Math.max(0, Number(options.timeoutMs))
+        : 1200;
+      if (this._validPackets > afterCount) return Promise.resolve(true);
+      if (!this._running || !this._subscribed || timeoutMs === 0) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        const waiter = { afterCount, resolve, timer: null };
+        waiter.timer = setTimeout(() => {
+          if (!this._packetWaiters.delete(waiter)) return;
+          this._emitDiagnostic('packet-timeout', { afterCount, timeoutMs });
+          resolve(false);
+        }, timeoutMs);
+        this._packetWaiters.add(waiter);
+        // listener登録直前にpacketが到着した競合を閉じる。
+        if (this._validPackets > afterCount) this._resolvePacketWaiters(true);
+      });
+    }
 
     /**
      * 歩容解析の notify を開始する。SENSOR_VALUES は begin() 済み（アクティブ状態）であること。
@@ -540,6 +596,7 @@
           return false;
         }
         this._subscribed = true;
+        this._emitDiagnostic('subscription-started');
         return true;
       } catch (e) {
         const attemptIsCurrent = this._currentSubscribeAttempt === attempt;
@@ -570,6 +627,7 @@
       this._removeReconnectHook();
       this._removeDisconnectHook();
       this._clearSink();
+      this._resolvePacketWaiters(false);
       if (!needsStop) return;
       const promise = this._doStop(shouldStopNotify);
       this._stopPromise = promise;
@@ -644,6 +702,8 @@
       this._subscribePromise = null;
       this._currentSubscribeAttempt = null;
       this._clearSink();
+      this._resolvePacketWaiters(false);
+      this._emitDiagnostic('physical-disconnect');
     }
 
     // Core の公開 onDisconnect を上書きせず、BluetoothDevice の切断イベントで購読状態だけ無効化する。
@@ -664,8 +724,52 @@
     }
 
     _onPacket(dv) {
-      const packet = decodeAnalysisPacket(dv);
-      if (!packet) return;
+      const receivedAt = Date.now();
+      const byteLength = Number(dv && dv.byteLength) || 0;
+      const header = byteLength > 0 ? dv.getUint8(0) : null;
+      const subheader = byteLength > 1 ? dv.getUint8(1) : null;
+      this._transportNotifications++;
+      this._lastTransportAt = receivedAt;
+      let packet = null;
+      try {
+        packet = decodeAnalysisPacket(dv);
+      } catch (error) {
+        this._reportError(error);
+      }
+      const info = {
+        receivedAt,
+        byteLength,
+        header,
+        subheader,
+        valid: !!packet,
+        transportNotifications: this._transportNotifications,
+        validPackets: this._validPackets + (packet ? 1 : 0),
+        invalidPackets: this._invalidPackets + (packet ? 0 : 1),
+      };
+      this._lastTransport = info;
+      if (typeof this.onTransport === 'function') {
+        this._safe(() => this.onTransport(this.deviceId, { ...info }));
+      }
+      if (!packet) {
+        this._invalidPackets++;
+        const signature = `${byteLength}:${header}:${subheader}`;
+        if (!this._reportedInvalidSignatures.has(signature)) {
+          this._reportedInvalidSignatures.add(signature);
+          this._emitDiagnostic('invalid-packet', { byteLength, header, subheader });
+        }
+        return;
+      }
+      this._validPackets++;
+      this._lastValidPacketAt = receivedAt;
+      if (this._validPackets === 1) {
+        this._emitDiagnostic('first-valid-packet', {
+          byteLength,
+          header,
+          subheader,
+          packetType: packet.type,
+        });
+      }
+      this._resolvePacketWaiters(true);
       if (typeof this.onRaw === 'function') this._safe(() => this.onRaw(this.deviceId, packet));
       if (packet.type === 'motion') {
         if (typeof this.onMotion === 'function') this._safe(() => this.onMotion(this.deviceId, packet));
@@ -701,6 +805,25 @@
     }
 
     // ── 内部ユーティリティ ────────────────────────────────────────────
+    _resolvePacketWaiters(packetArrived) {
+      for (const waiter of Array.from(this._packetWaiters)) {
+        if (packetArrived && this._validPackets <= waiter.afterCount) continue;
+        this._packetWaiters.delete(waiter);
+        if (waiter.timer) clearTimeout(waiter.timer);
+        waiter.resolve(!!packetArrived);
+      }
+    }
+
+    _emitDiagnostic(type, detail = {}) {
+      if (typeof this.onDiagnostic !== 'function') return;
+      const info = {
+        type,
+        ...detail,
+        diagnostics: this.diagnostics(),
+      };
+      this._safe(() => this.onDiagnostic(this.deviceId, info));
+    }
+
     _safe(fn) { try { fn(); } catch (e) { this._reportError(e); } }
     _reportError(error) {
       if (typeof this.onError === 'function') { try { this.onError(error); return; } catch (_) { /* fallthrough */ } }

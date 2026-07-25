@@ -701,11 +701,11 @@ window.onload = function () {
             const session = getInsoleToolkitSession(id);
             if (!session || !session.fifo) return false;
             try {
-                // Step-only からでも一度に FIFO + Step Analysis へ移れる順序。
-                await session.setSensorDataMode('fifo');
-                await session.setOutputs({
-                    sensorValues: true,
-                    stepAnalysis: session.outputs.stepAnalysis,
+                // FIFOはStepと排他。正式計測APIで原子的にFIFOへ切り替え、
+                // stopMeasurement() 後に直前のRealtime/Step設定を復元する。
+                await session.startMeasurement({
+                    profile: 'fifo-recording',
+                    metadata: { source: 'showcase-fifo-card' },
                 });
                 return session.fifoActive;
             } catch (error) {
@@ -738,7 +738,15 @@ window.onload = function () {
             const session = getInsoleToolkitSession(id);
             if (!session) return;
             try {
-                await session.setSensorDataMode('realtime');
+                const state = session.snapshot();
+                if (state.measurement?.profileId === 'fifo-recording') {
+                    await session.stopMeasurement({
+                        reason: auto ? 'auto-loss' : 'manual',
+                    });
+                } else {
+                    // 設定モーダルから直接開始したFIFOには正式計測区間がない。
+                    await session.setSensorDataMode('realtime');
+                }
             } catch (error) {
                 console.warn(`INSOLE${id}: failed to stop FIFO`, error);
             }
@@ -818,6 +826,7 @@ window.onload = function () {
         gaitToggle.disabled = true;
         gaitDownload.disabled = true;
         gaitActiveIds = [];
+        const startErrors = [];
         for (const id of ids) gaitLatest[id] = null;
         const results = await Promise.all(ids.map(async (id) => {
             const session = getInsoleToolkitSession(id);
@@ -830,12 +839,20 @@ window.onload = function () {
                 return session.gaitActive;
             } catch (error) {
                 console.warn(`INSOLE${id}: failed to enable Step Analysis`, error);
+                startErrors.push({
+                    id,
+                    code: error?.code || 'UNKNOWN',
+                    message: error?.message || String(error),
+                });
                 return false;
             }
         }));
         results.forEach((ok, i) => { if (ok) gaitActiveIds.push(ids[i]); });
         if (gaitActiveIds.length === 0) {
-            gaitStatus.textContent = i18nText('gaitStatusIdle');
+            const codes = startErrors.map((item) => `INSOLE${item.id + 1}: ${item.code}`).join(', ');
+            gaitStatus.textContent = startErrors.length > 0
+                ? i18nText('gaitStatusError', { codes })
+                : i18nText('gaitStatusIdle');
             gaitToggle.disabled = false;
             return;
         }
