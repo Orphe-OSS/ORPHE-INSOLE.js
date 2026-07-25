@@ -49,6 +49,13 @@
     { key: "m_csv", note: "m_csv_note" }
   ];
 
+  /** continuity.js が返す注意コード → i18n キー */
+  const CAUTION_KEYS = {
+    overBuffer: "cautionOverBuffer",
+    lagHigh: "cautionLagHigh",
+    lagOverCapacity: "cautionLagOverCapacity"
+  };
+
   const dom = {};
   const logEntries = [];
 
@@ -640,7 +647,11 @@
     entry.dropped = dropped;
     entry.csv = samples.length > 0 ? root.insoleToolkitMeasurementToCSV(result, "raw") : "";
 
-    entry.cautions = verdict.cautions.map((text) => ({ raw: text }));
+    // continuity.js の注意は言語非依存の code。表示時に i18n キーへ写す。
+    entry.cautions = verdict.cautions.map((caution) => ({
+      key: CAUTION_KEYS[caution.code] || "cautionUnknown",
+      params: caution.params
+    }));
     if (result.raw.truncated) {
       entry.cautions.push({ key: "cautionTruncated", params: { max: MAX_SAMPLES } });
     }
@@ -659,6 +670,13 @@
       entry.cautions.push({
         key: "cautionDroppedMismatch",
         params: { dropped, missing: analysis.missing }
+      });
+    }
+    // resync ごとに未回収バックログを再計上するため、dropped は収録スパンを超えうる
+    if (dropped > analysis.expected && analysis.expected > 0) {
+      entry.cautions.push({
+        key: "cautionDroppedExceedsSpan",
+        params: { dropped, expected: analysis.expected }
       });
     }
 
@@ -758,7 +776,7 @@
     const cautions = [];
     for (const id of ids) {
       for (const entry of device(id).cautions) {
-        const text = entry.raw !== undefined ? entry.raw : t(entry.key, entry.params);
+        const text = t(entry.key, entry.params);
         cautions.push(ids.length > 1 ? `${deviceLabel(id)}: ${text}` : text);
       }
     }
@@ -808,7 +826,8 @@
     setMetric(id, "m_drain_recovered", String(entry.drainRecovered));
     setMetric(id, "m_drain_ms", entry.drainMs === null ? t("valueEmpty") : `${entry.drainMs} ms`);
     setMetric(id, "m_max_lag", `${entry.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
-      verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
+      verdict.buffer.lagOverCapacity ? "bad"
+        : verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
     setMetric(id, "m_csv", samples > 0 ? t("csvAvailable") : t("csvUnavailable"),
       samples > 0 ? "ok" : "bad");
 
@@ -825,7 +844,10 @@
       });
     if (analysis.missingRanges.length > 0) {
       dom.missingRangesWrap[id].className = "missing-ranges";
-      dom.missingRanges[id].textContent = C.formatMissingRanges(analysis.missingRanges, 30);
+      dom.missingRanges[id].textContent = C.formatMissingRanges(analysis.missingRanges, {
+        limit: 30,
+        moreText: t("missingRangesMore")
+      });
     } else {
       dom.missingRangesWrap[id].className = "missing-ranges clean";
       dom.missingRanges[id].textContent = t("missingRangesNone");

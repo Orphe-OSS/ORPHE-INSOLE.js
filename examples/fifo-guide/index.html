@@ -272,9 +272,9 @@
           <h3 data-i18n="bufferCardTitle">端末内バッファ 約30秒の根拠</h3>
           <p data-i18n="bufferCardIntro">推測値ではなく、SDK実装の定数からの換算です。</p>
           <pre class="calc-card mono">src/InsoleFifo.js
-  RING_BUFFER_CAPACITY = 1500   // 追従遅れ(lag)の上限として扱う packet 数
-  NOTIFY_DATA_NUM      = 4      // 1 serial packet のフレーム数
-  decodePacket()                // フレーム間隔は 5 ms
+  RING_BUFFER_CAPACITY = 1500   // max lag treated as recoverable (packets)
+  NOTIFY_DATA_NUM      = 4      // frames per serial packet
+  decodePacket()                // frame interval is 5 ms
 
   1 serial packet = 4 frame × 5 ms       =     20 ms
   buffer window   = 1500 packet × 20 ms  = 30,000 ms  ≈ 30 s
@@ -303,17 +303,20 @@
     onDataLoss(info) { logLoss(info); }
   }
 });
-insoles[0].setup();
+insoles[0].setup();   // required: buildInsoleToolkit does not call setup()
 const session = getInsoleToolkitSession(0);
 
-// FIFO収録を開始（read mode 切替・バッファ消去・再要求はSDKが担当）
+// Start FIFO recording. The SDK handles the read-mode switch,
+// buffer clearing, polling and re-requests.
 await session.startMeasurement({ profile: "fifo-recording", restoreProfile: true });
 
-// drain（未回収データの回収）完了後に resolve する
+// Resolves only after drain (recovering outstanding serials) completes.
 const result = await session.stopMeasurement();
 result.raw.serial;   // { first, last, expected, received, missing, missingRate }
+result.fifo.dropped; // unrecoverable-loss tally (a different metric from missing)
 
-// 正式計測区間だけのCSV
+// CSV for the formal measurement window only.
+// With two devices, combine both results into one file keyed by device_id.
 const csv = insoleToolkitMeasurementToCSV(result, "raw");</code></pre>
       <p class="chart-footnote" data-i18n-html="howNote">
         FIFOのプロトコルは <code>src/InsoleFifo.js</code> と <code>src/InsoleToolkit.js</code> が担当します。

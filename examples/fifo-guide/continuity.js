@@ -284,15 +284,30 @@
         const lagRatio = RING_BUFFER_CAPACITY > 0 ? maxLag / RING_BUFFER_CAPACITY : 0;
 
         const continuity = missing === 0 && dropped === 0
-            ? { level: 'pass', label: 'PASS', text: '欠損なし' }
-            : { level: 'fail', label: 'FAIL', text: `欠損 ${missing} serial / dropped ${dropped}` };
+            ? { level: 'pass', label: 'PASS' }
+            : { level: 'fail', label: 'FAIL' };
 
+        // 注意は言語に依存しない code + params で返し、表示側（i18n）で文字列にする。
+        // continuity.js に日本語を持たせると英語表示に日本語が混ざるため。
         const cautions = [];
         if (!buffer.withinWindow) {
-            cautions.push(`計測 ${(durationMs / 1000).toFixed(1)} 秒は端末内バッファの目安 ${buffer.windowSeconds} 秒を超えています`);
+            cautions.push({
+                code: 'overBuffer',
+                params: { seconds: (durationMs / 1000).toFixed(1), window: buffer.windowSeconds },
+            });
         }
-        if (lagRatio >= LAG_CAUTION_RATIO) {
-            cautions.push(`追従遅れの最大値 ${maxLag} が上限 ${RING_BUFFER_CAPACITY} の ${Math.round(lagRatio * 100)}% に達しました`);
+        // lag が上限そのものを超えたら、FWバッファは確実に上書きされている
+        const lagOverCapacity = maxLag > RING_BUFFER_CAPACITY;
+        if (lagOverCapacity) {
+            cautions.push({
+                code: 'lagOverCapacity',
+                params: { maxLag, capacity: RING_BUFFER_CAPACITY },
+            });
+        } else if (lagRatio >= LAG_CAUTION_RATIO) {
+            cautions.push({
+                code: 'lagHigh',
+                params: { maxLag, capacity: RING_BUFFER_CAPACITY, percent: Math.round(lagRatio * 100) },
+            });
         }
         const bufferLevel = cautions.length > 0 ? 'caution' : 'ok';
 
@@ -304,7 +319,7 @@
             level,
             label: level === 'fail' ? 'FAIL' : level === 'caution' ? 'WARN' : 'PASS',
             continuity,
-            buffer: { ...buffer, level: bufferLevel, lagRatio, maxLag },
+            buffer: { ...buffer, level: bufferLevel, lagRatio, maxLag, lagOverCapacity },
             cautions,
             missing,
             dropped,
@@ -342,12 +357,22 @@
         };
     }
 
-    /** 欠損rangeを表示用の文字列にする（多すぎるときは先頭だけ出して残数を添える） */
-    function formatMissingRanges(ranges, limit = 20) {
+    /**
+     * 欠損rangeを表示用の文字列にする（多すぎるときは先頭だけ出して残数を添える）。
+     * 言語依存の「残り N 件」表記は呼び出し側から moreText で渡す
+     * （このモジュールに表示文字列を持たせないため）。
+     *
+     * @param {Array} ranges analyzeSerials().missingRanges
+     * @param {{limit?:number, moreText?:string}} [options] moreText の {count} が残り件数に置換される
+     */
+    function formatMissingRanges(ranges, options = {}) {
         if (!ranges || ranges.length === 0) return '';
+        const limit = Number.isFinite(Number(options.limit)) ? Number(options.limit) : 20;
         const shown = ranges.slice(0, limit).map((range) => range.label);
         const rest = ranges.length - shown.length;
-        return rest > 0 ? `${shown.join(', ')} … ほか ${rest} 区間` : shown.join(', ');
+        if (rest <= 0) return shown.join(', ');
+        const moreText = String(options.moreText || '(+{count})').replace('{count}', String(rest));
+        return `${shown.join(', ')} ${moreText}`;
     }
 
     /**

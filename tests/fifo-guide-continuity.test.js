@@ -42,6 +42,17 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     );
 }
 
+// ── 判定ロジックに表示文字列（日本語）を持たせていないこと ─────────────────
+// 英語表示に日本語が混ざるのを防ぐため、continuity.js は code + params だけを返す。
+{
+    const source = read('continuity.js');
+    const body = source.split('(function (global) {')[1];
+    const offending = body.split('\n').filter((line) => (
+        /[\u3040-\u30ff\u4e00-\u9faf]/.test(line) && !/^\s*(\*|\/\/|\/\*)/.test(line)
+    ));
+    assert.deepEqual(offending, [], `continuity.js に表示用の日本語が残っている:\n${offending.join('\n')}`);
+}
+
 // ── 欠損0 → PASS（緑） ──────────────────────────────────────────────────
 {
     const serials = [];
@@ -60,6 +71,7 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(verdict.label, 'PASS');
     assert.equal(verdict.continuity.level, 'pass');
     assert.equal(verdict.continuity.label, 'PASS');
+    assert.equal(verdict.continuity.text, undefined);   // 表示文字列は持たない
     assert.equal(verdict.cautions.length, 0);
 }
 
@@ -96,10 +108,16 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.deepEqual(analysis.missingRanges.map((r) => r.label), ['1200–1208', '1215']);
     assert.deepEqual(analysis.missingRanges.map((r) => r.count), [9, 1]);
     assert.equal(C.formatMissingRanges(analysis.missingRanges), '1200–1208, 1215');
+    // 「残り N 件」の文言は表示側から渡す（continuity.js に表示文字列を持たせない）
     assert.equal(
-        C.formatMissingRanges(analysis.missingRanges, 1),
+        C.formatMissingRanges(analysis.missingRanges, { limit: 1, moreText: '… ほか {count} 区間' }),
         '1200–1208 … ほか 1 区間'
     );
+    assert.equal(
+        C.formatMissingRanges(analysis.missingRanges, { limit: 1, moreText: '… and {count} more ranges' }),
+        '1200–1208 … and 1 more ranges'
+    );
+    assert.equal(C.formatMissingRanges(analysis.missingRanges, { limit: 1 }), '1200–1208 (+1)');
 
     const verdict = C.evaluateRecording({ analysis, dropped: 10, durationMs: 20000 });
     assert.equal(verdict.level, 'fail');
@@ -255,12 +273,33 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(over.label, 'WARN');
     assert.equal(over.continuity.level, 'pass');
     assert.equal(over.cautions.length, 1);
-    assert.match(over.cautions[0], /30 秒を超えています/);
+    // 注意は言語非依存の code + params（英語表示に日本語が混ざらないようにする）
+    assert.equal(over.cautions[0].code, 'overBuffer');
+    assert.equal(over.cautions[0].params.window, 30);
+    for (const caution of over.cautions) {
+        assert.equal(typeof caution.code, 'string');
+        assert.doesNotMatch(caution.code, /[^\x20-\x7e]/);   // ASCII のみ = 表示文字列ではない
+    }
 
     // 欠損0 + lag がバッファ容量へ接近 → 黄
     const tight = C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 10000, maxLag: 900 });
     assert.equal(tight.level, 'caution');
-    assert.match(tight.cautions[0], /追従遅れの最大値 900/);
+    assert.equal(tight.cautions[0].code, 'lagHigh');
+    assert.equal(tight.cautions[0].params.maxLag, 900);
+    assert.equal(tight.cautions[0].params.percent, 60);
+    assert.equal(tight.buffer.lagOverCapacity, false);
+
+    // lag が上限を超えたら「上書き確定」として別コードにする（実機2台で maxLag 1560 を観測）
+    const overCapacity = C.evaluateRecording({
+        analysis: clean, dropped: 0, durationMs: 60000, maxLag: 1560,
+    });
+    assert.equal(overCapacity.buffer.lagOverCapacity, true);
+    assert.deepEqual(overCapacity.cautions.map((caution) => caution.code),
+        ['overBuffer', 'lagOverCapacity']);
+    // 上限超のときは lagHigh を重ねない
+    assert.equal(overCapacity.cautions.filter((caution) => caution.code === 'lagHigh').length, 0);
+    assert.equal(C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 10000, maxLag: 1500 })
+        .buffer.lagOverCapacity, false);
 
     // 欠損があれば 30秒以内でも赤（黄で上書きされない）
     const lossy = C.evaluateRecording({ analysis: clean, missing: 3, dropped: 0, durationMs: 60000 });
@@ -487,6 +526,10 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(app, /C\.sideFromMountPosition\(mountPositionOf\(id\)\)/);
     // 全体判定はデバイスごとの判定を合成する
     assert.match(app, /C\.combineVerdicts\(/);
+    // continuity.js の注意コードを i18n キーへ写している（日本語を app に持たない）
+    assert.match(app, /const CAUTION_KEYS = \{/);
+    assert.match(app, /overBuffer: "cautionOverBuffer"/);
+    assert.match(app, /lagOverCapacity: "cautionLagOverCapacity"/);
     // 2台ぶんのCSVは device_id 列つきで1ファイルにまとめる
     assert.match(app, /function combinedCsv\(\)/);
     assert.match(app, /startMeasurement\(\{[\s\S]*?profile: "fifo-recording"/);
@@ -606,6 +649,16 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(i18n.translations.ja.fifoCardBody, /Step Analysisと同時に取得できません/);
     assert.match(i18n.translations.en.fifoCardBody, /No quaternion/);
     assert.match(i18n.translations.en.fifoCardBody, /cannot run together with Step Analysis/);
+
+    // continuity.js の caution code に対応する文言が両言語にある
+    for (const key of ['cautionOverBuffer', 'cautionLagHigh', 'cautionLagOverCapacity',
+        'cautionDroppedExceedsSpan', 'cautionUnknown']) {
+        assert.ok(i18n.translations.ja[key], `ja に ${key} がない`);
+        assert.ok(i18n.translations.en[key], `en に ${key} がない`);
+    }
+    // dropped が収録スパンを超える理由（再同期ごとの再計上）を両言語で説明する
+    assert.match(i18n.translations.ja.cautionDroppedExceedsSpan, /再同期のたびに未回収バックログを再計上/);
+    assert.match(i18n.translations.en.cautionDroppedExceedsSpan, /Each resync re-counts the outstanding backlog/);
 
     // 2台同時のときの注意（片側だけ欠損しうる）が両言語にある
     assert.match(i18n.translations.ja.cautionDualLoad, /片側だけに欠損が出た場合/);

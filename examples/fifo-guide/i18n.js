@@ -69,6 +69,7 @@
       continuityEmpty: "収録するとここに serial の連続性を表示します",
       continuityCaption: "serial {first} → {last} を {bins} 個のbinに集約（1bin ≒ {perBin} serial）。欠損の正確な番号は下の欠損rangeを参照してください。",
       missingRangesLabel: "欠損range",
+      missingRangesMore: "… ほか {count} 区間",
       missingRangesNone: "なし",
 
       liveKicker: "FIFO BATCH",
@@ -147,6 +148,11 @@
       cautionsTitle: "注意",
       cautionTruncated: "sample数の上限 {max} に達したため、後半のsampleが記録されていません（CSVも同様）。",
       cautionShortSpan: "CSVが覆うのは約{spanSeconds}秒です（予定 {plannedSeconds}秒 の {percent}%）。不足する約{shortfallSerials} serialは、主に停止時点で端末内に残っていた未要求分（停止時のlag）です。drainは「要求済みで届いていない分」の回収なので、未要求の新規サンプルは取りに行きません。欠損（missing）ではなく末尾が短いだけです。",
+      cautionOverBuffer: "計測 {seconds} 秒は端末内バッファの目安 {window} 秒を超えています。回収が追いつかないと古いデータが上書きされます。",
+      cautionLagHigh: "追従遅れの最大値 {maxLag} が上限 {capacity} の {percent}% に達しました。この先は欠損の危険域です。",
+      cautionLagOverCapacity: "追従遅れの最大値 {maxLag} が上限 {capacity} を超えました。FWバッファが上書きされ、回復不能な欠損が発生しています。",
+      cautionDroppedExceedsSpan: "dropped（{dropped}）が収録スパンの serial 数（{expected}）を超えています。再同期のたびに未回収バックログを再計上するため、dropped は「イベントの累計」で件数が膨らみます。実際にCSVから抜けた数は missing を見てください。",
+      cautionUnknown: "詳細不明の注意が発生しました。",
       cautionDroppedMismatch: "dropped（{dropped}）と最終CSV区間の missing（{missing}）は数え方が違うため一致しないことがあります。合否は両方が 0 かどうかで判断してください。",
 
       explainEyebrow: "WHY FIFO",
@@ -173,7 +179,7 @@
 
       footerNote: "このページは研究・開発用のexampleです。医療機器ではなく、診断・治療・予防を目的としません。Web Bluetooth 対応ブラウザ（Chrome / Edge）で https または localhost から開いてください。",
 
-      logPageReady: "ページを読み込みました。ORPHE INSOLE を1台接続してください。",
+      logPageReady: "ページを読み込みました。ORPHE INSOLE を1台または2台接続してください。",
       logConnectedDevice: "{device} に接続しました。計測時間を選んで「収録開始」を押してください。",
       logDisconnectedDevice: "{device} が切断されました。",
       logDisconnectedWhileRecording: "{device} が収録中に切断されました。このデバイスの収録は完了扱いになりません。",
@@ -262,6 +268,7 @@
       continuityEmpty: "Serial continuity appears here after a recording",
       continuityCaption: "Serials {first} → {last} aggregated into {bins} bins (about {perBin} serials per bin). Exact numbers are listed as missing ranges below.",
       missingRangesLabel: "Missing ranges",
+      missingRangesMore: "… and {count} more ranges",
       missingRangesNone: "none",
 
       liveKicker: "FIFO BATCH",
@@ -340,6 +347,11 @@
       cautionsTitle: "Cautions",
       cautionTruncated: "The sample limit of {max} was reached, so later samples are not recorded (nor exported).",
       cautionShortSpan: "The CSV covers about {spanSeconds} s ({percent}% of the planned {plannedSeconds} s). The roughly {shortfallSerials} missing serials are mostly the backlog still unrequested when recording stopped (the lag at stop). Drain recovers requested-but-undelivered serials, not newly generated ones, so this is a shorter tail rather than loss (missing).",
+      cautionOverBuffer: "The {seconds} s run exceeds the ~{window} s device buffer. Older data is overwritten when recovery cannot keep up.",
+      cautionLagHigh: "Peak lag {maxLag} reached {percent}% of the {capacity} limit. Beyond this point loss becomes likely.",
+      cautionLagOverCapacity: "Peak lag {maxLag} exceeded the {capacity} limit, so the firmware buffer was overwritten and data was lost unrecoverably.",
+      cautionDroppedExceedsSpan: "dropped ({dropped}) exceeds the number of serials in the recorded span ({expected}). Each resync re-counts the outstanding backlog, so dropped inflates as an event tally. Use missing for the number of serials actually absent from the CSV.",
+      cautionUnknown: "An unspecified caution was raised.",
       cautionDroppedMismatch: "dropped ({dropped}) and the final window's missing ({missing}) are counted differently and need not agree. Judge the run by whether both are 0.",
 
       explainEyebrow: "WHY FIFO",
@@ -366,7 +378,7 @@
 
       footerNote: "This example is for research and development. It is not a medical device and is not intended for diagnosis, treatment, or prevention. Open it from https or localhost in a Web Bluetooth browser (Chrome / Edge).",
 
-      logPageReady: "Page loaded. Connect one ORPHE INSOLE.",
+      logPageReady: "Page loaded. Connect one or two ORPHE INSOLE devices.",
       logConnectedDevice: "{device} connected. Pick a duration and press Start recording.",
       logDisconnectedDevice: "{device} disconnected.",
       logDisconnectedWhileRecording: "{device} disconnected while recording. That run is not treated as complete.",
