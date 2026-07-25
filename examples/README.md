@@ -11,6 +11,7 @@
 |---|---|---|---|---|
 | [VISUALIZE](./VISUALIZE/) | 6chチャート+IMU可視化（推奨スターター） | INSOLE ×1 | ―（実機推奨） | rAF描画スロットリング |
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
+| [step-analysis](./step-analysis/) | 1歩ごとの歩容表 + Realtime Rawグラフ | INSOLE ×1〜2 | `?demo=1` またはデモ再生ボタン | `realtime-full-step`、左右自動割当、10歩統計 |
 | [sensor-dashboard](./sensor-dashboard/) | 2台同時ダッシュボード | INSOLE ×2 | ―（実機推奨） | L/R自動マッピング（mount_position） |
 | [balance-sway](./balance-sway/) | 重心動揺の可視化（CoP軌跡・軌跡長・楕円面積） | INSOLE ×2 | デモ再生内蔵 | CoP計算、圧力検証、医療注意書き |
 | [balance-tuner](./balance-tuner/) | 左右バランスの可聴化 | INSOLE ×2 | **デモモード内蔵**（既定でON） | Web Audio、荷重→音マッピング |
@@ -21,7 +22,7 @@
 
 ## 実機がない場合
 
-1. **showcase / balance-tuner** はページ内デモモードがそのまま動きます
+1. **showcase / step-analysis / balance-tuner** はページ内デモモードがそのまま動きます
 2. 任意のサンプルを `OrpheInsoleSimulator` で動かす場合は
    `buildInsoleToolkit(..., { simulator: true })` を使うか、README の「実機がない場合（シミュレータ）」を参照
 

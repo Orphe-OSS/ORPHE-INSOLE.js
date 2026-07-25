@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description"
+    content="ORPHE INSOLE Toolkit の Step Analysis と Realtime Raw を左右1歩ごとに可視化する実機対応exampleです。">
+  <title>ORPHE INSOLE Step Analysis + RAW Data</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="./style.css?v=20260725-i18n">
+</head>
+
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="title-block">
+        <div class="top-row">
+          <a class="back-link" href="../../index.html#examples" aria-label="Examples 一覧へ戻る"
+            data-i18n-aria-label="backLabel">
+            <i class="bi bi-arrow-left"></i> EXAMPLES
+          </a>
+          <div class="language-switch" role="group" aria-label="言語" data-i18n-aria-label="languageLabel">
+            <button type="button" data-lang-button="ja" aria-pressed="true">JA</button>
+            <button type="button" data-lang-button="en" aria-pressed="false">EN</button>
+          </div>
+        </div>
+        <div class="title-line">
+          <div>
+            <p class="eyebrow">TOOLKIT EXAMPLE / REALTIME FULL + STEP</p>
+            <h1>Step Analysis <span>+ RAW Data</span></h1>
+          </div>
+          <div class="toolkit-cluster" aria-label="ORPHE INSOLE 接続" data-i18n-aria-label="toolkitLabel">
+            <div id="toolkit0" class="toolkit-slot"></div>
+            <div id="toolkit1" class="toolkit-slot"></div>
+          </div>
+        </div>
+        <p class="lead-copy" data-i18n="leadCopy">
+          左右の ORPHE INSOLE から歩容解析結果を取得し、最新値と直近10歩の傾向を更新します。
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="control-strip" aria-label="データソースと操作" data-i18n-aria-label="controlsLabel">
+      <div class="source-state">
+        <span id="source-badge" class="source-badge waiting">WAITING</span>
+        <div>
+          <strong id="source-title" data-i18n="sourceConnectTitle">INSOLE を接続してください</strong>
+          <span id="source-detail" data-i18n="sourceConnectDetail">タイトル横のスイッチから、左右1台ずつ接続します。</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="demo-toggle" class="button secondary" type="button" data-i18n-html="demoPlayHtml">
+          <i class="bi bi-play-fill"></i> デモ再生
+        </button>
+        <button id="clear-button" class="button ghost" type="button" data-i18n-html="clearHtml">
+          <i class="bi bi-arrow-counterclockwise"></i> クリア
+        </button>
+        <button id="csv-button" class="button ghost" type="button" disabled data-i18n-html="csvHtml">
+          <i class="bi bi-download"></i> Step CSV
+        </button>
+      </div>
+    </section>
+
+    <div class="settings-guide">
+      <i class="bi bi-gear-fill" aria-hidden="true"></i>
+      <div data-i18n-html="settingsGuide">
+        <strong>
+          Step Analysis + RAW Data を使いたいときは、Toolkit UI の歯車を開き、次のように設定してください。
+        </strong>
+        <p>
+          <span>Data Outputs: <b>Raw Sensor Data</b> と <b>Step Analysis</b> をON</span>
+          <span>Raw Data Acquisition: <b>Realtime</b></span>
+          <span>Realtime Streaming Format: <b>4: gyro + acc + press + quat (100Hz)</b></span>
+          <span class="settings-guide-default">このデモプログラムでは初期設定で上記の設定となっています</span>
+        </p>
+      </div>
+    </div>
+
+    <section class="graphs-section" aria-label="リアルタイムグラフ" data-i18n-aria-label="graphsLabel">
+      <div class="step-trend-card">
+        <div class="step-trend-toolbar">
+          <div>
+            <span class="trend-kicker">LAST 10 STEPS</span>
+            <strong data-i18n="trendTitle">歩行速度・歩幅の推移</strong>
+          </div>
+          <div class="step-trend-legend" aria-label="Step推移グラフ凡例"
+            data-i18n-aria-label="trendLegendLabel">
+            <span><i class="legend-line left"></i> LEFT</span>
+            <span><i class="legend-line right"></i> RIGHT</span>
+          </div>
+        </div>
+        <canvas id="step-trend-chart" width="1200" height="360"
+          aria-label="左右の直近10歩の歩行速度と歩幅を示す折れ線グラフ"
+          data-i18n-aria-label="trendCanvasLabel"></canvas>
+        <div class="step-trend-latest" aria-live="polite">
+          <span class="left">
+            LEFT
+            <strong id="left-trend-speed">— m/s</strong>
+            <strong id="left-trend-step">— m</strong>
+          </span>
+          <span class="right">
+            RIGHT
+            <strong id="right-trend-speed">— m/s</strong>
+            <strong id="right-trend-step">— m</strong>
+          </span>
+        </div>
+      </div>
+
+      <div class="chart-card compact-raw-card">
+        <div class="chart-toolbar">
+          <strong class="chart-title">
+            <span>REALTIME RAW</span>
+            <b data-i18n="rawTitle">生データ・直近10秒</b>
+          </strong>
+          <div class="chart-meta">
+            <div class="chart-legend" aria-label="グラフ凡例" data-i18n-aria-label="rawLegendLabel">
+              <span><i class="legend-line left"></i> LEFT</span>
+              <span><i class="legend-line right"></i> RIGHT</span>
+            </div>
+            <span id="raw-rate">Plot: L 0 Hz / R 0 Hz</span>
+          </div>
+        </div>
+        <canvas id="raw-chart" width="1200" height="180"
+          aria-label="左右の圧力合計、加速度、ジャイロのリアルタイムグラフ"
+          data-i18n-aria-label="rawCanvasLabel"></canvas>
+      </div>
+    </section>
+
+    <section class="result-section" aria-labelledby="result-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">ONE STEP AT A TIME</p>
+          <h2 id="result-title" data-i18n="resultTitle">歩容パラメータ</h2>
+        </div>
+        <p data-i18n="resultDescription">
+          大きな値が最新1歩、下段が直近10歩の平均 ± SDです。セルが光るたびに新しい歩が完成しています。
+        </p>
+      </div>
+
+      <div id="gait-table-frame" class="table-frame">
+        <table class="gait-table">
+          <thead>
+            <tr>
+              <th scope="col" class="parameter-column" data-i18n="parametersHeader">Parameters</th>
+              <th id="side-column-left" scope="col" class="side-column left-column">
+                <span class="side-heading" data-i18n-html="leftSideHtml"><i class="bi bi-chevron-left"></i> Left side</span>
+                <small id="left-meta">0 steps / waiting</small>
+              </th>
+              <th id="side-column-right" scope="col" class="side-column right-column">
+                <span class="side-heading" data-i18n-html="rightSideHtml">Right side <i class="bi bi-chevron-right"></i></span>
+                <small id="right-meta">0 steps / waiting</small>
+              </th>
+              <th scope="col" class="source-column" data-i18n="sourceHeader">Data source</th>
+            </tr>
+          </thead>
+          <tbody id="gait-table-body"></tbody>
+        </table>
+      </div>
+
+      <div class="notify-strip" aria-live="polite">
+        <span data-i18n-html="lastUpdateHtml"><i class="bi bi-broadcast"></i> Step Analysis 最終更新</span>
+        <span id="last-step-time">—</span>
+      </div>
+
+      <div class="scope-note">
+        <i class="bi bi-info-circle"></i>
+        <p data-i18n-html="scopeNote">
+          <strong>現行 Step Analysis で直接得られない値:</strong>
+          歩隔、単脚支持率、両脚支持率。これらは推定値で埋めず「未計測」とします。
+          正常範囲も年齢・速度・計測条件で変わるため、このexampleでは判定しません。
+        </p>
+      </div>
+      <p class="chart-footnote" data-i18n="chartFootnote">
+        圧力は6ch ADC生値の合計です。加速度とジャイロはレンジ換算後のベクトル大きさを表示します。
+        描画負荷を抑えるため、グラフは受信データを約30Hzに間引いて表示します。
+        Realtime + Step はライブ表示向けであり、無欠損記録を保証するモードではありません。
+      </p>
+    </section>
+
+    <section class="how-section" aria-labelledby="how-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">HOW IT WORKS</p>
+          <h2 id="how-title" data-i18n="howTitle">このexampleが使う Toolkit の設定プログラム</h2>
+        </div>
+      </div>
+      <pre class="code-card"><code>buildInsoleToolkit(toolkit, "INSOLE 01", 0, {
+  profile: "realtime-full-step",
+  gait: {
+    onGait(deviceId, row) {
+      updateStepTable(deviceId, row);
+    }
+  }
+});</code></pre>
+    </section>
+
+    <footer data-i18n="footerNote">
+      このページは研究・開発用のexampleです。医療機器ではなく、診断・治療・予防を目的としません。
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
+  <script src="./metrics.js?v=20260725-i18n"></script>
+  <script src="./i18n.js?v=20260725-i18n"></script>
+  <script src="./app.js?v=20260725-i18n"></script>
+</body>
+
+</html>
