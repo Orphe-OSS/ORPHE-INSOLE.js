@@ -224,7 +224,7 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(C.bufferGuidance(10000).expectedPackets, 500);
     assert.equal(C.bufferGuidance(30000).level, 'recommended');   // ちょうど30秒は推奨帯
     assert.equal(C.bufferGuidance(30000).withinWindow, true);
-    assert.equal(C.bufferGuidance(30001).level, 'caution');
+    assert.equal(C.bufferGuidance(30001).level, 'caution');        // 選択値の表示は許容幅なし
     assert.equal(C.bufferGuidance(60000).level, 'caution');
     assert.equal(C.bufferGuidance(60000).expectedPackets, 3000);
 
@@ -232,6 +232,22 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
 
     // 欠損0 + 30秒以内 → 緑
     assert.equal(C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 29000 }).level, 'pass');
+
+    // 「30秒」を選んだ収録の実測は 30,00x ms になる。これを警告にしない（実機で踏んだ回帰）
+    assert.equal(C.BUFFER_WINDOW_TOLERANCE_MS, 1000);
+    for (const durationMs of [30000, 30003, 30250, 31000]) {
+        const jitter = C.evaluateRecording({ analysis: clean, dropped: 0, durationMs, maxLag: 298 });
+        assert.equal(jitter.level, 'pass', `durationMs=${durationMs} が pass にならない`);
+        assert.equal(jitter.cautions.length, 0, `durationMs=${durationMs} に不要な注意が出ている`);
+        assert.equal(jitter.buffer.withinWindow, true);
+    }
+    // 許容幅を超えたら警告に戻る
+    assert.equal(C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 31001 }).level, 'caution');
+    // 許容幅は呼び出し側で明示指定もできる
+    assert.equal(
+        C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 30003, toleranceMs: 0 }).level,
+        'caution'
+    );
 
     // 欠損0 + 30秒超過 → 黄（欠損なしの表示は維持する）
     const over = C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 60000 });
@@ -255,6 +271,37 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(droppedOnly.level, 'fail');
     assert.equal(droppedOnly.missing, 0);
     assert.equal(droppedOnly.dropped, 5);
+}
+
+// ── 収録スパン（CSVが覆う時間）と予定時間の比 ───────────────────────────────
+// 停止時点で未要求だった分は収録スパンに入らないため、CSVは予定より少し短くなる。
+// これは missing ではないので別指標として出す。実機: 30.0 s 指定 → 1325 serial = 26.5 s。
+{
+    const exact = C.spanCoverage(1500, 30000);
+    assert.equal(exact.spanMs, 30000);
+    assert.equal(exact.ratio, 1);
+    assert.equal(exact.level, 'ok');
+    assert.equal(exact.shortfallSerials, 0);
+
+    const observed = C.spanCoverage(1325, 30000);
+    assert.equal(observed.spanMs, 26500);          // 1325 × 20 ms
+    assert.equal(Math.round(observed.ratio * 100), 88);
+    assert.equal(observed.level, 'warn');          // 90% 未満は「末尾が短い」
+    assert.equal(observed.shortfallMs, 3500);
+    assert.equal(observed.shortfallSerials, 175);
+
+    // 閾値ちょうど（90%）は ok
+    assert.equal(C.spanCoverage(1350, 30000).level, 'ok');
+    assert.equal(C.spanCoverage(1349, 30000).level, 'warn');
+    // 予定不明（0）のときは判定しない
+    assert.equal(C.spanCoverage(500, 0).level, 'ok');
+    assert.equal(C.spanCoverage(0, 30000).spanMs, 0);
+    assert.equal(C.SPAN_COVERAGE_OK_RATIO, 0.9);
+
+    // スパンが短いことは欠損（missing）とは無関係 — 判定は PASS のまま
+    const clean = C.analyzeSerials(Array.from({ length: 1325 }, (_, i) => 1000 + i));
+    assert.equal(clean.missing, 0);
+    assert.equal(C.evaluateRecording({ analysis: clean, dropped: 0, durationMs: 30003 }).level, 'pass');
 }
 
 // ── 空データ ────────────────────────────────────────────────────────────
@@ -420,7 +467,7 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
 
     // 必須メトリクスのラベルと説明が両言語にある
     for (const key of ['m_duration', 'm_samples', 'm_first', 'm_last', 'm_expected',
-        'm_received', 'm_missing', 'm_missing_rate', 'm_dropped', 'm_drain_recovered',
+        'm_received', 'm_missing', 'm_missing_rate', 'm_span', 'm_dropped', 'm_drain_recovered',
         'm_drain_ms', 'm_max_lag', 'm_csv']) {
         assert.ok(i18n.translations.ja[key], `ja に ${key} がない`);
         assert.ok(i18n.translations.en[key], `en に ${key} がない`);
@@ -438,6 +485,12 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.match(i18n.translations.en.scopeNote, /different metrics/);
     assert.match(i18n.translations.ja.m_dropped_note, /missing とは別指標/);
     assert.match(i18n.translations.en.m_dropped_note, /different metric from missing/);
+
+    // 収録スパンが予定より短くなる理由を両言語で説明している（missing ではないこと）
+    assert.match(i18n.translations.ja.cautionShortSpan, /未要求/);
+    assert.match(i18n.translations.ja.cautionShortSpan, /欠損（missing）ではなく末尾が短いだけ/);
+    assert.match(i18n.translations.en.cautionShortSpan, /still unrequested at stop/);
+    assert.match(i18n.translations.en.cautionShortSpan, /rather than loss/);
 
     // CSV 1行と serial packet の関係
     assert.match(i18n.translations.ja.resultFootnote, /1 serial = 4行/);

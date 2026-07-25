@@ -38,6 +38,17 @@
     /** lag / RING_BUFFER_CAPACITY がこれを超えたらバッファ逼迫として警告する */
     const LAG_CAUTION_RATIO = 0.5;
 
+    /**
+     * 実測 durationMs を窓と比べるときの許容幅。
+     * 「30秒」を選んでも停止タイマの発火揺らぎで実測は 30,00x ms になるため、
+     * これを入れないと推奨どおりの収録が毎回「30秒超過」の警告になる（実機で確認）。
+     * 選択値そのものを表示するガイド帯は許容幅なし（既定 0）で判定する。
+     */
+    const BUFFER_WINDOW_TOLERANCE_MS = 1000;
+
+    /** 収録スパンが予定時間のこの割合を下回ったら「末尾が短い」と表示する */
+    const SPAN_COVERAGE_OK_RATIO = 0.9;
+
     /** Canvas timeline の集約bin数の既定。数千serialでも定数メモリで描くため。 */
     const DEFAULT_BIN_COUNT = 240;
 
@@ -200,18 +211,54 @@
     /**
      * 計測時間から端末内バッファの余裕を判定する。
      * 「30秒以内なら絶対に無欠損」ではなく「バッファに収まる長さかどうか」の目安。
+     *
+     * @param {number} durationMs
+     * @param {object} [options]
+     * @param {number} [options.toleranceMs=0] 窓の判定に加える許容幅。
+     *   選択値の表示は 0、実測 durationMs の判定は BUFFER_WINDOW_TOLERANCE_MS を渡す。
      */
-    function bufferGuidance(durationMs) {
+    function bufferGuidance(durationMs, options = {}) {
         const ms = Math.max(0, Number(durationMs) || 0);
+        const toleranceMs = Math.max(0, Number(options.toleranceMs) || 0);
         const ratio = BUFFER_WINDOW_MS > 0 ? ms / BUFFER_WINDOW_MS : 0;
+        const withinWindow = ms <= BUFFER_WINDOW_MS + toleranceMs;
         return {
             durationMs: ms,
             windowMs: BUFFER_WINDOW_MS,
             windowSeconds: BUFFER_WINDOW_MS / 1000,
+            toleranceMs,
             ratio,
-            withinWindow: ms <= BUFFER_WINDOW_MS,
-            level: ms <= BUFFER_WINDOW_MS ? 'recommended' : 'caution',
+            withinWindow,
+            level: withinWindow ? 'recommended' : 'caution',
             expectedPackets: Math.round(ms / PACKET_INTERVAL_MS),
+        };
+    }
+
+    /**
+     * 収録スパン（CSVが実際に覆う時間）と予定時間の比。
+     *
+     * 停止時点で端末内に残っていた「まだ要求していない」分（lag）は収録スパンに入らない。
+     * drain は *要求済みで未着* の再要求を回収するフェーズであり、未要求の新規シリアルは
+     * 取りに行かないため、CSV のスパンは予定時間よりわずかに短くなる（実機で 30.0 s 指定 →
+     * 1325 serial = 26.5 s を確認）。これは欠損（missing）ではなく「区間の末尾が短い」だけなので、
+     * missing とは別の指標として表示する。
+     *
+     * @param {number} expectedSerials 収録スパンの serial 数（analyzeSerials().expected）
+     * @param {number} plannedMs 予定していた計測時間
+     */
+    function spanCoverage(expectedSerials, plannedMs) {
+        const serials = Math.max(0, Number(expectedSerials) || 0);
+        const planned = Math.max(0, Number(plannedMs) || 0);
+        const spanMs = serials * PACKET_INTERVAL_MS;
+        const ratio = planned > 0 ? spanMs / planned : 0;
+        return {
+            serials,
+            spanMs,
+            plannedMs: planned,
+            ratio,
+            shortfallMs: Math.max(0, planned - spanMs),
+            shortfallSerials: Math.max(0, Math.round((planned - spanMs) / PACKET_INTERVAL_MS)),
+            level: planned === 0 || ratio >= SPAN_COVERAGE_OK_RATIO ? 'ok' : 'warn',
         };
     }
 
@@ -230,7 +277,10 @@
         const dropped = Number(input.dropped || 0);
         const durationMs = Number(input.durationMs || 0);
         const maxLag = Number(input.maxLag || 0);
-        const buffer = bufferGuidance(durationMs);
+        // 実測 durationMs はタイマの揺らぎで選択値をわずかに超えるため許容幅つきで判定する
+        const buffer = bufferGuidance(durationMs, {
+            toleranceMs: input.toleranceMs != null ? input.toleranceMs : BUFFER_WINDOW_TOLERANCE_MS,
+        });
         const lagRatio = RING_BUFFER_CAPACITY > 0 ? maxLag / RING_BUFFER_CAPACITY : 0;
 
         const continuity = missing === 0 && dropped === 0
@@ -297,12 +347,15 @@
         PACKET_INTERVAL_MS,
         RING_BUFFER_CAPACITY,
         BUFFER_WINDOW_MS,
+        BUFFER_WINDOW_TOLERANCE_MS,
+        SPAN_COVERAGE_OK_RATIO,
         LAG_CAUTION_RATIO,
         DEFAULT_BIN_COUNT,
         serialForwardDistance,
         analyzeSerials,
         buildTimelineBins,
         bufferGuidance,
+        spanCoverage,
         evaluateRecording,
         formatMissingRanges,
         extractSerialsFromCsv,

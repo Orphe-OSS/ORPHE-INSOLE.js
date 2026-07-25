@@ -118,6 +118,8 @@
       m_missing_note: "expected − received。CSVに存在しない serial",
       m_missing_rate: "missing rate",
       m_missing_rate_note: "missing ÷ expected",
+      m_span: "収録スパン",
+      m_span_note: "CSVが実際に覆う時間 = 収録serial数 × 20 ms。停止時点で未要求だった分は含まれない",
       m_dropped: "dropped",
       m_dropped_note: "収録中に回復不能と判定された累計。missing とは別指標",
       m_drain_recovered: "drain recovered",
@@ -137,6 +139,7 @@
       resultFootnote: "CSVは正式計測区間（開始〜drain完了）のsampleだけを含みます。1 serial packet は4フレーム（5ms間隔）なのでCSVでは1 serial = 4行になります。欠損を数えるときは行数ではなく serial 番号の連続性を見てください。timelineは数千serialでもDOM要素を作らず、Canvasに固定数のbinへ集約して描画します。",
       cautionsTitle: "注意",
       cautionTruncated: "sample数の上限 {max} に達したため、後半のsampleが記録されていません（CSVも同様）。",
+      cautionShortSpan: "CSVが覆うのは約{spanSeconds}秒です（予定 {plannedSeconds}秒 の {percent}%）。停止時点で端末内に残っていた未要求の約{shortfallSerials} serialは収録スパンに含まれません。drainは「要求済みで届いていない分」の回収なので、未要求の新規サンプルは取りに行きません。欠損（missing）ではなく末尾が短いだけです。",
       cautionDroppedMismatch: "dropped（{dropped}）と最終CSV区間の missing（{missing}）は数え方が違うため一致しないことがあります。合否は両方が 0 かどうかで判断してください。",
 
       explainEyebrow: "WHY FIFO",
@@ -299,6 +302,8 @@
       m_missing_note: "expected − received. Serials absent from the CSV",
       m_missing_rate: "Missing rate",
       m_missing_rate_note: "missing ÷ expected",
+      m_span: "Recorded span",
+      m_span_note: "Time actually covered by the CSV = recorded serials × 20 ms. Serials not yet requested at stop are excluded",
       m_dropped: "Dropped",
       m_dropped_note: "Cumulative unrecoverable-loss events during the run. A different metric from missing",
       m_drain_recovered: "Drain recovered",
@@ -318,6 +323,7 @@
       resultFootnote: "The CSV contains only samples from the formal window (start through drain completion). One FIFO serial packet holds four frames at 5 ms, so one serial is four CSV rows. Count loss from serial continuity, not from row counts. The timeline creates no per-serial DOM nodes: it aggregates into a fixed number of Canvas bins.",
       cautionsTitle: "Cautions",
       cautionTruncated: "The sample limit of {max} was reached, so later samples are not recorded (nor exported).",
+      cautionShortSpan: "The CSV covers about {spanSeconds} s ({percent}% of the planned {plannedSeconds} s). About {shortfallSerials} serials still unrequested at stop are outside the recorded span. Drain recovers requested-but-undelivered serials, not newly generated ones, so this is a shorter tail rather than loss (missing).",
       cautionDroppedMismatch: "dropped ({dropped}) and the final window's missing ({missing}) are counted differently and need not agree. Judge the run by whether both are 0.",
 
       explainEyebrow: "WHY FIFO",

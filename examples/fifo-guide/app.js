@@ -38,6 +38,7 @@
     { key: "m_received", note: "m_received_note" },
     { key: "m_missing", note: "m_missing_note" },
     { key: "m_missing_rate", note: "m_missing_rate_note" },
+    { key: "m_span", note: "m_span_note" },
     { key: "m_dropped", note: "m_dropped_note" },
     { key: "m_drain_recovered", note: "m_drain_note" },
     { key: "m_drain_ms", note: "m_drain_ms_note" },
@@ -77,6 +78,7 @@
     result: null,
     analysis: null,
     verdict: null,
+    coverage: null,
     dropped: 0,
     cautions: [],
     csv: "",
@@ -338,6 +340,7 @@
     state.result = null;
     state.analysis = null;
     state.verdict = null;
+    state.coverage = null;
     state.dropped = 0;
     state.cautions = [];
     state.csv = "";
@@ -499,9 +502,13 @@
       maxLag: state.maxLag
     });
 
+    // CSVが実際に覆う時間。停止時点で未要求だった分は収録スパンに入らない（missing ではない）
+    const coverage = C.spanCoverage(analysis.expected, state.plannedMs);
+
     state.result = result;
     state.analysis = analysis;
     state.verdict = verdict;
+    state.coverage = coverage;
     state.dropped = dropped;
     state.csv = samples.length > 0 ? root.insoleToolkitMeasurementToCSV(result, "raw") : "";
     state.lastUpdateAt = new Date();
@@ -509,6 +516,17 @@
     state.cautions = verdict.cautions.map((text) => ({ raw: text }));
     if (result.raw.truncated) {
       state.cautions.push({ key: "cautionTruncated", params: { max: MAX_SAMPLES } });
+    }
+    if (coverage.level !== "ok") {
+      state.cautions.push({
+        key: "cautionShortSpan",
+        params: {
+          spanSeconds: (coverage.spanMs / 1000).toFixed(1),
+          plannedSeconds: (coverage.plannedMs / 1000).toFixed(0),
+          percent: Math.round(coverage.ratio * 100),
+          shortfallSerials: coverage.shortfallSerials
+        }
+      });
     }
     if (dropped !== analysis.missing) {
       state.cautions.push({
@@ -590,6 +608,10 @@
     setMetric("m_missing", String(analysis.missing), analysis.missing === 0 ? "ok" : "bad");
     setMetric("m_missing_rate", `${(analysis.missingRate * 100).toFixed(3)} %`,
       analysis.missing === 0 ? "ok" : "bad");
+    const coverage = state.coverage || C.spanCoverage(analysis.expected, state.plannedMs);
+    setMetric("m_span",
+      `${(coverage.spanMs / 1000).toFixed(1)} s (${Math.round(coverage.ratio * 100)} %)`,
+      coverage.level);
     setMetric("m_dropped", String(state.dropped), state.dropped === 0 ? "ok" : "bad");
     setMetric("m_drain_recovered", String(state.drainRecovered));
     setMetric("m_drain_ms", state.drainMs === null ? t("valueEmpty") : `${state.drainMs} ms`);
@@ -938,6 +960,7 @@
         missingRanges: analysis.missingRanges.map((range) => range.label)
       } : null,
       sdkSerial: result && result.raw ? result.raw.serial : null,
+      spanCoverage: state.coverage,
       fifo: {
         droppedTotal: state.droppedTotal,
         droppedLiveCumulative: state.droppedLive,

@@ -65,6 +65,19 @@ src/InsoleFifo.js:
 - 長時間計測では、必ず結果表の欠損表示（missing / dropped / timeline）と、
   保存した CSV の中身を確認してください。
 
+## 収録スパンは予定時間より少し短くなる（欠損ではない）
+
+停止した時点で端末内に残っていた「**まだ要求していない**」分は収録スパンに含まれません。
+drain は *要求済みで届いていない* シリアルを回収するフェーズであり、未要求の新規サンプルは
+取りに行かないためです。
+
+実機（30.0 秒指定）では 1325 serial = **26.5 秒分**（88%）が CSV に入りました。
+残りの約175 serial は停止時の追従遅れ（lag）分です。
+
+これは `missing`（区間内の抜け）ではなく「区間の末尾が短い」だけなので、
+結果表では **収録スパン** という別の指標として表示し、90% を下回ると注意を出します。
+きっちり N 秒ぶん確保したい場合は、予定時間を少し長めにして後段でトリミングしてください。
+
 ## `dropped` と `missing` を同じ指標として扱わない
 
 | 指標 | 意味 | 取得元 |
@@ -78,7 +91,7 @@ src/InsoleFifo.js:
 ## 表示する値
 
 - **結果表**: 計測時間 / FIFO samples / 最初と最後のserial / expected / received / missing /
-  missing rate / dropped / drain recovered / drain時間 / 最大lag / CSV保存可否
+  missing rate / **収録スパン** / dropped / drain recovered / drain時間 / 最大lag / CSV保存可否
 - **判定バー**: 欠損0かつ30秒以内 → 緑 `PASS` / 欠損あり → 赤 `FAIL` /
   30秒超過またはバッファ逼迫 → 黄 `WARN`（色だけでなくテキストでも表記）
 - **Serial continuity timeline**: received を緑、missing を赤で横方向に表示。
