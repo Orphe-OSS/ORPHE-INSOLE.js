@@ -653,7 +653,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 |---|---|---|
 | 可視化 | examples/VISUALIZE | 6chチャート、描画スロットリング |
 | 製品ショーケース | examples/showcase | LIVE/DEMO切替、CSV再生、i18n |
-| 展示用1画面 | examples/exhibition | 16:9ノースクロール、showcaseのvizモジュール再利用、全画面 |
+| 展示用一覧 | examples/exhibition | 16:9のディスプレイでセンサ値を一覧、ノースクロール、showcaseのvizモジュール再利用 |
 | ダッシュボード | examples/sensor-dashboard | 2台接続、L/R自動マッピング |
 | 重心動揺 | examples/balance-sway | CoP軌跡、圧力検証、医療注意書き |
 | 可聴化（バランス） | examples/balance-tuner | 荷重→音マッピング |

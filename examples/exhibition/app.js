@@ -208,23 +208,6 @@ function average(values) {
     return valid.reduce((a, b) => a + b, 0) / valid.length;
 }
 
-/** 直近N歩で最も多かった分類（同数なら最新のもの） */
-function majority(values) {
-    const valid = values.filter(Boolean);
-    if (valid.length === 0) return null;
-    const counts = new Map();
-    valid.forEach(v => counts.set(v, (counts.get(v) || 0) + 1));
-    let best = valid[valid.length - 1];
-    let bestCount = 0;
-    for (const [value, count] of counts) {
-        if (count > bestCount) {
-            best = value;
-            bestCount = count;
-        }
-    }
-    return best;
-}
-
 function createStepPanel() {
     const dom = [0, 1].map(id => ({
         panel: document.getElementById(`step_panel${id}`),
@@ -264,8 +247,10 @@ function createStepPanel() {
             cell.stance.textContent = ratio(stance);
             cell.stanceAvg.textContent = `avg ${ratio(stanceAvg)}`;
 
-            cell.strike.textContent = last.foot_strike || '-';
-            cell.strikeAvg.textContent = majority(history.map(r => r.foot_strike)) || '-';
+            // 分類（heelStrike/midfoot/forefoot）と接地角度を併記する
+            const strikeAngle = num(last.strike_angle_deg, 1);
+            cell.strike.textContent = `${last.foot_strike || '-'} ${strikeAngle}${strikeAngle === '-' ? '' : '°'}`;
+            cell.strikeAvg.textContent = `avg ${num(average(history.map(r => r.strike_angle_deg)), 1)}°`;
 
             const pronDeg = num(last.pronation_deg, 1);
             cell.pron.textContent = `${last.pronation_type || '-'} ${pronDeg}°`;
