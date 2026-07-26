@@ -2,6 +2,12 @@
 
 作成日: 2026-07-05 / 対象: v1.1.0 (main, 42bf866) / ステータス: **分析のみ・コード未変更**
 
+> **追記 2026-07-25**: 本書が調査対象とした examples のうち `sensor-dashboard-FSRvisualize` /
+> `UDON_fsr_20250724` / `p5.ORPHE.FSR_visualise_0327_submit` の3つは削除済みです
+> （いずれも git 履歴を持たないローカル専用の例で、公開ギャラリーにも未掲載でした）。
+> 以降の記述は 2026-07-05 時点のスナップショットとして原文のまま残しますが、
+> これらを対象とする作業項目（P1-3 の一部 / P2-2 の一部 / 担当トラックC）は破棄されています。
+
 ---
 
 ## 1. 現状理解
@@ -192,7 +198,7 @@ npm publish + ESM/型のデュアル配布、Playwright E2E、記録（CSV/JSONL
 
 **P1-3: examples の統一整備 + 例マトリクス**
 - 目的: 「初心者がすぐ動く」「研究/営業デモで安定」の導線
-- 対象: examples/README.md（新規: 目的×必要デバイス×確認方法の表）、sensor-dashboard-FSRvisualize（rAFスロットリング化 + グローバル整理 app.js:4-14）、p5.ORPHE.FSR_visualise_0327_submit（ORPHE-CORE.jsコピー同梱の旧例 → `examples/archive/` へ移動 or 削除）、UDON（**59MBのバイナリ `measurement-server` をリポジトリから除去**。必要ならソース公開 + GitHub Releases 配布へ。git履歴からの削除は別途判断）
+- 対象: examples/README.md（新規: 目的×必要デバイス×確認方法の表）、~~sensor-dashboard-FSRvisualize（rAFスロットリング化 + グローバル整理 app.js:4-14）、p5.ORPHE.FSR_visualise_0327_submit（ORPHE-CORE.jsコピー同梱の旧例 → `examples/archive/` へ移動 or 削除）、UDON（**59MBのバイナリ `measurement-server` をリポジトリから除去**。必要ならソース公開 + GitHub Releases 配布へ。git履歴からの削除は別途判断）~~ → **3例とも削除で決着（〜2026-07-25）**
 - 方針: 全example冒頭に「目的/必要機材/実機なし確認方法/免責」ヘッダを統一。simulator 対応を明記
 - 影響: examples のみ。URLが変わる例は旧パスにリダイレクトhtmlを置く
 - リスク: 低（GitHub Pages のリンク切れに注意）
@@ -244,7 +250,7 @@ npm publish + ESM/型のデュアル配布、Playwright E2E、記録（CSV/JSONL
 **P2-2: ChartFeed ヘルパーの共通化**
 - 目的: VISUALIZE/showcase の rAF スロットリング実装を共有部品に
 - 対象: `examples/assets/chart-feed.js`（新規、SDK本体には入れない）
-- 方針: `push(values)` + `attach(chart, {fps:30, history:200, mode:'none'})`。sensor-dashboard-FSRvisualize を移行して重さを解消。CLAUDE.md の「100ms/`update('none')`」規約と実装を一致させる
+- 方針: `push(values)` + `attach(chart, {fps:30, history:200, mode:'none'})`。~~sensor-dashboard-FSRvisualize を移行して重さを解消~~（同例は 2026-07-25 に削除）。CLAUDE.md の「100ms/`update('none')`」規約と実装を一致させる
 - 影響: examples のみ / リスク: 低
 - 検証: 60分放置でヒープ増加なし（メモリリークチェック手順を README 化）
 - 完了条件: チャート系3例が共通ヘルパー利用
@@ -409,7 +415,7 @@ npm publish + ESM/型のデュアル配布、Playwright E2E、記録（CSV/JSONL
 | **T: テスト/CI** | CI・ESLint・test分割・E2E基盤 | .github/workflows, eslint.config.js, package.json, e2e/ | PR#1 | なし（最優先） |
 | **A: コアSDK/API** | P0-1/2/3、P1-4、P2-6/7 | src/ORPHE-INSOLE.js, tests/insole-*.test.js | PR#2 → PR#4 | T |
 | **B: センサーデータ処理** | InsoleUtils、Recorder、フィクスチャ | src/InsoleUtils.js(新), src/InsoleRecorder.js(新), tests/insole-utils.test.js(新), docs/ai/PRESSURE_RECIPES.md | P1-2 設計→実装 | T（examples移行はEと調整） |
-| **C: 可視化/Chart.js** | ChartFeed、FSRvisualize改修、メモリ検証手順 | examples/assets/chart-feed.js(新), examples/sensor-dashboard-FSRvisualize/, examples/VISUALIZE/ | P2-2 | なし |
+| **C: 可視化/Chart.js** | ChartFeed、~~FSRvisualize改修~~（例ごと削除）、メモリ検証手順 | examples/assets/chart-feed.js(新), examples/VISUALIZE/ | P2-2 | なし |
 | **D: 通信（BLE/WebSocket）** | simulator、WebSocketリレー、CDN依存健全化 | src/InsoleSimulator.js(新), examples/websocket-relay/(新), src/ORPHE-INSOLE.js:17-45 | PR#5 | A と src 競合最小（loadScript部のみ調整） |
 | **E: examples/docs** | P1-3、P1-6、マトリクス、医療注意書き | README.md, docs/, examples/README.md(新), examples/archive/ | README即修正 → TROUBLESHOOTING | B/C/D の成果を随時反映 |
 | **S: セキュリティ/安全性** | Toolkit XSS修正、npm audit、supply chain（CDN `@main`・コミット済みバイナリ）、異常値仕様レビュー | src/InsoleToolkit.js:346-348, src/ORPHE-INSOLE.js:17-45, examples/UDON_fsr_20250724/measurement-server, package.json | title の textContent 化 + バイナリ除去提案 | なし（横断レビュー役を兼務） |

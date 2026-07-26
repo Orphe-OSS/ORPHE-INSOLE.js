@@ -304,6 +304,10 @@ const lastLiveAtDev = [-Infinity, -Infinity];  // デバイスごとの最終ラ
 let liveActive = false;
 const latestEuler = [null, null];
 const latestQuat = [null, null];
+// FWによっては IMU の X/Y 割り当てがずれて pitch と roll が入れ替わって見えるため、
+// 表示系（3Dモデル＋Eulerゲージ）だけに座標変換を掛けるスイッチ。
+// 変換の実体は AttitudeViz 側（viz-3d.js の SWAP_R）にあり、CSVはSDKの生値のまま記録する。
+let swapPitchRoll = false;
 const latestPressure = [null, null];
 const sides = ['L', 'R'];                      // 表示上のL/R（mount_position で更新）
 
@@ -991,6 +995,17 @@ window.onload = function () {
     // --- 姿勢リセット ---
     document.getElementById('reset_attitude').addEventListener('click', () => AttitudeViz.reset());
 
+    // --- pitch / roll 入れ替え（FW差異の吸収。3Dモデルとゲージの両方に適用） ---
+    const swapToggle = document.getElementById('swap_pitch_roll');
+    const applySwapPitchRoll = (enabled) => {
+        swapPitchRoll = enabled;
+        AttitudeViz.setSwapPitchRoll(enabled);
+    };
+    applySwapPitchRoll(swapToggle.checked);
+    swapToggle.addEventListener('change', function () {
+        applySwapPitchRoll(this.checked);
+    });
+
     // --- スニペットのコピー ---
     document.querySelectorAll('.copy-btn').forEach(btn => {
         btn.addEventListener('click', async function () {
@@ -1038,6 +1053,23 @@ window.onload = function () {
         val.textContent = `${deg >= 0 ? '+' : ''}${deg.toFixed(1)}°`;
     }
 
+    /**
+     * ゲージに表示するオイラー角。入れ替えONのときはCGと同じ変換後クォータニオンから
+     * 計算するので、3Dモデルの動きとゲージが食い違わない。
+     * quaternion.js が無い環境ではラベル入れ替え相当のフォールバックにする。
+     */
+    function displayEuler(id) {
+        const euler = latestEuler[id];
+        if (!swapPitchRoll) return euler;
+        const q = latestQuat[id];
+        if (q && typeof Quaternion !== 'undefined') {
+            const s = AttitudeViz.oriented(q);
+            return new Quaternion(s.w, s.x, s.y, s.z).toEuler();
+        }
+        if (!euler) return null;
+        return { pitch: euler.roll, roll: euler.pitch, yaw: euler.yaw };
+    }
+
     function currentFootPressureStates() {
         let left = null;
         let right = null;
@@ -1062,10 +1094,11 @@ window.onload = function () {
             for (let id = 0; id < 2; id++) {
                 pressurePanels[id].render();
                 imuPanels[id].render();
-                if (latestEuler[id]) {
-                    setGauge(id, 'pitch', latestEuler[id].pitch);
-                    setGauge(id, 'roll', latestEuler[id].roll);
-                    setGauge(id, 'yaw', latestEuler[id].yaw);
+                const shownEuler = displayEuler(id);
+                if (shownEuler) {
+                    setGauge(id, 'pitch', shownEuler.pitch);
+                    setGauge(id, 'roll', shownEuler.roll);
+                    setGauge(id, 'yaw', shownEuler.yaw);
                 }
                 if (latestQuat[id]) {
                     const q = latestQuat[id];

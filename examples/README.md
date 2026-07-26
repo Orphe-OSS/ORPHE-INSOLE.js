@@ -13,6 +13,7 @@
 | [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた）＋2台同時の欠損比較 | INSOLE ×1〜2 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、デバイス別serial continuity、ja/en切替 |
 | [fifo-vs-realtime](./fifo-vs-realtime/) | 通常(push)/FIFO(pull)の実測比較 | INSOLE ×1〜2 | ―（実機推奨） | 欠損率、シリアル連続性マップ、droppedCount照合 |
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
+| [exhibition](./exhibition/) | **展示用一覧ページ**（16:9のディスプレイでセンサ値を一覧。圧力マップ+全体圧力ゲージ+IMU+姿勢3D/Euler+Step Analysis） | なしでも可 | **DEMOモード内蔵**（合成歩行・合成歩容をループ再生） | showcaseのvizモジュール再利用、vh基準のノースクロールレイアウト |
 | [step-analysis](./step-analysis/) | 1歩ごとの歩容表 + Realtime Rawグラフ | INSOLE ×1〜2 | `?demo=1` またはデモ再生ボタン | `realtime-full-step`、左右自動割当、10歩統計 |
 | [sensor-dashboard](./sensor-dashboard/) | 2台同時ダッシュボード | INSOLE ×2 | ―（実機推奨） | L/R自動マッピング（mount_position） |
 | [balance-sway](./balance-sway/) | 重心動揺の可視化（CoP軌跡・軌跡長・楕円面積） | INSOLE ×2 | デモ再生内蔵 | CoP計算、圧力検証、医療注意書き |

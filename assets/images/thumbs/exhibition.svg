@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Exhibition display example</title>
+  <desc id="desc">One 16:9 screen showing a foot pressure map, a total pressure gauge, a 3D shoe attitude view and IMU charts side by side.</desc>
+  <rect width="640" height="400" fill="#0b1116"/>
+
+  <!-- header -->
+  <text x="24" y="34" fill="#e8f1f5" font-family="Arial, sans-serif" font-size="20" font-weight="800" letter-spacing="2">ORPHE INSOLE</text>
+  <text x="24" y="50" fill="#45e6e6" font-family="Arial, sans-serif" font-size="8" font-weight="700" letter-spacing="3">SENSING MODULE FOR SMART FOOTWEAR</text>
+  <rect x="556" y="26" width="60" height="18" rx="9" fill="#1c6e4a"/>
+  <text x="586" y="39" fill="#d8ffe9" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="2" text-anchor="middle">LIVE</text>
+  <line x1="24" y1="62" x2="616" y2="62" stroke="#223038" stroke-width="1"/>
+
+  <!-- left column: pressure map + gauge -->
+  <rect x="24" y="74" width="176" height="302" rx="8" fill="#10171c" stroke="#223038"/>
+  <text x="38" y="92" fill="#45e6e6" font-family="Arial, sans-serif" font-size="8" font-weight="800" letter-spacing="2">PRESSURE</text>
+  <g>
+    <rect x="44" y="104" width="52" height="140" rx="26" fill="#16222a"/>
+    <circle cx="62" cy="126" r="10" fill="#e8543a"/>
+    <circle cx="82" cy="134" r="10" fill="#f0a24a"/>
+    <circle cx="58" cy="152" r="10" fill="#2f6f96"/>
+    <circle cx="80" cy="166" r="10" fill="#25506e"/>
+    <circle cx="62" cy="196" r="10" fill="#1d3a55"/>
+    <circle cx="72" cy="224" r="10" fill="#d94a2f"/>
+    <circle cx="70" cy="176" r="5" fill="#45e6e6" stroke="#ffffff" stroke-width="2"/>
+  </g>
+  <g>
+    <rect x="128" y="104" width="52" height="140" rx="26" fill="#16222a"/>
+    <circle cx="162" cy="126" r="10" fill="#2b5f83"/>
+    <circle cx="142" cy="134" r="10" fill="#3b7ea6"/>
+    <circle cx="166" cy="152" r="10" fill="#22506d"/>
+    <circle cx="144" cy="166" r="10" fill="#1d3a55"/>
+    <circle cx="162" cy="196" r="10" fill="#e8543a"/>
+    <circle cx="152" cy="224" r="10" fill="#f0a24a"/>
+    <circle cx="156" cy="200" r="5" fill="#45e6e6" stroke="#ffffff" stroke-width="2"/>
+  </g>
+  <rect x="36" y="262" width="152" height="102" rx="6" fill="#0e161b" stroke="#223038"/>
+  <text x="48" y="280" fill="#45e6e6" font-family="Arial, sans-serif" font-size="8" font-weight="800" letter-spacing="2">TOTAL PRESSURE</text>
+  <text x="176" y="282" fill="#e8f1f5" font-family="Arial, sans-serif" font-size="14" font-weight="700" text-anchor="end">7382</text>
+  <rect x="48" y="292" width="128" height="10" rx="5" fill="#1b2830"/>
+  <rect x="48" y="292" width="92" height="10" rx="5" fill="#45e6e6"/>
+  <text x="48" y="320" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="7" letter-spacing="1">LEFT</text>
+  <rect x="48" y="326" width="60" height="7" rx="3.5" fill="#45e6e6"/>
+  <text x="118" y="320" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="7" letter-spacing="1">RIGHT</text>
+  <rect x="118" y="326" width="44" height="7" rx="3.5" fill="#ff6040"/>
+
+  <!-- center column: 3D attitude + pressure charts -->
+  <rect x="210" y="74" width="242" height="196" rx="8" fill="#10171c" stroke="#223038"/>
+  <text x="224" y="92" fill="#45e6e6" font-family="Arial, sans-serif" font-size="8" font-weight="800" letter-spacing="2">ATTITUDE</text>
+  <rect x="222" y="100" width="218" height="140" rx="6" fill="#101a20"/>
+  <g transform="translate(276 172) rotate(-14)">
+    <path d="M-42 0 C-42 -16 -20 -22 4 -20 C24 -18 40 -10 40 2 C40 12 22 16 0 16 C-24 16 -42 12 -42 0 Z" fill="#cfd8dd"/>
+    <path d="M-42 0 C-42 8 -24 14 0 14 C22 14 40 10 40 2 L40 8 C40 16 22 20 0 20 C-24 20 -42 14 -42 6 Z" fill="#8fa0aa"/>
+  </g>
+  <g transform="translate(388 176) rotate(9)">
+    <path d="M-40 0 C-40 -15 -19 -21 4 -19 C23 -17 38 -9 38 2 C38 11 21 15 0 15 C-23 15 -40 11 -40 0 Z" fill="#cfd8dd"/>
+    <path d="M-40 0 C-40 8 -23 13 0 13 C21 13 38 9 38 2 L38 8 C38 15 21 19 0 19 C-23 19 -40 14 -40 6 Z" fill="#8fa0aa"/>
+  </g>
+  <text x="224" y="258" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="8" letter-spacing="1">pitch +12.4°   roll -3.1°   yaw +48.7°</text>
+
+  <rect x="210" y="280" width="242" height="96" rx="8" fill="#10171c" stroke="#223038"/>
+  <text x="224" y="298" fill="#45e6e6" font-family="Arial, sans-serif" font-size="8" font-weight="800" letter-spacing="2">PRESSURE 6ch</text>
+  <path d="M224 356 L246 330 L268 348 L290 316 L312 344 L328 336" fill="none" stroke="#45e6e6" stroke-width="2"/>
+  <path d="M224 362 L246 344 L268 356 L290 334 L312 352 L328 346" fill="none" stroke="#ff6040" stroke-width="2"/>
+  <path d="M340 356 L362 334 L384 352 L406 322 L428 346 L444 338" fill="none" stroke="#45e6e6" stroke-width="2"/>
+  <path d="M340 362 L362 348 L384 358 L406 338 L428 354 L444 348" fill="none" stroke="#ffcd56" stroke-width="2"/>
+
+  <!-- right column: IMU -->
+  <rect x="462" y="74" width="154" height="302" rx="8" fill="#10171c" stroke="#223038"/>
+  <text x="476" y="92" fill="#45e6e6" font-family="Arial, sans-serif" font-size="8" font-weight="800" letter-spacing="2">IMU</text>
+  <text x="476" y="112" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="7" letter-spacing="1">ACC [G]</text>
+  <path d="M476 148 L500 128 L524 146 L548 120 L572 142 L602 132" fill="none" stroke="#45e6e6" stroke-width="2"/>
+  <path d="M476 154 L500 142 L524 152 L548 136 L572 150 L602 144" fill="none" stroke="#ff6040" stroke-width="2"/>
+  <text x="476" y="182" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="7" letter-spacing="1">GYRO [dps]</text>
+  <path d="M476 218 L500 196 L524 216 L548 188 L572 212 L602 200" fill="none" stroke="#45e6e6" stroke-width="2"/>
+  <path d="M476 224 L500 210 L524 222 L548 204 L572 220 L602 212" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="476" y="252" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="7" letter-spacing="1">ACC [G]</text>
+  <path d="M476 288 L500 272 L524 286 L548 262 L572 282 L602 270" fill="none" stroke="#45e6e6" stroke-width="2"/>
+  <path d="M476 294 L500 284 L524 292 L548 276 L572 290 L602 282" fill="none" stroke="#ff6040" stroke-width="2"/>
+  <text x="476" y="322" fill="#8ba3b0" font-family="Arial, sans-serif" font-size="7" letter-spacing="1">GYRO [dps]</text>
+  <path d="M476 358 L500 338 L524 356 L548 330 L572 352 L602 342" fill="none" stroke="#45e6e6" stroke-width="2"/>
+  <path d="M476 364 L500 352 L524 362 L548 344 L572 360 L602 352" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+</svg>

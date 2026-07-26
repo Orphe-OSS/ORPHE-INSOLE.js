@@ -288,9 +288,16 @@ insole.gotConvertedGyro = function (gyro) {
       <div class="row g-4 mt-1">
         <div class="col-md-8">
           <div id="canvas3d_placeholder"></div>
-          <div class="mt-2 d-flex gap-2 align-items-center">
+          <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
             <button id="reset_attitude" class="btn btn-sm btn-warning" data-i18n="resetAttitude">姿勢をリセット（現在の向きを基準にする）</button>
             <span class="small text-muted" data-i18n="modelFollowNote">モデル: 装着位置(L/R)に追従</span>
+            <div class="form-check form-switch ms-1 mb-0">
+              <input class="form-check-input" type="checkbox" role="switch" id="swap_pitch_roll">
+              <label class="form-check-label small" for="swap_pitch_roll" data-i18n="swapPitchRoll">pitch / roll を入れ替えて表示</label>
+            </div>
+          </div>
+          <div class="small text-muted mt-1" data-i18n="swapPitchRollNote">
+            FW・IMU実装によっては pitch と roll の割り当てが入れ替わり、つま先上げが横倒しに見えることがあります。実機の動きと表示が一致しない場合はこのスイッチをONにしてください（3Dモデルと右のEulerゲージの両方に適用。CSVはSDKの生値のまま記録されます）。
           </div>
         </div>
         <div class="col-md-4">
