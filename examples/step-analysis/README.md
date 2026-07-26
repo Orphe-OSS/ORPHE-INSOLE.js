@@ -4,7 +4,8 @@
 ORPHE INSOLE から届く Step Analysis の完成行と Realtime Raw を同時表示するexampleです。
 歩行速度・歩幅の直近10歩と、Realtime Raw の直近10秒をコンパクトな上下グラフで確認できます。
 ヘッダーの `JA` / `EN` で、静的な説明、接続状態、表、グラフ内ラベルを切り替えられます。
-URLの `?lang=en` でも英語表示を直接開けます。
+URLの `?lang=ja` / `?lang=en` でも表示言語を直接指定できます。指定がない場合は、
+端末のタイムゾーンが `Asia/Tokyo` なら日本語、それ以外は英語で表示します。
 
 ## Toolkit UI の設定
 
@@ -49,10 +50,13 @@ Chrome / Edge で次を開きます。
 http://localhost:8080/examples/step-analysis/
 ```
 
-実機なしの表示確認は画面の「デモ再生」、または次のURLを使います。
+ページを開くとデモが自動再生されます。1台でもBLE接続するとデモを停止し、
+合成データを消去してリアルタイム表示へ切り替わります。
+
+デモを自動再生せずに開く場合は、次のURLを使います。
 
 ```text
-http://localhost:8080/examples/step-analysis/?demo=1
+http://localhost:8080/examples/step-analysis/?demo=0
 ```
 
 ## 実機テスト
