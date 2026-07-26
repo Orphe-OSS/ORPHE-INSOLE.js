@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORPHE INSOLE — Exhibition Display</title>
+  <meta name="description"
+    content="One-screen exhibition display for ORPHE INSOLE: pressure map and charts, 3D attitude with Euler traces, IMU charts and Step Analysis results, all visible at once on a 16:9 screen.">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+  <link href="./style.css" rel="stylesheet">
+</head>
+
+<body>
+
+  <div class="stage">
+
+    <!-- ヘッダ: タイトル + 接続UI(最大2台) + LIVE/DEMO -->
+    <header class="stage-header">
+      <div class="brand">
+        <h1>ORPHE INSOLE</h1>
+        <p>SENSING MODULE FOR SMART FOOTWEAR</p>
+      </div>
+      <div class="header-tools">
+        <div id="toolkit0"></div>
+        <div id="toolkit1"></div>
+        <span id="live_badge" class="state-badge" title="No device connected — playing synthetic walking data">DEMO</span>
+        <span id="bt_unsupported" class="state-badge warn d-none" title="Use Chrome / Edge / Opera">NO WEB BLUETOOTH</span>
+        <button id="fullscreen_btn" class="icon-btn" type="button" title="Toggle fullscreen">
+          <i class="bi bi-arrows-fullscreen"></i>
+        </button>
+      </div>
+    </header>
+
+    <main class="stage-grid">
+
+      <!-- 左上: 足型の圧力分布 -->
+      <section class="panel panel-map">
+        <div class="panel-head">
+          <span class="eyebrow">PRESSURE</span>
+          <h2>6ch × L/R</h2>
+        </div>
+        <div class="footmaps" id="footmaps">
+          <div class="footmap-slot" id="press_panel0">
+            <div class="slot-label"><span class="side-badge">-</span><span class="device-name">INSOLE 01</span></div>
+            <div class="footmap-box">
+              <div id="footmap0" class="insole-map is-left">
+                <span id="cop_dot0" class="cop-dot"></span>
+              </div>
+            </div>
+            <div class="slot-total">TOTAL <span id="press_total0" class="mono">0</span></div>
+          </div>
+          <div class="footmap-slot" id="press_panel1">
+            <div class="slot-label"><span class="side-badge">-</span><span class="device-name">INSOLE 02</span></div>
+            <div class="footmap-box">
+              <div id="footmap1" class="insole-map is-right">
+                <span id="cop_dot1" class="cop-dot"></span>
+              </div>
+            </div>
+            <div class="slot-total">TOTAL <span id="press_total1" class="mono">0</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 左下: TOTAL PRESSURE ゲージ + 6ch 波形 -->
+      <section class="panel panel-presschart">
+        <div class="gauge-card">
+          <div class="gauge-head">
+            <span class="eyebrow">TOTAL PRESSURE</span>
+            <span class="gauge-total"><span id="pressure_total_value" class="mono">0</span> <small>a.u.</small></span>
+          </div>
+          <div class="pressure-total-track">
+            <div id="pressure_total_gauge" class="pressure-total-fill"></div>
+          </div>
+          <div class="gauge-sides">
+            <div>
+              <div class="gauge-side-label"><span>LEFT</span><span id="pressure_left_value" class="mono">0</span></div>
+              <div class="pressure-side-track"><div id="pressure_left_bar" class="pressure-side-fill"></div></div>
+            </div>
+            <div>
+              <div class="gauge-side-label"><span>RIGHT</span><span id="pressure_right_value" class="mono">0</span></div>
+              <div class="pressure-side-track"><div id="pressure_right_bar" class="pressure-side-fill right"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel-head tight">
+          <span class="eyebrow">PRESSURE 6ch</span>
+          <h2>ADC raw</h2>
+        </div>
+        <div class="chart-pair" id="press_charts">
+          <div class="chart-slot" id="presschart_panel0">
+            <div class="slot-label"><span class="side-badge">-</span></div>
+            <div class="chart-box"><canvas id="chart_press0"></canvas></div>
+          </div>
+          <div class="chart-slot" id="presschart_panel1">
+            <div class="slot-label"><span class="side-badge">-</span></div>
+            <div class="chart-box"><canvas id="chart_press1"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 中央上: 3D姿勢 -->
+      <section class="panel panel-attitude">
+        <div class="panel-head">
+          <span class="eyebrow">ATTITUDE</span>
+          <h2>Quaternion → 3D</h2>
+          <div class="panel-actions">
+            <label class="mini-switch" title="Swap pitch / roll (firmware axis difference)">
+              <input type="checkbox" id="swap_pitch_roll" checked>
+              <span>SWAP P/R</span>
+            </label>
+            <button id="reset_attitude" class="icon-btn" type="button"
+              title="Use the current orientation as the reference">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+        </div>
+        <div id="canvas3d_placeholder" class="canvas3d"></div>
+      </section>
+
+      <!-- 中央下: オイラー角の推移 -->
+      <section class="panel panel-euler">
+        <div class="panel-head tight">
+          <span class="eyebrow">EULER</span>
+          <h2>pitch / roll / yaw [deg]</h2>
+        </div>
+        <div class="chart-pair" id="euler_charts">
+          <div class="chart-slot" id="euler_panel0">
+            <div class="slot-label">
+              <span class="side-badge">-</span>
+              <span class="euler-val">p <b id="val_pitch0" class="mono">0°</b></span>
+              <span class="euler-val">r <b id="val_roll0" class="mono">0°</b></span>
+              <span class="euler-val">y <b id="val_yaw0" class="mono">0°</b></span>
+            </div>
+            <div class="chart-box"><canvas id="chart_euler0"></canvas></div>
+          </div>
+          <div class="chart-slot" id="euler_panel1">
+            <div class="slot-label">
+              <span class="side-badge">-</span>
+              <span class="euler-val">p <b id="val_pitch1" class="mono">0°</b></span>
+              <span class="euler-val">r <b id="val_roll1" class="mono">0°</b></span>
+              <span class="euler-val">y <b id="val_yaw1" class="mono">0°</b></span>
+            </div>
+            <div class="chart-box"><canvas id="chart_euler1"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右上: IMU -->
+      <section class="panel panel-imu">
+        <div class="panel-head tight">
+          <span class="eyebrow">IMU</span>
+          <h2>Acceleration / Gyroscope</h2>
+        </div>
+        <div class="imu-stack" id="imu_stack">
+          <div class="imu-device" id="imu_panel0">
+            <div class="slot-label"><span class="side-badge">-</span><span class="device-name">INSOLE 01</span></div>
+            <div class="imu-chart">
+              <div class="chart-caption">ACC [G] <span id="acc_readout0" class="mono">-</span></div>
+              <div class="chart-box"><canvas id="chart_acc0"></canvas></div>
+            </div>
+            <div class="imu-chart">
+              <div class="chart-caption">GYRO [dps] <span id="gyro_readout0" class="mono">-</span></div>
+              <div class="chart-box"><canvas id="chart_gyro0"></canvas></div>
+            </div>
+          </div>
+          <div class="imu-device" id="imu_panel1">
+            <div class="slot-label"><span class="side-badge">-</span><span class="device-name">INSOLE 02</span></div>
+            <div class="imu-chart">
+              <div class="chart-caption">ACC [G] <span id="acc_readout1" class="mono">-</span></div>
+              <div class="chart-box"><canvas id="chart_acc1"></canvas></div>
+            </div>
+            <div class="imu-chart">
+              <div class="chart-caption">GYRO [dps] <span id="gyro_readout1" class="mono">-</span></div>
+              <div class="chart-box"><canvas id="chart_gyro1"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右下: Step Analysis（直近1歩 / 直近5歩平均） -->
+      <section class="panel panel-step">
+        <div class="panel-head tight">
+          <span class="eyebrow">STEP ANALYSIS</span>
+          <h2>last step <span class="dim">/ avg 5</span></h2>
+          <span id="step_status" class="panel-note">waiting for steps…</span>
+        </div>
+        <div class="step-stack" id="step_stack">
+          <div class="step-device" id="step_panel0">
+            <div class="slot-label">
+              <span class="side-badge">-</span><span class="device-name">INSOLE 01</span>
+              <span class="step-count"><b id="step_count0" class="mono">0</b> steps</span>
+            </div>
+            <div class="step-rows">
+              <div class="step-row">
+                <span class="step-key"><b>SPEED</b><i>歩行速度</i></span>
+                <span class="step-now mono" id="step_speed0">-</span>
+                <span class="step-unit">m/s</span>
+                <span class="step-avg mono" id="step_speed_avg0">-</span>
+              </div>
+              <div class="step-row">
+                <span class="step-key"><b>STANCE</b><i>立脚期：遊脚期</i></span>
+                <span class="step-now mono" id="step_stance0">-</span>
+                <span class="step-unit">%</span>
+                <span class="step-avg mono" id="step_stance_avg0">-</span>
+              </div>
+              <div class="step-row">
+                <span class="step-key"><b>LANDING ZONE</b><i>接地パターン</i></span>
+                <span class="step-now text" id="step_strike0">-</span>
+                <span class="step-unit"></span>
+                <span class="step-avg mono" id="step_strike_avg0">-</span>
+              </div>
+              <div class="step-row">
+                <span class="step-key"><b>PRONATION</b><i>プロネーション</i></span>
+                <span class="step-now text" id="step_pron0">-</span>
+                <span class="step-unit"></span>
+                <span class="step-avg mono" id="step_pron_avg0">-</span>
+              </div>
+            </div>
+          </div>
+          <div class="step-device" id="step_panel1">
+            <div class="slot-label">
+              <span class="side-badge">-</span><span class="device-name">INSOLE 02</span>
+              <span class="step-count"><b id="step_count1" class="mono">0</b> steps</span>
+            </div>
+            <div class="step-rows">
+              <div class="step-row">
+                <span class="step-key"><b>SPEED</b><i>歩行速度</i></span>
+                <span class="step-now mono" id="step_speed1">-</span>
+                <span class="step-unit">m/s</span>
+                <span class="step-avg mono" id="step_speed_avg1">-</span>
+              </div>
+              <div class="step-row">
+                <span class="step-key"><b>STANCE</b><i>立脚期：遊脚期</i></span>
+                <span class="step-now mono" id="step_stance1">-</span>
+                <span class="step-unit">%</span>
+                <span class="step-avg mono" id="step_stance_avg1">-</span>
+              </div>
+              <div class="step-row">
+                <span class="step-key"><b>LANDING ZONE</b><i>接地パターン</i></span>
+                <span class="step-now text" id="step_strike1">-</span>
+                <span class="step-unit"></span>
+                <span class="step-avg mono" id="step_strike_avg1">-</span>
+              </div>
+              <div class="step-row">
+                <span class="step-key"><b>PRONATION</b><i>プロネーション</i></span>
+                <span class="step-now text" id="step_pron1">-</span>
+                <span class="step-unit"></span>
+                <span class="step-avg mono" id="step_pron_avg1">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.0/chart.min.js"
+    integrity="sha512-R60W3LgKdvvfwbGbqKusRu/434Snuvr9/Flhtoq9cj1LQ9P4HFKParULqOCAisHk/J4zyaEWWjiWIMuP13vXEg=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/toxiclibsjs/0.1.3/toxiclibs.min.js"
+    integrity="sha512-XXs22VoCpwSw/DSIaY5YXMBLEp2CFA7vQO+GzNxFk8kmhabcHgXYpU7gFDij7+VLmoDfW3F3y5bu0O9r7REP2A=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+
+  <!-- ORPHE Libraries (REQUIRED ORDER) -->
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleUtils.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="../../src/InsoleGait.js"></script>
+
+  <!-- 可視化は showcase のモジュールをそのまま再利用する（重複実装を作らない） -->
+  <script>
+    // showcase 側の相対パス（STLモデル）をこのページ基準に読み替える
+    window.ORPHE_SHOE_MODEL_BASE = '../showcase/assets/models/';
+    // 靴が画面外に出ないよう、showcase より引いた画角にする
+    window.ORPHE_ATTITUDE_ZOOM = 0.78;
+  </script>
+  <script src="../showcase/demo-data.js"></script>
+  <script src="./app.js"></script>
+  <script src="../showcase/viz-pressure.js"></script>
+  <script src="../showcase/viz-imu.js"></script>
+  <script src="../showcase/viz-3d.js"></script>
+
+</body>
+
+</html>

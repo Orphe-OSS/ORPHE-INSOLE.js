@@ -1,0 +1,643 @@
+/*
+ * ORPHE INSOLE — Exhibition Display
+ *
+ * 16:9 の1画面（スクロールなし）に 3列 × 2段で並べる展示用レイアウト。
+ *   左上 圧力分布 / 左下 TOTAL PRESSURE + 6ch波形
+ *   中上 姿勢3D  / 中下 Euler推移
+ *   右上 IMU     / 右下 Step Analysis
+ * 画像（足型・靴CG）を見切れさせないため、左右の列幅は画像列を広く取り、
+ * 足型のサイズは JS（fitFootmaps）で「枠に収まる最大」を実測して決める。
+ * チャートは maintainAspectRatio:false + 絶対配置キャンバスで親の高さに追従させる。
+ */
+
+:root {
+    --bg: #0b1116;
+    --panel: #10171c;
+    --panel-2: #0e161b;
+    --line: #223038;
+    --text: #e8f1f5;
+    --muted: #8ba3b0;
+    --accent: #45e6e6;
+    --left: #45e6e6;
+    --right: #ff6040;
+    --gap: 0.7vh;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+    font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.d-none {
+    display: none !important;
+}
+
+.stage {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: var(--gap);
+    padding: var(--gap) calc(var(--gap) * 1.4);
+}
+
+/* ---------------- header ---------------- */
+
+.stage-header {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    padding-bottom: 0.4vh;
+    border-bottom: 1px solid var(--line);
+}
+
+.brand h1 {
+    margin: 0;
+    font-size: 2.4vh;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+}
+
+.brand p {
+    margin: 0;
+    font-size: 1.15vh;
+    letter-spacing: 0.28em;
+    color: var(--accent);
+}
+
+.header-tools {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.state-badge {
+    font-size: 1.3vh;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    padding: 0.35em 0.9em;
+    border-radius: 999px;
+    background: #263640;
+    color: var(--muted);
+}
+
+.state-badge.is-live {
+    background: #1c6e4a;
+    color: #d8ffe9;
+}
+
+.state-badge.warn {
+    background: #7a5c12;
+    color: #ffe9a8;
+}
+
+.icon-btn {
+    background: #1b262d;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.25em 0.6em;
+    font-size: 1.5vh;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.icon-btn:hover {
+    background: #24333c;
+}
+
+.mini-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    font-size: 1.05vh;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.mini-switch input {
+    accent-color: var(--accent);
+}
+
+/* ---------------- grid ---------------- */
+
+.stage-grid {
+    display: grid;
+    /* 画像を見せる左・中央を広く、テキストだけの右を狭く */
+    grid-template-columns: 1.12fr 1.5fr 0.92fr;
+    grid-template-rows: 1.22fr 1fr;
+    gap: var(--gap);
+    min-height: 0;
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.7vh 0.9vh;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+}
+
+.panel-map {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.panel-presschart {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+.panel-attitude {
+    grid-column: 2;
+    grid-row: 1;
+    padding-bottom: 0.3vh;
+}
+
+.panel-euler {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.panel-imu {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+.panel-step {
+    grid-column: 3;
+    grid-row: 2;
+}
+
+.panel-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-bottom: 0.5vh;
+}
+
+.panel-head.tight {
+    margin-bottom: 0.3vh;
+}
+
+.panel-head h2 {
+    margin: 0;
+    font-size: 1.4vh;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.panel-head h2 .dim {
+    color: #5d7481;
+}
+
+.panel-note {
+    margin-left: auto;
+    font-size: 1vh;
+    color: #5d7481;
+}
+
+.panel-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.eyebrow {
+    font-size: 1.2vh;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+}
+
+.slot-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 1.05vh;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+}
+
+.side-badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 2vh;
+    height: 2vh;
+    padding: 0 0.4em;
+    border-radius: 4px;
+    background: #2b3a44;
+    color: var(--text);
+    font-size: 1.15vh;
+    font-weight: 800;
+}
+
+.side-badge.is-left {
+    background: #12564f;
+    color: #b8fff8;
+}
+
+.side-badge.is-right {
+    background: #6b2a1c;
+    color: #ffd6cb;
+}
+
+/* ---------------- pressure map ---------------- */
+
+.footmaps {
+    flex: 1;
+    display: flex;
+    gap: 1.2vh;
+    justify-content: center;
+    align-items: stretch;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/*
+ * スロットは必ず「列を等分した幅」を持たせる（flex: 1 1 0）。
+ * content 基準（fit-content）にすると、幅が中身の .insole-map 依存になり、
+ * その .insole-map の実寸は JS が枠の幅から決めるため循環して 0 に潰れる。
+ */
+.footmap-slot {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4vh;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* 実サイズは fitFootmaps() が .insole-map に px で与える（枠内に必ず収める） */
+.footmap-box {
+    flex: 1;
+    width: 100%;
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    min-width: 0;
+}
+
+.insole-map {
+    position: relative;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    filter: drop-shadow(0 1.2vh 1.8vh rgba(0, 0, 0, 0.45));
+}
+
+.insole-map.is-left {
+    background-image: url("../showcase/assets/orphe-insole-left.png");
+}
+
+.insole-map.is-right {
+    background-image: url("../showcase/assets/orphe-insole-right.png");
+}
+
+.sensor-dot {
+    position: absolute;
+    z-index: 1;
+    width: 3.1vh;
+    height: 3.1vh;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    display: grid;
+    place-items: center;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 1vh;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+    background: #234;
+    transition: background-color 60ms linear;
+}
+
+.cop-dot {
+    position: absolute;
+    z-index: 2;
+    width: 1.4vh;
+    height: 1.4vh;
+    border-radius: 50%;
+    border: 0.3vh solid #fff;
+    background: var(--accent);
+    transform: translate(-50%, -50%);
+    transition: left 90ms linear, top 90ms linear;
+    display: none;
+}
+
+.slot-total {
+    font-size: 1.05vh;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+}
+
+.slot-total .mono {
+    color: var(--text);
+    font-size: 1.7vh;
+    font-weight: 700;
+}
+
+/* ---------------- total pressure gauge ---------------- */
+
+.gauge-card {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.6vh 0.9vh 0.8vh;
+    margin-bottom: 0.6vh;
+}
+
+.gauge-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.gauge-total {
+    font-size: 2.2vh;
+    font-weight: 700;
+}
+
+.gauge-total small {
+    font-size: 1vh;
+    color: var(--muted);
+}
+
+.pressure-total-track,
+.pressure-side-track {
+    position: relative;
+    height: 1.2vh;
+    margin-top: 0.4vh;
+    border-radius: 999px;
+    background: #1b2830;
+    overflow: hidden;
+}
+
+.pressure-side-track {
+    height: 0.9vh;
+}
+
+.pressure-total-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1c6e8c, var(--accent));
+    transition: width 90ms linear;
+}
+
+.pressure-side-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--left);
+    transition: width 90ms linear;
+}
+
+.pressure-side-fill.right {
+    background: var(--right);
+}
+
+.gauge-sides {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8vh;
+    margin-top: 0.6vh;
+}
+
+.gauge-side-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 1vh;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+}
+
+/* ---------------- attitude ---------------- */
+
+.canvas3d {
+    flex: 1;
+    min-height: 0;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.canvas3d canvas {
+    display: block;
+}
+
+.euler-val {
+    letter-spacing: 0.06em;
+}
+
+.euler-val b {
+    color: var(--text);
+    font-size: 1.3vh;
+}
+
+/* ---------------- charts ---------------- */
+
+.chart-pair {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9vh;
+    min-height: 0;
+}
+
+.chart-slot,
+.imu-chart {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.imu-chart {
+    flex: 1;
+}
+
+.chart-box {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
+.chart-box canvas {
+    position: absolute;
+    inset: 0;
+}
+
+.chart-caption {
+    display: flex;
+    gap: 0.6em;
+    font-size: 1vh;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+}
+
+.chart-caption .mono {
+    color: var(--text);
+}
+
+.imu-stack {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6vh;
+    min-height: 0;
+}
+
+.imu-device {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2vh;
+    min-height: 0;
+}
+
+/* ---------------- step analysis ---------------- */
+
+.step-stack {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6vh;
+    min-height: 0;
+}
+
+.step-device {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3vh;
+    min-height: 0;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.5vh 0.7vh;
+}
+
+.step-count {
+    margin-left: auto;
+    font-size: 1vh;
+}
+
+.step-count b {
+    color: var(--text);
+    font-size: 1.3vh;
+}
+
+.step-rows {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+}
+
+.step-row {
+    display: grid;
+    grid-template-columns: 11.5vh 1fr 2.6vh 6.5vh;
+    align-items: center;
+    gap: 0.4em;
+}
+
+/* 英語（キー）と日本語（説明）の2行併記 */
+.step-key {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+}
+
+.step-key b {
+    font-size: 1vh;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+}
+
+.step-key i {
+    font-style: normal;
+    font-size: 0.95vh;
+    letter-spacing: 0.02em;
+    color: #627986;
+}
+
+.step-now {
+    font-size: 2vh;
+    font-weight: 700;
+    text-align: right;
+}
+
+.step-now.text {
+    font-size: 1.4vh;
+    letter-spacing: 0.02em;
+}
+
+.step-unit {
+    font-size: 0.95vh;
+    color: var(--muted);
+}
+
+.step-avg {
+    font-size: 1.1vh;
+    color: #7f97a4;
+    text-align: right;
+}
+
+.step-device.is-stale {
+    opacity: 0.55;
+}
+
+/* ---------------- toolkit (compact) ---------------- */
+
+.header-tools .card {
+    margin: 0 !important;
+    background: var(--panel) !important;
+    border-color: var(--line) !important;
+}
+
+.header-tools .card-body,
+.header-tools .card-header {
+    padding: 0.3rem 0.6rem !important;
+}
+
+.header-tools .btn {
+    --bs-btn-padding-y: 0.15rem;
+    --bs-btn-padding-x: 0.5rem;
+    --bs-btn-font-size: 0.75rem;
+}
+
+/* 1080p 未満のノート画面でも破綻しないように少しだけ縮める */
+@media (max-height: 760px) {
+    :root {
+        --gap: 0.55vh;
+    }
+
+    .sensor-dot {
+        width: 2.8vh;
+        height: 2.8vh;
+    }
+}

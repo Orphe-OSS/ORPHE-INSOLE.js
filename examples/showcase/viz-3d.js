@@ -29,10 +29,37 @@ const AttitudeViz = (function () {
         };
     }
 
+    // pitch / roll 入れ替え（FW・IMU実装差の吸収）
+    //
+    // quaternion.js の toEuler() は roll=X軸回り / pitch=Y軸回り、INSOLEの座標系は
+    // X=つま先方向に向かって右 / Y=つま先方向。FWによってIMUの X/Y の割り当てが
+    // 90°ずれる個体があり、その場合「つま先上げ」が roll 側に出てCGも横倒しに動く。
+    //
+    // 単なるラベルの入れ替え（X↔Y）は鏡像（det=-1）になりクォータニオンで表せないため、
+    // センサ座標系を Z 軸回りに -90° 回す相似変換 q' = r q r* で補正する。
+    // これで X軸回りの回転は Y軸回り（pitch）として描画され、yaw はそのまま保たれる。
+    //
+    // 符号は実機で確認済み: +90° だと軸の入れ替えは合うが回転の向きが両軸とも逆になり、
+    // つま先を上げるとCGは踵が上がる。-90°（下記）が実機の動きと一致する。
+    const SWAP_R = { w: Math.SQRT1_2, x: 0, y: 0, z: -Math.SQRT1_2 };
+    let swapPitchRoll = false;
+
+    /** センサ座標系のX/Yを入れ替えた姿勢を返す（表示用。生値は変更しない） */
+    function swapQuat(q) {
+        return mul(mul(SWAP_R, q), conj(SWAP_R));
+    }
+
     return {
         setQuat(id, q) { quats[id] = q; },
         setFoot(id, side) { feet[id] = side; },
         getFoot(id) { return feet[id]; },
+        /** pitch/roll 入れ替えの有効・無効（CG・ゲージ共通） */
+        setSwapPitchRoll(enabled) { swapPitchRoll = !!enabled; },
+        /** 入れ替えが有効なら適用した姿勢を、無効ならそのまま返す */
+        oriented(q) {
+            if (!q) return null;
+            return swapPitchRoll ? swapQuat(q) : q;
+        },
         /** 全デバイスの現在姿勢を基準にする */
         reset() {
             for (let id = 0; id < 2; id++) {
@@ -42,8 +69,9 @@ const AttitudeViz = (function () {
         /** 基準補正済みのクォータニオンを返す（基準未設定時は生値） */
         relativeQuat(id) {
             if (!quats[id]) return null;
-            if (!qRefs[id]) return quats[id];
-            return mul(conj(qRefs[id]), quats[id]);
+            // 相似変換は積と可換（r(q0* q)r* = (r q0* r*)(r q r*)）なので基準補正後に適用してよい
+            const rel = qRefs[id] ? mul(conj(qRefs[id]), quats[id]) : quats[id];
+            return this.oriented(rel);
         },
     };
 })();
@@ -52,23 +80,36 @@ const AttitudeViz = (function () {
 
 var showcase_model_L, showcase_model_R;
 
+// 他のexampleから読み込む場合はモデルの場所を上書きできる（既定はこのページの assets/）
+function shoeModelBase() {
+    return window.ORPHE_SHOE_MODEL_BASE || './assets/models/';
+}
+
+// プレースホルダに高さが指定されていればそれに従い、無ければ幅から16:9で決める
+function canvasSizeForPlaceholder(placeholder) {
+    const w = placeholder.clientWidth;
+    const h = placeholder.clientHeight > 40 ? placeholder.clientHeight : Math.max(240, w * 9 / 16);
+    return { w, h };
+}
+
 function preload() {
-    showcase_model_L = loadModel('./assets/models/orphe_shoeL3.stl');
-    showcase_model_R = loadModel('./assets/models/orphe_shoeR3.stl');
+    showcase_model_L = loadModel(`${shoeModelBase()}orphe_shoeL3.stl`);
+    showcase_model_R = loadModel(`${shoeModelBase()}orphe_shoeR3.stl`);
 }
 
 function setup() {
     const placeholder = document.querySelector('#canvas3d_placeholder');
-    const w = placeholder.clientWidth;
-    const h = Math.max(240, w * 9 / 16);
+    const { w, h } = canvasSizeForPlaceholder(placeholder);
     const c = createCanvas(w, h, WEBGL);
     placeholder.appendChild(c.elt);
 }
 
 function draw() {
     background(16, 23, 28);
+    // 展示用ページなど、大きく見せたいときは window.ORPHE_ATTITUDE_ZOOM で寄れる
+    const zoom = window.ORPHE_ATTITUDE_ZOOM || 1;
     camera(
-        0, 400, 400,
+        0, 400 / zoom, 400 / zoom,
         0, 0, 0,
         0, 1, 0
     );
@@ -105,6 +146,6 @@ function draw() {
 
 function windowResized() {
     const placeholder = document.querySelector('#canvas3d_placeholder');
-    const w = placeholder.clientWidth;
-    resizeCanvas(w, Math.max(240, w * 9 / 16));
+    const { w, h } = canvasSizeForPlaceholder(placeholder);
+    resizeCanvas(w, h);
 }
