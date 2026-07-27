@@ -68,7 +68,21 @@ async function main() {
     near(parsed.samples[0].acc.x, 16384 / 32768, 'mode 56 acc');
     near(parsed.samples[0].converted_acc.x, (16384 / 32768) * 16, 'mode 56 converted acc');
     near(parsed.samples[0].gyro.x, 3277 / 32768, 'mode 56 gyro');
-    near(parsed.samples[0].converted_gyro.x, (3277 / 32768) * 2000, 'mode 56 converted gyro');
+    // 物理値は raw int16 × センサー感度（±2000 dps → 0.07 dps/LSB）。
+    // 正規化値 × range（= 0.061035 dps/LSB）ではない。
+    near(parsed.samples[0].converted_gyro.x, 3277 * 0.07, 'mode 56 converted gyro');
+    near(parsed.samples[0].converted_gyro.y, -3277 * 0.07, 'mode 56 converted gyro negative');
+    near(parsed.samples[0].converted_gyro.z, 8192 * 0.07, 'mode 56 converted gyro z');
+  }
+
+  {
+    // レンジを明示指定した場合はそのレンジの感度が使われる（±500 dps → 0.0175 dps/LSB）
+    const data = createPacket(56);
+    setVec3(data, 16 + 32, [1000, -1000, 2000]);
+    const parsed = parseInsoleSensorValues(data, { gyroRange: 500 });
+    near(parsed.samples[0].converted_gyro.x, 1000 * 0.0175, '500 dps converted gyro');
+    near(parsed.samples[0].converted_gyro.y, -1000 * 0.0175, '500 dps converted gyro negative');
+    near(parsed.samples[0].gyro.x, 1000 / 32768, '500 dps normalized gyro is unchanged');
   }
 
   {
@@ -153,19 +167,75 @@ async function main() {
     setPress(data, 28, [7, 8, 9, 10, 11, 12]);
 
     const insole = new Orphe(0);
-    const calls = { quat: [], acc: [], gyro: [], press: [] };
+    const calls = { quat: [], acc: [], gyro: [], press: [], convertedAcc: [], convertedGyro: [] };
+    // DEVICE_INFORMATION の range は index（acc: 0 → ±2G / gyro: 1 → ±500dps）
+    insole.device_information = { range: { acc: 0, gyro: 1 } };
     insole.gotQuat = value => calls.quat.push(value);
     insole.gotAcc = value => calls.acc.push(value);
     insole.gotGyro = value => calls.gyro.push(value);
     insole.gotPress = value => calls.press.push(value);
+    insole.gotConvertedAcc = value => calls.convertedAcc.push(value);
+    insole.gotConvertedGyro = value => calls.convertedGyro.push(value);
     insole.onRead(data, 'SENSOR_VALUES');
 
     assert.equal(calls.quat.length, 2);
     assert.equal(calls.acc.length, 2);
     assert.equal(calls.gyro.length, 2);
     assert.equal(calls.press.length, 2);
+    assert.equal(calls.convertedAcc.length, 2);
+    assert.equal(calls.convertedGyro.length, 2);
     assert.deepEqual(calls.press[0].values, [1, 2, 3, 4, 5, 6]);
     assert.deepEqual(calls.press[1].values, [7, 8, 9, 10, 11, 12]);
+    near(calls.acc[0].x, 400 / 32768, 'normalized acc is range independent');
+    near(calls.convertedAcc[0].x, (400 / 32768) * 2, 'device acc range setting');
+    near(calls.gyro[0].x, 100 / 32768, 'normalized gyro is range independent');
+    near(calls.convertedGyro[0].x, 100 * 0.0175, 'device gyro range setting');
+  }
+
+  {
+    // device_information 未取得（初期値は空文字）でも既定レンジで換算できること
+    const data = createPacket(56, 3);
+    setVec3(data, 16 + 32, [100, 0, 0]);
+    setVec3(data, 22 + 32, [400, 0, 0]);
+
+    const insole = new Orphe(0);
+    const convertedGyro = [];
+    const convertedAcc = [];
+    insole.gotConvertedGyro = value => convertedGyro.push(value);
+    insole.gotConvertedAcc = value => convertedAcc.push(value);
+    insole.onRead(data, 'SENSOR_VALUES');
+    assert.equal(insole.device_information, '', 'device_information is unset before read');
+    near(convertedGyro[0].x, 100 * 0.07, 'default gyro range fallback');
+    near(convertedAcc[0].x, (400 / 32768) * 16, 'default acc range fallback');
+  }
+
+  {
+    // 不正なレンジ設定（範囲外・非整数・非数値）は既定へフォールバックする
+    const data = createPacket(56, 5);
+    setVec3(data, 16 + 32, [100, 0, 0]);
+
+    for (const range of [{ acc: 9, gyro: 9 }, { acc: 1.5, gyro: 1.5 }, { acc: '1', gyro: '1' }, { acc: -1, gyro: -1 }]) {
+      const insole = new Orphe(0);
+      insole.device_information = { range };
+      const convertedGyro = [];
+      insole.gotConvertedGyro = value => convertedGyro.push(value);
+      insole.onRead(data, 'SENSOR_VALUES');
+      near(convertedGyro[0].x, 100 * 0.07, `invalid range fallback ${JSON.stringify(range)}`);
+    }
+  }
+
+  {
+    // addSensorDataListener 経由の packet もデバイスのレンジ設定を反映する
+    const data = createPacket(56, 4);
+    setVec3(data, 16 + 32, [100, 0, 0]);
+
+    const insole = new Orphe(0);
+    insole.device_information = { range: { acc: 0, gyro: 1 } };
+    const events = [];
+    insole.addSensorDataListener(event => events.push(event));
+    insole.onRead(data, 'SENSOR_VALUES');
+    assert.equal(events.length, 1);
+    near(events[0].packet.samples[0].converted_gyro.x, 100 * 0.0175, 'listener packet uses device range');
   }
 
   {

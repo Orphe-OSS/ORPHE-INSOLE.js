@@ -65,12 +65,21 @@ SENSOR_VALUES notification のパケット仕様と単位系のリファレン�
 | `gotAcc` / `gotGyro` | int16/32768 | 正規化値 -1..1 |
 | `gotQuat` | int16/16384（Q14） | w,x,y,z。ノルムは量子化誤差を除き約1 |
 | `gotConvertedAcc` | 正規化値 × accRange（既定 16） | G |
-| `gotConvertedGyro` | 正規化値 × gyroRange（既定 2000） | deg/s |
+| `gotConvertedGyro` | raw int16 × センサー感度（既定レンジでは 0.07 deg/s/LSB） | deg/s |
 | `gotEuler` | quaternion から変換 | **rad**（pitch/roll/yaw） |
 | `gotPress` | uint16 そのまま | **ADC 生値（物理量ではない）** |
 
 レンジ（accRange/gyroRange）は `getDeviceInformation()` の `range` から取得された値が
 パースに反映されます。
+
+`gotGyro` の正規化値（raw int16 / 32768）は後方互換のため維持されます。物理単位の
+`gotConvertedGyro` は、LSM6DSOX の代表感度 8.75 / 17.5 / 35 / 70 mdps/LSB
+（±250 / 500 / 1000 / 2000 dps）を使うため、正規化値にレンジを単純に掛けた値
+（±2000 dps で 61.035 mdps/LSB）とは一致しません。加速度は `/32768 × 16` が
+データシート感度 0.488 mg/LSB と一致するため従来どおりです。
+
+FIFO 収録（`src/InsoleFifo.js`）の `gyro_*[dps]` も同じ 0.07 deg/s/LSB を使います。
+Python 参照実装（insole_client）の理想 Q15 換算とは意図的に係数 1.14688 倍だけ異なります。
 
 Euler 角は `gotQuat` と同じ成分を単位ノルムへ正規化してから計算します。これにより、
 量子化誤差や将来の転送スケール変更があっても Euler 角の振幅が圧縮されません。

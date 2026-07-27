@@ -102,9 +102,10 @@ async function main() {
             euler: { pitch: 0.2, roll: -0.1, yaw: 0.05 }
         };
         const simulator = new OrpheInsoleSimulator(0);
-        const calls = { press: [], acc: [], convertedAcc: [], convertedGyro: [], quat: [], euler: [] };
+        const calls = { press: [], acc: [], gyro: [], convertedAcc: [], convertedGyro: [], quat: [], euler: [] };
         simulator.gotPress = value => calls.press.push(value);
         simulator.gotAcc = value => calls.acc.push(value);
+        simulator.gotGyro = value => calls.gyro.push(value);
         simulator.gotConvertedAcc = value => calls.convertedAcc.push(value);
         simulator.gotConvertedGyro = value => calls.convertedGyro.push(value);
         simulator.gotQuat = value => calls.quat.push(value);
@@ -136,6 +137,16 @@ async function main() {
             },
             frame.gyro
         );
+        // 正規化値と物理値の関係は実機SDKと同じ規則:
+        // gotGyro = raw/32768, gotConvertedGyro = raw × 0.07 dps/LSB（±2000dps）
+        // → 正規化値 = 物理値 / (32768 × 0.07)。物理値 / 2000 ではない。
+        for (const axis of ['x', 'y', 'z']) {
+            const expected = frame.gyro[axis] / (32768 * 0.07);
+            assert.ok(
+                Math.abs(calls.gyro[0][axis] - expected) < 1e-12,
+                `normalized gyro ${axis}: expected ${expected}, got ${calls.gyro[0][axis]}`
+            );
+        }
         assert.equal(calls.quat[0].w, frame.quat.w);
         assert.equal(calls.euler[0].pitch, frame.euler.pitch);
     }

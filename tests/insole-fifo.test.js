@@ -84,7 +84,12 @@ function near(actual, expected, tol, label) {
 // ── 単位変換（参照 Python と一致すること） ──
 {
   assert.equal(Fifo.accToG(16384 >> 8, 16384 & 0xff), 8);       // 16384/32768*16
-  near(Fifo.gyroToDps(16384 >> 8, 16384 & 0xff), 1000, 1e-9, 'gyro');
+  // gyro は LSM6DSOX のデータシート感度 0.07 dps/LSB（±2000dps 固定）。
+  // 参照実装 Python の理想Q15換算（/32768*2000 = 1000 dps）とは意図的に 1.14688 倍異なる。
+  assert.equal(Fifo.GYRO_DPS_PER_LSB, 0.07);
+  near(Fifo.gyroToDps(16384 >> 8, 16384 & 0xff), 16384 * 0.07, 1e-9, 'gyro');
+  near(Fifo.gyroToDps(0xff, 0xff), -0.07, 1e-9, 'gyro negative (raw -1)');
+  assert.equal(Fifo.gyroToDps(0, 0), 0);
   near(Fifo.pressureToN(3000, 1), 1302.648, 1e-3, 'p1(3000)');
   near(Fifo.pressureToN(3000, 6), 1444.73718, 1e-3, 'p6(3000)');
   near(Fifo.pressureToN(100, 1), 9.21537, 1e-3, 'p1(100)');
@@ -109,7 +114,7 @@ function near(actual, expected, tol, label) {
   assert.equal(decoded.samples[0].packet_number, 0);
   assert.deepEqual(decoded.samples[0].press.values, [10, 20, 30, 40, 50, 60]);
   near(decoded.samples[0].converted_acc.x, 8, 1e-9, 'decode acc');
-  near(decoded.samples[0].converted_gyro.x, 1000, 1e-9, 'decode gyro');
+  near(decoded.samples[0].converted_gyro.x, 16384 * 0.07, 1e-9, 'decode gyro');
   assert.deepEqual(decoded.samples[3].press.values, [1, 1, 1, 1, 1, 1]);
 }
 
