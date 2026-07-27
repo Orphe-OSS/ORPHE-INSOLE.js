@@ -22,6 +22,12 @@
  * ブラウザでは begin() で接続済みの OrpheInsole を渡して使う（examples/showcase 参照）。
  *
  * 注意: FIFO モードはジャイロ・加速度・6ch圧力のみでクォータニオンを含まない。
+ *
+ * 単位換算の注意（意図的な差異）: gyro[dps] は Python 参照実装（insole_client）と
+ * **意図的に係数 1.14688 倍だけ異なる**。参照実装は raw int16 を理想 Q15 とみなして
+ * `raw / 32768 * 2000`（= 61.035 mdps/LSB）で換算するが、本実装は LSM6DSOX の
+ * データシート代表感度 70 mdps/LSB（±2000 dps 固定）を使い `raw * 0.07` とする。
+ * acc[G]・press[N] は参照実装と同一（acc の /32768*16 はデータシート感度 0.488 mg/LSB と一致）。
  */
 (function (global) {
 
@@ -67,8 +73,13 @@
     return v;
   }
 
+  // FIFO は acc ±16G / gyro ±2000dps 固定。
+  // gyro はデータシート代表感度 70 mdps/LSB（理想 Q15 の 61.035 mdps/LSB ではない。冒頭コメント参照）。
+  // acc の /32768*16 は データシート感度 0.488 mg/LSB と一致するのでそのまま。
+  const GYRO_DPS_PER_LSB = 0.07;
+
   function accToG(msb, lsb) { return binToInt(msb, lsb) / 32768.0 * 16.0; }
-  function gyroToDps(msb, lsb) { return binToInt(msb, lsb) / 32768.0 * 2000.0; }
+  function gyroToDps(msb, lsb) { return binToInt(msb, lsb) * GYRO_DPS_PER_LSB; }
 
   // 圧力生値(ADC uint16) → N（参照実装の固定校正多項式。n は 1..6）
   function pressureToN(x, n) {
@@ -964,6 +975,7 @@
   OrpheInsoleFifo.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
   OrpheInsoleFifo.MAX_CARRY_OVER_SERIALS = MAX_CARRY_OVER_SERIALS;
   OrpheInsoleFifo.RE_REQUEST_DATA_NUM = RE_REQUEST_DATA_NUM;
+  OrpheInsoleFifo.GYRO_DPS_PER_LSB = GYRO_DPS_PER_LSB;
   OrpheInsoleFifo.accToG = accToG;
   OrpheInsoleFifo.gyroToDps = gyroToDps;
   OrpheInsoleFifo.pressureToN = pressureToN;

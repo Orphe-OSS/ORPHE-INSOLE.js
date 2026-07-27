@@ -139,7 +139,13 @@ export interface InsoleSetupOptions {
 }
 
 export interface ParseInsoleSensorValuesOptions {
+    /**
+     * ジャイロのフルスケール[dps]（250 | 500 | 1000 | 2000、既定 2000）。
+     * 物理値（converted_gyro）はこのレンジに対応するセンサー感度
+     * （8.75 / 17.5 / 35 / 70 mdps/LSB）で換算される。
+     */
     gyroRange?: number;
+    /** 加速度のフルスケール[G]（2 | 4 | 8 | 16、既定 16）。 */
     accRange?: number;
 }
 

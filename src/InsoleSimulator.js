@@ -2,6 +2,11 @@
 
 const ACC_RANGE = 16;
 const GYRO_RANGE = 2000;
+// 実機SDKと同じ規則で正規化値を作る（gotGyro = raw/32768, gotConvertedGyro = raw × 感度）。
+// つまり正規化値 = 物理値[dps] / (32768 × 0.07) であり、物理値 / GYRO_RANGE ではない。
+// LSM6DSOX 代表感度: フルスケール1dpsあたり 0.035 mdps/LSB → ±2000dps で 0.07 dps/LSB。
+const GYRO_DPS_PER_LSB = GYRO_RANGE * 0.000035;
+const GYRO_NORMALIZE_FULL_SCALE = GYRO_DPS_PER_LSB * 32768;
 const TICK_MS = 20;
 const SENSOR_VALUES_UUID = 'SENSOR_VALUES';
 const SENSOR_COUNT = 6;
@@ -419,7 +424,7 @@ class OrpheInsoleSimulator {
         const convertedAcc = cloneVector3(frame.acc);
         const convertedGyro = cloneVector3(frame.gyro);
         const normalizedAcc = normalizeVector3(convertedAcc, ACC_RANGE);
-        const normalizedGyro = normalizeVector3(convertedGyro, GYRO_RANGE);
+        const normalizedGyro = normalizeVector3(convertedGyro, GYRO_NORMALIZE_FULL_SCALE);
         const quat = cloneQuat(frame.quat);
         const euler = cloneEuler(frame.euler);
         const pressValues = normalizePress(frame.press);

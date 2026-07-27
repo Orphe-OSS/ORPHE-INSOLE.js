@@ -153,6 +153,27 @@ function _orpheInsoleNormalizeQuaternion(quat) {
   };
 }
 
+// DEVICE_INFORMATION は acc/gyro のレンジ設定を index（0..3）で持つ一方、
+// パーサ API は物理フルスケール値を受け取る。公開コールバックの形を変えないよう
+// 変換テーブルはモジュール内の私有定数として持つ。
+const _ORPHE_INSOLE_ACC_RANGES = Object.freeze([2, 4, 8, 16]);
+const _ORPHE_INSOLE_GYRO_RANGES = Object.freeze([250, 500, 1000, 2000]);
+// LSM6DSOX のジャイロ代表感度はフルスケール 1 dps あたり 0.035 mdps/LSB
+// （±250/500/1000/2000 dps で 8.75/17.5/35/70 mdps/LSB）。
+// raw int16 を理想 Q15（raw/32768*range）として扱うと ±2000 dps で 61.035 mdps/LSB となり、
+// データシート感度より約 12.8% 小さい物理値になるため、感度側を正とする。
+const _ORPHE_INSOLE_GYRO_DPS_PER_LSB_PER_RANGE = 0.000035;
+
+// setting は getUint8 由来の number のみ受け付ける。device_information の初期値は
+// 空文字なので、Number('') === 0 の暗黙変換で index 0（±2G / ±250dps）と
+// 誤判定しないよう型で弾く。
+function _orpheInsoleRangeFromSetting(ranges, setting, fallback) {
+  return typeof setting === 'number' && Number.isInteger(setting)
+    && setting >= 0 && setting < ranges.length
+    ? ranges[setting]
+    : fallback;
+}
+
 /**
  * code プロパティ付き Error を生成する（エラー種別のプログラム判定用）。
  * message は従来の文字列エラーと同一文字列を維持する（後方互換）。
@@ -198,8 +219,8 @@ const ORPHE_INSOLE_STREAMING_MODES = Object.freeze({
  * ORPHE INSOLE SENSOR_VALUES packet parser.
  * @param {DataView} data
  * @param {object} options
- * @param {number} [options.gyroRange=2000]
- * @param {number} [options.accRange=16]
+ * @param {number} [options.gyroRange=2000] ジャイロのフルスケール[dps]。物理値換算の感度に使う。
+ * @param {number} [options.accRange=16] 加速度のフルスケール[G]。
  * @returns {object|null}
  */
 function parseInsoleSensorValues(data, options = {}) {
@@ -212,6 +233,8 @@ function parseInsoleSensorValues(data, options = {}) {
   const serial_number = data.getUint16(1);
   const gyroRange = Number.isFinite(Number(options.gyroRange)) ? Number(options.gyroRange) : 2000;
   const accRange = Number.isFinite(Number(options.accRange)) ? Number(options.accRange) : 16;
+  // deg/s per LSB（例: ±2000 dps → 0.07）。正規化値ではなく raw int16 に掛ける。
+  const gyroDpsPerLsb = gyroRange * _ORPHE_INSOLE_GYRO_DPS_PER_LSB_PER_RANGE;
   const t_start = _orpheInsoleTimestampToday(
     data.getUint8(3),
     data.getUint8(4),
@@ -219,8 +242,9 @@ function parseInsoleSensorValues(data, options = {}) {
     data.getUint16(6)
   );
   const samples = [];
-  // Observed INSOLE packets encode quaternion components as signed Q14
-  // (1.0 = 16384). acc/gyro below remain signed Q15 (1.0 = 32768).
+  // INSOLE packets encode quaternion components as signed Q14 (1.0 = 16384).
+  // acc/gyro の正規化コールバック（gotAcc/gotGyro）は後方互換のため raw int16 / 32768
+  // のまま。gyro の物理値だけがレンジ別のセンサー感度で換算される。
   const quatScale = 16384;
 
   function vector3(x, y, z, timestamp, packet_number) {
@@ -248,10 +272,11 @@ function parseInsoleSensorValues(data, options = {}) {
 
   function withConverted(sample) {
     if (sample.gyro) {
+      // sample.gyro.* は raw int16 / 32768。×32768 で raw に戻してから感度を掛ける。
       sample.converted_gyro = {
-        x: sample.gyro.x * gyroRange,
-        y: sample.gyro.y * gyroRange,
-        z: sample.gyro.z * gyroRange,
+        x: sample.gyro.x * 32768 * gyroDpsPerLsb,
+        y: sample.gyro.y * 32768 * gyroDpsPerLsb,
+        z: sample.gyro.z * 32768 * gyroDpsPerLsb,
         timestamp: sample.timestamp,
         serial_number,
         packet_number: sample.packet_number
@@ -646,6 +671,20 @@ class OrpheInsole {
 
   _log(...args) {
     if (this.debug) console.info('[ORPHE-INSOLE]', ...args);
+  }
+
+  /**
+   * getDeviceInformation() で取得済みのレンジ設定（index）を
+   * parseInsoleSensorValues() のフルスケール値へ変換する。
+   * 未取得・不正値のときは既定（acc 16G / gyro 2000dps）にフォールバックする。
+   * @returns {{accRange: number, gyroRange: number}}
+   */
+  _sensorParseOptions() {
+    const range = this.device_information && this.device_information.range;
+    return {
+      accRange: _orpheInsoleRangeFromSetting(_ORPHE_INSOLE_ACC_RANGES, range && range.acc, 16),
+      gyroRange: _orpheInsoleRangeFromSetting(_ORPHE_INSOLE_GYRO_RANGES, range && range.gyro, 2000)
+    };
   }
 
   /**
@@ -1700,7 +1739,7 @@ class OrpheInsole {
     // 共存する。購読者がいる時だけ先にdecodeし、同じpacketを各購読者へ配る。
     let parsedSensorPacket = null;
     if (uuid === 'SENSOR_VALUES' && this._sensorDataListeners.size > 0) {
-      parsedSensorPacket = parseInsoleSensorValues(data);
+      parsedSensorPacket = parseInsoleSensorValues(data, this._sensorParseOptions());
       if (parsedSensorPacket && [50, 55, 56].includes(parsedSensorPacket.header)) {
         this._emitSensorData(data, parsedSensorPacket);
       }
@@ -1723,7 +1762,7 @@ class OrpheInsole {
     if (uuid == 'DEVICE_INFORMATION') {
     }
     else if (uuid == 'SENSOR_VALUES') {
-      const parsed = parsedSensorPacket || parseInsoleSensorValues(data);
+      const parsed = parsedSensorPacket || parseInsoleSensorValues(data, this._sensorParseOptions());
       if (!parsed) {
         console.warn("SENSOR VALUES: Data length is not 104");
         return;
@@ -1929,8 +1968,11 @@ class OrpheInsole {
    */
   gotAcc(acc) { }
   /**
-   * ジャイロレンジに応じて変換された値を取得する。
-   * @param {Object} gyro {x,y,z} ジャイロレンジに応じて変換したジャイロの取得
+   * ジャイロレンジに応じた物理値[deg/s]を取得する。
+   * raw int16 にレンジ別のセンサー感度（±250/500/1000/2000 dps で
+   * 8.75/17.5/35/70 mdps/LSB）を掛けた値であり、正規化値（gotGyro）に
+   * レンジを掛けた値とは一致しない。
+   * @param {Object} gyro {x,y,z} ジャイロの物理値[deg/s]
    */
   gotConvertedGyro(gyro) { }
   /**
