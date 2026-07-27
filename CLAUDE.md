@@ -44,6 +44,7 @@ ORPHE-INSOLE.js/
 │   ├── balance-sway/          # 重心動揺の可視化
 │   ├── balance-tuner/         # バランスの可聴化
 │   ├── hula-motion-sonifier/  # 動作の可聴化（Web Audio）
+│   ├── udon/                  # 足踏みゲーム（相対しきい値・キャリブレーション不要）
 │   ├── device-test/           # 実機チェックリスト（リリース前検証）
 │   └── terminal/              # 生データデバッグ
 ├── tests/                     # node 単体テスト + 型テスト（npm test）
@@ -685,6 +686,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | 可聴化（動作） | examples/hula-motion-sonifier | Web Audio、状態遷移発音 |
 | ジェスチャ楽器 | examples/music-shoe | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、イベントルーパー、加算残光ビジュアライザ |
 | ジェスチャ収録 | examples/music-shoe/lab.html | ラベル付きCSV記録（しきい値設計用） |
+| ゲーム（足踏み） | examples/udon | 足上げ(IMU)→踏み込み(圧力)の2段判定、**自動追従ベースラインからの delta でしきい値を持つ（キャリブレーション不要）**、しきい値ライブ調整とlocalStorage保存、イベント/フレームCSV |
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
 | FIFO入門（初心者向け） | examples/fifo-guide | `fifo-recording` プロファイル + startMeasurement/stopMeasurement、drain待ちUI、約30秒バッファの明示、serial continuity（Canvas集約 + 欠損range）、dropped と missing の区別、CSV照合、1〜2台同時収録のデバイス別比較 |
 | 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |

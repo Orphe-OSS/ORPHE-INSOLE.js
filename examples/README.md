@@ -19,6 +19,8 @@
 | [balance-sway](./balance-sway/) | 重心動揺の可視化（CoP軌跡・軌跡長・楕円面積） | INSOLE ×2 | デモ再生内蔵 | CoP計算、圧力検証、医療注意書き |
 | [balance-tuner](./balance-tuner/) | 左右バランスの可聴化 | INSOLE ×2 | **デモモード内蔵**（既定でON） | Web Audio、荷重→音マッピング |
 | [hula-motion-sonifier](./hula-motion-sonifier/) | フラダンス動作の検出と可聴化 | INSOLE ×2 | 一部（検出ロジックは Node テストあり） | 状態遷移発音、IMU+圧力の複合判定 |
+| [music-shoe](./music-shoe/) | 手に持って演奏するジェスチャ楽器（+ [GESTURE LAB](./music-shoe/lab.html) でしきい値較正用CSV記録） | INSOLE ×1〜2 | クリック/キーボードで全音色を試奏可 | 向きゲート打撃検出、固定レイテンシスケジューラ（BLEジッタ対策）、ループ録音、加算残光ビジュアライザ |
+| [udon](./udon/) | 足踏みでうどんの生地をこねるゲーム（1歩ごとの強度・左右バランス・ペース評価） | INSOLE ×1〜2 | **デモモード内蔵**（未接続の間は自動再生） | 足上げ(IMU)→踏み込み(圧力)の2段判定、自動追従ベースラインによるキャリブレーション不要な相対しきい値、しきい値ライブ調整（localStorage）、イベント/フレームCSV |
 | [device-test](./device-test/) | **リリース前の実機チェックリスト** | INSOLE ×1 | ―（実機検証が目的） | 通知中read/write、モード切替、自動判定 |
 | [quaternion-validation](./quaternion-validation/) | **quat修正の長時間実機検証** | INSOLE ×1〜2 | `?sim=1` | norm・yaw drift・欠損率、CSV逐次保存、数値レポート |
 | [terminal](./terminal/) | 生データ（gotData）のデバッグ | INSOLE ×1 | ― | プロトコル解析 |
@@ -55,7 +57,7 @@
 
 ## 実機がない場合
 
-1. **showcase / step-analysis / balance-tuner** はページ内デモモードがそのまま動きます
+1. **showcase / exhibition / step-analysis / balance-tuner / udon** はページ内デモモードがそのまま動きます
 2. 任意のサンプルを `OrpheInsoleSimulator` で動かす場合は
    `buildInsoleToolkit(..., { simulator: true })` を使うか、README の「実機がない場合（シミュレータ）」を参照
 
