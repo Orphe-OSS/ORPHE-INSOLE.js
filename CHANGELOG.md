@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-28
+
 ### Added
 
 - `examples/udon/` — a stepping game ("おいしいうどんを作ろう！", a port of the older 4ch-FSR `UDON_fsr_20250724` project) that shows how to build event-driven detection without any calibration step. A step is detected in two stages: foot lift from `gotConvertedAcc` / `gotConvertedGyro` (`|accY|`, `|accZ − 1G|`, gyro magnitude) while the load is off, then the stomp from `gotPress`. Because the 6ch ADC values carry a no-load offset of roughly 220 per channel (about 1358 in total on device `00000161`/left), absolute thresholds break across devices and fits — so every threshold is expressed as `delta = 6ch total − no-load baseline`, where the baseline is the minimum total over the last 4 seconds tracked in 500 ms buckets and follows the wearer automatically. Each step is scored (lift height × stomp delta × timing, a weighted sum tuned on a 34-step device log) and classified TOO WEAK / WEAK / GOOD / EXCELLENT / PERFECT, with left/right balance and pace advice; left and right are resolved from `mount_position`. Runs on `profile: "realtime-pressure"` (mode 3, 200 Hz), plays synthetic data until a device connects, ships JA/EN, fullscreen, live threshold tuning with presets persisted in `localStorage`, and two CSV exports (per-step events, and per-frame raw data while recording) for deriving thresholds from real logs.
