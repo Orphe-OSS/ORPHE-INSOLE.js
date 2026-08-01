@@ -24,17 +24,26 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(C.RING_BUFFER_CAPACITY, Fifo.RING_BUFFER_CAPACITY,
         'continuity.js の RING_BUFFER_CAPACITY が InsoleFifo.js と一致していない');
     assert.equal(C.FRAMES_PER_PACKET, 4);
+    // このページのバッファ容量表示は CSV 出力（packetToCsvRows）の行間隔基準。
+    // src/InsoleFifo.js の LEGACY_CSV_FRAME_INTERVAL_MS（Python 参照実装とのバイト互換の
+    // ため意図的に据え置かれた表示値）と一致させる。実機の実測 IMU ODR に基づく
+    // decodePacket() の実サンプル間隔（Fifo.FRAME_INTERVAL_MS≈4.8077ms）とは意図的に異なる。
+    assert.equal(C.FRAME_INTERVAL_MS, Fifo.LEGACY_CSV_FRAME_INTERVAL_MS);
     assert.equal(C.FRAME_INTERVAL_MS, 5);
+    assert.notEqual(C.FRAME_INTERVAL_MS, Fifo.FRAME_INTERVAL_MS,
+        'このページのCSV基準の値は、実測ODR基準の decodePacket() の間隔とは意図的に異なる');
     assert.equal(C.PACKET_INTERVAL_MS, 20);
     assert.equal(C.BUFFER_WINDOW_MS, 30000);
 
-    // 1 serial packet が 4 フレーム × 5 ms であることをデコーダ実装で裏取りする
+    // 1 serial packet の CSV 出力が 4 行 × 5 ms 間隔であることを実装（packetToCsvRows）で裏取りする
     const dv = new DataView(new ArrayBuffer(104));
     dv.setUint8(0, 0x36);
     dv.setUint16(1, 1000);
-    const decoded = Fifo.decodePacket(dv);
-    assert.equal(decoded.samples.length, C.FRAMES_PER_PACKET);
-    const deltas = decoded.samples.map((sample) => sample.t - decoded.timestamp);
+    dv.setUint8(3, 0); dv.setUint8(4, 0); dv.setUint8(5, 0); dv.setUint16(6, 0);
+    const rows = Fifo.packetToCsvRows(dv);
+    assert.equal(rows.length, C.FRAMES_PER_PACKET);
+    const rowMs = rows.map((row) => Number(row.split(', ')[1].split(':')[3]));
+    const deltas = rowMs.map((ms) => ms - rowMs[0]);
     assert.deepEqual(deltas, [0, 5, 10, 15]);
     assert.equal(
         C.RING_BUFFER_CAPACITY * C.FRAMES_PER_PACKET * C.FRAME_INTERVAL_MS,

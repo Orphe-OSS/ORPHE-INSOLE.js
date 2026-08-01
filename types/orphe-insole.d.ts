@@ -453,7 +453,10 @@ export declare class OrpheInsoleSimulator {
 export interface InsoleFifoSample {
     serial_number: number;
     packet_number: number;
-    /** デバイス時刻ベースのミリ秒（当日 00:00 起点 + フレーム間 5ms オフセット） */
+    /**
+     * デバイス時刻ベースのミリ秒（当日 00:00 起点 + フレーム間 FRAME_INTERVAL_MS オフセット）。
+     * FRAME_INTERVAL_MS は実機の実測 ODR（約208Hz）に基づく（旧仮定の5ms/frameではない）。
+     */
     t: number;
     converted_gyro: InsoleVector3;
     converted_acc: InsoleVector3;
@@ -466,9 +469,10 @@ export interface InsoleFifoOptions {
     /** 回復不能な欠損が発生した時点で収録を自動停止する（既定 false） */
     stopOnLoss?: boolean;
     /**
-     * stop()（手動停止）後、未回収シリアルの再要求だけを続けて FW リングバッファから
-     * 回収する「回収フェーズ（drain）」のタイムアウト[ms]（既定 3000、0 で無効＝従来動作）。
-     * 未回収が無ければ即座に抜けるため、欠損のない正常系では stop() の遅延は実質ゼロ。
+     * stop()（手動停止）後に走る回収フェーズのタイムアウト[ms]（既定 3000、0 で無効＝従来動作）。
+     * 2段階で回収する: (1) catch-up — 停止時点でFWに溜まっていた「まだ要求していない」
+     * バックログを新規レンジで回収、(2) drain — 未回収（carryOver）シリアルの再要求を継続。
+     * どちらも未回収が無ければ即座に抜けるため、欠損のない正常系では stop() の遅延は実質ゼロ。
      * stopOnLoss 自動停止・切断・例外では発動しない。
      */
     drainTimeoutMs?: number;
@@ -504,8 +508,10 @@ export interface InsoleFifoProgress {
     lag: number;
     /** 回復不能に失われた累計シリアル数 */
     dropped: number;
-    /** stop() 後の回収フェーズ（drain）中の進捗なら true */
+    /** stop() 後の回収フェーズ（catch-up または drain）中の進捗なら true */
     draining?: boolean;
+    /** 回収フェーズのうち catch-up（未要求バックログの回収）中の進捗なら true */
+    catchup?: boolean;
 }
 
 export interface InsoleFifoDataLoss {
@@ -553,9 +559,10 @@ export declare class OrpheInsoleFifo {
     onDataLoss: ((info: InsoleFifoDataLoss) => void) | null;
     /**
      * 収集終了時に呼ばれる（stopOnLoss による自動停止の検知に使う）。
-     * drainRecovered は stop() 後の回収フェーズ（drain）で救えたシリアル数。
+     * catchupRecovered は stop() 後の catch-up（未要求バックログの回収）で救えたシリアル数、
+     * drainRecovered はその後の drain（未回収 carryOver の再要求）で救えたシリアル数。
      */
-    onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void) | null;
+    onStopped: ((info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number; catchupRecovered: number }) => void) | null;
     onError: ((error: unknown) => void) | null;
     /** 現在のFIFO要求境界を記録 */
     createCheckpoint(): InsoleFifoCheckpoint;
@@ -574,6 +581,17 @@ export declare class OrpheInsoleFifo {
 
     static readonly CSV_HEADER: string;
     static readonly READ_MODE_FIFO: number;
+    /** gyro[dps] 換算係数（LSM6DSOX データシート代表感度、FIFOは±2000dps固定で0.07 dps/LSB） */
+    static readonly GYRO_DPS_PER_LSB: number;
+    /** decodePacket() のフレーム間隔算出に使う実測 IMU ODR[Hz]（約208Hz。旧仮定は200Hz） */
+    static readonly IMU_ODR_HZ: number;
+    /** decodePacket() が返す `t` のフレーム間隔[ms]（= 1000 / IMU_ODR_HZ ≈ 4.8077） */
+    static readonly FRAME_INTERVAL_MS: number;
+    /**
+     * packetToCsvRows() の timestamp 文字列だけに使う、Python 参照実装とのバイト互換の
+     * ための据え置き値[ms]（5）。FRAME_INTERVAL_MS とは意図的に異なる（本体コメント参照）。
+     */
+    static readonly LEGACY_CSV_FRAME_INTERVAL_MS: number;
     static serialDistance(startExclusive: number, endInclusive: number): number;
     static buildRequestsFromSerials(serials: Iterable<number>): Array<[number, number]>;
     static createGetSensorDataRequest(pairs: Array<[number, number]>): Uint8Array;
@@ -768,7 +786,7 @@ export interface InsoleToolkitFifoOptions extends InsoleFifoOptions {
     onProgress?: (info: InsoleFifoProgress) => void;
     onAnomaly?: (info: InsoleFifoAnomaly) => void;
     onDataLoss?: (info: InsoleFifoDataLoss) => void;
-    onStopped?: (info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number }) => void;
+    onStopped?: (info: { reason: 'manual' | 'loss'; dropped: number; collected: number; drainRecovered: number; catchupRecovered: number }) => void;
     onError?: (error: unknown) => void;
 }
 
