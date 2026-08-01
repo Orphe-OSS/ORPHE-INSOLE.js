@@ -28,6 +28,13 @@
  * `raw / 32768 * 2000`（= 61.035 mdps/LSB）で換算するが、本実装は LSM6DSOX の
  * データシート代表感度 70 mdps/LSB（±2000 dps 固定）を使い `raw * 0.07` とする。
  * acc[G]・press[N] は参照実装と同一（acc の /32768*16 はデータシート感度 0.488 mg/LSB と一致）。
+ *
+ * フレーム間隔の注意: パケット内の4フレームは従来「200Hz（5ms間隔）」を仮定していたが、
+ * 実機のIMU（LSM6DSOX）ODRは実測で約208Hz（≈4.8077ms/frame）であり、5ms仮定では
+ * パケット内の時間が約4%引き伸ばされる。decodePacket() が返すサンプルの `t` は
+ * FRAME_INTERVAL_MS（208Hz由来）で計算する。packetToCsvRows() の timestamp 文字列
+ * （ミリ秒3桁）だけは Python 参照実装とのバイト互換のため、意図的に旧来の
+ * LEGACY_CSV_FRAME_INTERVAL_MS（5ms）のまま据え置く。
  */
 (function (global) {
 
@@ -66,6 +73,22 @@
   const NOTIFY_DATA_NUM = 4;                         // 1パケット内のフレーム数
   const NOTIFY_DATA_SIZE = 24;                       // 1フレームのバイト数
   const DATA_PACKET_BYTE_LENGTH = 104;
+
+  // IMU（LSM6DSOX）の実測 ODR。実機2台でパケット基準タイムスタンプ（FW由来・truthful）の
+  // base-to-base 間隔を計測すると 19.14ms/19.22ms per packet（4フレーム）≒ 4.79ms/4.80ms per
+  // frame ≒ 208Hz が得られ、従来の「200Hz（5ms/frame）」という仮定より実際は速かった
+  // （LSM6DSOX の標準 ODR 一覧に含まれる 208Hz と一致）。この差により、5ms仮定のままだと
+  // パケット内のフレーム間隔が実際より約4%引き伸ばされ、パケット境界での連続サンプル間隔が
+  // 0 や負になることがある（dt を計算する用途で気づかれにくい誤差になる）。
+  const IMU_ODR_HZ = 208;
+  const FRAME_INTERVAL_MS = 1000 / IMU_ODR_HZ; // ≈4.8077ms/frame（旧仮定は 5ms/frame）
+
+  // packetToCsvRows() の各行 timestamp 文字列（ミリ秒3桁）だけは、Python 参照実装
+  // （insole_client）とのバイト互換・既存記録データとの比較可能性を優先し、意図的に
+  // 従来の「5ms間隔」表示のまま据え置く（変更しない）。プログラムで正確な dt を
+  // 計算する用途には、この定数ではなく decodePacket() が返す `t`（FRAME_INTERVAL_MS
+  // 基準）を使うこと。CSV の timestamp 文字列から dt を逆算しないこと。
+  const LEGACY_CSV_FRAME_INTERVAL_MS = 5;
 
   const CSV_HEADER =
     'serial_number,timestamp,' +
@@ -222,7 +245,7 @@
   }
 
   // 1データパケット(0x36) → 4フレームのサンプル配列（ライブ可視化用）。
-  // フレームは古い順（i=3 が基準、以降 +5ms）。出力もその順。
+  // フレームは古い順（i=3 が基準、以降 +FRAME_INTERVAL_MS≈4.8077ms）。出力もその順。
   function decodePacket(dv) {
     const serial = dv.getUint16(1);
     const baseMs = extractTimestampMs(dv);
@@ -233,7 +256,7 @@
       samples.push({
         serial_number: serial,
         packet_number,
-        t: baseMs + packet_number * 5,
+        t: baseMs + packet_number * FRAME_INTERVAL_MS,
         converted_gyro: { x: f.gyro[0], y: f.gyro[1], z: f.gyro[2] },
         converted_acc: { x: f.acc[0], y: f.acc[1], z: f.acc[2] },
         press: { values: f.press, serial_number: serial, packet_number },
@@ -245,13 +268,15 @@
   function f2(v) { return v.toFixed(2).padStart(8); }
   function f4(v) { return v.toFixed(4).padStart(8); }
 
-  // 1データパケット → CSV 4行（参照実装 sensor_data_to_str(csv=True) と同一形式）
+  // 1データパケット → CSV 4行（参照実装 sensor_data_to_str(csv=True) と同一形式）。
+  // timestamp 列は意図的に LEGACY_CSV_FRAME_INTERVAL_MS（5ms/frame）のまま据え置く
+  // （冒頭の定数定義コメント参照。実際のフレーム間隔は FRAME_INTERVAL_MS≈4.8077ms）。
   function packetToCsvRows(dv) {
     const serial = dv.getUint16(1);
     const h = dv.getUint8(3), m = dv.getUint8(4), s = dv.getUint8(5), ms = dv.getUint16(6);
     const rows = [];
     for (let i = NOTIFY_DATA_NUM - 1; i >= 0; i--) {
-      const offsetMs = ((NOTIFY_DATA_NUM - 1) - i) * 5;
+      const offsetMs = ((NOTIFY_DATA_NUM - 1) - i) * LEGACY_CSV_FRAME_INTERVAL_MS;
       const f = readFrame(dv, i);
       rows.push([
         String(serial), timestampToStr(h, m, s, ms, offsetMs),
@@ -1136,6 +1161,9 @@
   OrpheInsoleFifo.MAX_CARRY_OVER_SERIALS = MAX_CARRY_OVER_SERIALS;
   OrpheInsoleFifo.RE_REQUEST_DATA_NUM = RE_REQUEST_DATA_NUM;
   OrpheInsoleFifo.GYRO_DPS_PER_LSB = GYRO_DPS_PER_LSB;
+  OrpheInsoleFifo.IMU_ODR_HZ = IMU_ODR_HZ;
+  OrpheInsoleFifo.FRAME_INTERVAL_MS = FRAME_INTERVAL_MS;
+  OrpheInsoleFifo.LEGACY_CSV_FRAME_INTERVAL_MS = LEGACY_CSV_FRAME_INTERVAL_MS;
   OrpheInsoleFifo.accToG = accToG;
   OrpheInsoleFifo.gyroToDps = gyroToDps;
   OrpheInsoleFifo.pressureToN = pressureToN;

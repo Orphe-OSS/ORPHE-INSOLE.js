@@ -200,13 +200,23 @@ const fifo2 = new OrpheInsoleFifo(insole, { stopOnLoss: true });
 // 収録後の判定: fifo.droppedCount === 0 なら欠損なし
 ```
 
-CSV は timestamp 昇順・1パケット4行（フレーム5ms間隔）で、参照実装の
+CSV は timestamp 昇順・1パケット4行（行間隔は `LEGACY_CSV_FRAME_INTERVAL_MS`＝5ms。後述の
+実測フレーム間隔とは別に、Python 参照実装とのバイト互換のため意図的に据え置き）で、参照実装の
 `tools/check_tokoroten_data.py`（4行/serial・欠損なしを検証）と互換。
 実機（device 00000161/right）で欠損0のロスレス収録を確認済み。
 showcase の「ロスレス収録（FIFO）」パネルが利用例（収録データで各可視化がライブ更新）。
 
+**フレーム間隔（実測ODR）**: `decodePacket()` が返す各サンプルの `t` は、従来の
+「200Hz（5ms/frame）」仮定ではなく、実機2台のパケット基準タイムスタンプの base-to-base 間隔
+実測から得た **実測 IMU ODR ≈208Hz（`FRAME_INTERVAL_MS`≈4.8077ms/frame、LSM6DSOXの標準ODR）**
+を使う。5ms仮定のままだとパケット内時間が約4%引き伸ばされ、パケット境界で連続サンプルの
+dt が 0 や負になることがあった。`IMU_ODR_HZ` / `FRAME_INTERVAL_MS` は静的プロパティとして
+公開されている。dt を計算する用途はこちらを使うこと（CSV の timestamp 文字列から逆算しない）。
+
 **端末内バッファは約30秒分**（`RING_BUFFER_CAPACITY`(1500) packet × 20 ms/packet = 30,000 ms。
-1 packet = 4 frame × 5 ms。等価に 50 packet/s × 30 s = 1500）。
+1 packet = 4 frame × `LEGACY_CSV_FRAME_INTERVAL_MS`(5ms) で換算。等価に 50 packet/s × 30 s = 1500）。
+この30秒はCSV基準の目安値であり、実測ODR（≈208Hz）換算では1 packetは約19.2msなので
+実際のバッファ時間はやや短い（約28.8秒）。いずれにしても目安であり、
 30秒以内の短時間計測は計測区間全体をバッファに保持しやすく安定した記録に向くが、
 **「30秒以内なら無欠損」という保証ではない**（回収が滞れば30秒以内でも上書きされ、
 追いつけていれば30秒超でも欠損しない）。長時間計測では欠損表示とCSVの確認が必要。

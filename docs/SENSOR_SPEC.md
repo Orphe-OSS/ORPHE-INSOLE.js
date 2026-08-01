@@ -81,6 +81,12 @@ SENSOR_VALUES notification のパケット仕様と単位系のリファレン�
 FIFO 収録（`src/InsoleFifo.js`）の `gyro_*[dps]` も同じ 0.07 deg/s/LSB を使います。
 Python 参照実装（insole_client）の理想 Q15 換算とは意図的に係数 1.14688 倍だけ異なります。
 
+FIFO のパケット内フレーム間隔（`decodePacket()` が返す各サンプルの `t`）は、従来仮定していた
+200Hz（5ms/frame）ではなく、実機の実測 IMU ODR（LSM6DSOXの標準 208Hz、`FRAME_INTERVAL_MS`≈
+4.8077ms/frame）を使います。`packetToCsvRows()` の CSV timestamp 文字列だけは Python 参照実装と
+のバイト互換のため、意図的に旧来の5ms間隔（`LEGACY_CSV_FRAME_INTERVAL_MS`）のまま据え置きます。
+dt を計算する用途は `decodePacket()` の `t`（`FRAME_INTERVAL_MS` 基準）を使ってください。
+
 Euler 角は `gotQuat` と同じ成分を単位ノルムへ正規化してから計算します。これにより、
 量子化誤差や将来の転送スケール変更があっても Euler 角の振幅が圧縮されません。
 

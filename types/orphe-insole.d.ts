@@ -453,7 +453,10 @@ export declare class OrpheInsoleSimulator {
 export interface InsoleFifoSample {
     serial_number: number;
     packet_number: number;
-    /** デバイス時刻ベースのミリ秒（当日 00:00 起点 + フレーム間 5ms オフセット） */
+    /**
+     * デバイス時刻ベースのミリ秒（当日 00:00 起点 + フレーム間 FRAME_INTERVAL_MS オフセット）。
+     * FRAME_INTERVAL_MS は実機の実測 ODR（約208Hz）に基づく（旧仮定の5ms/frameではない）。
+     */
     t: number;
     converted_gyro: InsoleVector3;
     converted_acc: InsoleVector3;
@@ -578,6 +581,17 @@ export declare class OrpheInsoleFifo {
 
     static readonly CSV_HEADER: string;
     static readonly READ_MODE_FIFO: number;
+    /** gyro[dps] 換算係数（LSM6DSOX データシート代表感度、FIFOは±2000dps固定で0.07 dps/LSB） */
+    static readonly GYRO_DPS_PER_LSB: number;
+    /** decodePacket() のフレーム間隔算出に使う実測 IMU ODR[Hz]（約208Hz。旧仮定は200Hz） */
+    static readonly IMU_ODR_HZ: number;
+    /** decodePacket() が返す `t` のフレーム間隔[ms]（= 1000 / IMU_ODR_HZ ≈ 4.8077） */
+    static readonly FRAME_INTERVAL_MS: number;
+    /**
+     * packetToCsvRows() の timestamp 文字列だけに使う、Python 参照実装とのバイト互換の
+     * ための据え置き値[ms]（5）。FRAME_INTERVAL_MS とは意図的に異なる（本体コメント参照）。
+     */
+    static readonly LEGACY_CSV_FRAME_INTERVAL_MS: number;
     static serialDistance(startExclusive: number, endInclusive: number): number;
     static buildRequestsFromSerials(serials: Iterable<number>): Array<[number, number]>;
     static createGetSensorDataRequest(pairs: Array<[number, number]>): Uint8Array;

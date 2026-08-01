@@ -7,12 +7,18 @@
  *
  * ── FIFO バッファ約30秒の根拠（推測ではなく実装定数からの換算） ──────────────
  *   src/InsoleFifo.js:
- *     RING_BUFFER_CAPACITY = 1500   … 追従遅れ(lag)がこれを超えた分を回復不能として扱う上限
- *     NOTIFY_DATA_NUM      = 4      … 1 serial packet に含まれるフレーム数
- *     decodePacket()                … フレーム間隔は 5 ms（packet_number * 5）
- *   → 1 packet = 4 frame × 5 ms = 20 ms
+ *     RING_BUFFER_CAPACITY       = 1500  … 追従遅れ(lag)がこれを超えた分を回復不能として扱う上限
+ *     NOTIFY_DATA_NUM            = 4     … 1 serial packet に含まれるフレーム数
+ *     LEGACY_CSV_FRAME_INTERVAL_MS = 5   … packetToCsvRows() の1行あたりの表示間隔[ms]
+ *   → 1 packet = 4 frame × 5 ms = 20 ms（CSV上の1serialが表す時間）
  *   → 1500 packet × 20 ms = 30,000 ms = 約30秒
  *   （等価な言い方: 200 sample/s ÷ 4 sample/packet = 50 packet/s、1500 / 50 = 30 s）
+ *
+ * 注意: ここでの FRAME_INTERVAL_MS(=5) は、このページが扱う CSV 出力の行間隔
+ * （src/InsoleFifo.js の LEGACY_CSV_FRAME_INTERVAL_MS。Python 参照実装とのバイト互換のため
+ * 意図的に据え置かれた表示値）に合わせたものであり、実機の実測 IMU ODR（約208Hz）とは
+ * 異なる（SDK内部の decodePacket() が返す実サンプル間隔は src/InsoleFifo.js の
+ * FRAME_INTERVAL_MS≈4.8077ms を使う）。バッファ容量の目安はこのCSV基準の値で説明する。
  *
  * 注意: これは「30秒以内なら必ず無欠損」という保証ではない。回収（ポーリング）が
  * 生成に追いつかなければ 30 秒以内でも上書きは起こりうる。逆に 30 秒を超えても
@@ -26,7 +32,7 @@
 
     /** 1 serial packet に含まれるフレーム数（src/InsoleFifo.js NOTIFY_DATA_NUM） */
     const FRAMES_PER_PACKET = 4;
-    /** フレーム間隔 ms（src/InsoleFifo.js decodePacket の packet_number * 5） */
+    /** CSV上のフレーム間隔 ms（src/InsoleFifo.js の LEGACY_CSV_FRAME_INTERVAL_MS と同じ値） */
     const FRAME_INTERVAL_MS = 5;
     /** 1 serial packet が表す時間 ms */
     const PACKET_INTERVAL_MS = FRAMES_PER_PACKET * FRAME_INTERVAL_MS;
