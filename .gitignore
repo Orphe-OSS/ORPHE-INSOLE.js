@@ -1,3 +1,6 @@
 .DS_Store
 *.ignore.*
 node_modules/
+# Python (podcast レンダラ等)
+__pycache__/
+*.pyc
