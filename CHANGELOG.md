@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `OrpheInsoleFifo.stop()`: recover the forward backlog that was never requested when recording stops while the host is behind (**catch-up**). The previous recovery phase (`drain`) only re-requested serials it had already asked for and not received (`carryOver`); it never requested serials the firmware had already produced but the host had not asked for at all, and that shortfall was counted in neither `missing` nor `droppedCount` — so a recording could be silently several seconds short of the requested span while still reporting zero loss. Measured with two devices recording the same span simultaneously, the lagging device consistently captured only 86–89% of it with `missing=0, dropped=0`. `stop()` now freezes the firmware's current serial as a fixed target the moment it is called, issues new range requests up to that target before falling back to draining outstanding `carryOver` re-requests, and counts whatever cannot be retrieved within `drainTimeoutMs` as `stopped_pending` in `droppedCount`. `onStopped(info)` gains a `catchupRecovered` field alongside the existing `drainRecovered`. This restores the invariant that `missing === 0 && dropped === 0` means the full recorded span is actually present. `options.drainTimeoutMs` now behaves as an idle budget shared by both recovery steps (extended while data keeps arriving, capped by an absolute upper bound) instead of a single fixed deadline, so a normal loss-free stop still returns immediately.
+
 ## [1.3.0] - 2026-07-28
 
 ### Added

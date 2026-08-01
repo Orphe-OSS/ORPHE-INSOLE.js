@@ -56,6 +56,13 @@
   const CURRENT_SERIAL_TIMEOUT_MS = 50;
   const ONE_SHOT_IDLE_TIMEOUT_MS = 400;              // バースト受信中に許容する無音（超えたら「このバーストは終わり」と判断）
   const DEFAULT_DRAIN_TIMEOUT_MS = 3000;             // stop() 後の回収フェーズ（drain）の既定タイムアウト（0 で無効＝従来動作）
+  // drainTimeoutMs は「無音がこれだけ続いたら諦める」idle 予算として使い、データが届き続けている
+  // 間は延長する（既定 3000 を上げずに数秒ぶんのバックログを回収できるようにするため。
+  // #46 の _receiveResponses と同じ idle timeout の考え方）。ただし停止処理が終わらなくなると
+  // 困るので、絶対上限として idle 予算の CATCHUP_MAX_BUDGET_FACTOR 倍を超えたら打ち切る。
+  // 既定 3000ms × 10 = 30s は FW リングバッファ全域（1500 packet ≒ 60 packet/s で 25s）を
+  // 引き切れる余裕にあたる。
+  const CATCHUP_MAX_BUDGET_FACTOR = 10;
   const NOTIFY_DATA_NUM = 4;                         // 1パケット内のフレーム数
   const NOTIFY_DATA_SIZE = 24;                       // 1フレームのバイト数
   const DATA_PACKET_BYTE_LENGTH = 104;
@@ -337,6 +344,21 @@
       }
     }
 
+    // 収録スパンの終端を、格納の有無に関わらず serial まで延ばす。
+    // stop() 時の catch-up（未要求バックログの回収）で「停止時点の最新 FW シリアル」を
+    // スパンに含めるために使う。これをしないと、回収できなかった末尾は
+    // storedSpanMax に入らず finalizePendingLoss の計上対象外になり、
+    // 「missing にも dropped にも出ない黙った切り捨て」になってしまう。
+    // 数値の大小ではなく modular 距離で判定する（wrap 後の小さい serial を誤って
+    // 手前と扱わない）。収録アークは半周未満が前提なので、それを超える距離は
+    // 異常値として無視する（幻の巨大欠損を計上しない安全弁）。
+    noteSpanTarget(serial) {
+      if (this.firstStoredSerial === null) return;
+      const fwd = serialDistance(this.firstStoredSerial, serial);
+      if (fwd > UINT16_MAX / 2) return;
+      if (fwd > this.storedSpanMax) this.storedSpanMax = fwd;
+    }
+
     // 収集終了時の最終計上。収録スパン内で「格納も回復不能計上もされていない」
     // シリアル（＝再要求が成功しないまま停止した carryOver 残り等）を dropped に計上する。
     // 不変条件: スパン内シリアル数 = rawStore.size + dropped（各経路の計上漏れをここで必ず埋める）
@@ -420,6 +442,32 @@
   }
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  // ── 停止後の回収予算（idle ベース） ─────────────────────────────────
+  // 「無音が budgetMs 続いたら諦める」予算。データが届いている間は noteProgress() で
+  // 期限を延ばすので、既定値を上げずに数秒ぶんのバックログでも回収しきれる。
+  // hardDeadline で絶対上限を持ち、回収が終わらず stop() が返らない事故を防ぐ。
+  class DrainBudget {
+    constructor(budgetMs, now = Date.now()) {
+      this.budgetMs = Math.max(0, budgetMs);
+      this.deadline = now + this.budgetMs;
+      this.hardDeadline = now + this.budgetMs * CATCHUP_MAX_BUDGET_FACTOR;
+    }
+    // 従来の「絶対期限」引数（テスト・外部呼び出し）を延長なしの予算として扱う
+    static fromDeadline(deadline, now = Date.now()) {
+      const b = new DrainBudget(Math.max(0, deadline - now), now);
+      b.hardDeadline = deadline;
+      return b;
+    }
+    static coerce(budgetOrDeadline) {
+      return typeof budgetOrDeadline === 'number'
+        ? DrainBudget.fromDeadline(budgetOrDeadline)
+        : budgetOrDeadline;
+    }
+    get expired() { return this.remainingMs() <= 0; }
+    remainingMs() { return Math.max(0, Math.min(this.deadline, this.hardDeadline) - Date.now()); }
+    noteProgress() { this.deadline = Math.min(Date.now() + this.budgetMs, this.hardDeadline); }
+  }
 
   // ── メインクラス ─────────────────────────────────────────────────────
   /**
@@ -639,15 +687,22 @@
 
     async _runLoopWrapped() {
       let drainRecovered = 0;
+      let catchupRecovered = 0;
       try {
         await this._runLoop();
-        // 手動 stop() で終了した場合のみ、未回収（carryOver）の再要求を続ける回収フェーズ（drain）を
-        // 走らせる。carryOver が空なら即抜けるので、欠損のない正常系では stop() の遅延は実質ゼロ。
+        // 手動 stop() で終了した場合のみ、回収フェーズを走らせる。
+        //   1) catch-up: 停止時点で FW に溜まっていた「まだ要求していない」バックログを新規レンジで回収
+        //   2) drain   : 未回収（carryOver）の再要求を続けて取りこぼしを回収
+        // どちらも未回収が無ければ即抜けるので、欠損のない正常系では stop() の遅延は実質ゼロ。
         // stopOnLoss 自動停止・例外・切断時は行わない（それらは _autoStopped / 切断で弾く）。
         const drainTimeoutMs = this.options.drainTimeoutMs != null ? this.options.drainTimeoutMs : DEFAULT_DRAIN_TIMEOUT_MS;
         if (!this._autoStopped && drainTimeoutMs > 0 &&
             this.insole && this.insole.isConnected && this.insole.isConnected()) {
-          drainRecovered = await this._drainLoop(Date.now() + drainTimeoutMs);
+          // catch-up と drain は同じ予算（idle ベース）を共有する。どちらでデータが
+          // 届いても期限が延び、無音になったところで停止処理へ進む。
+          const budget = new DrainBudget(drainTimeoutMs);
+          catchupRecovered = await this._catchUpLoop(await this._resolveCatchUpTarget(), budget);
+          drainRecovered = await this._drainLoop(budget);
         }
       } catch (e) {
         this._reportError(e);
@@ -672,21 +727,107 @@
             dropped: this.state.dropped,
             collected: this.state.rawStore.size,
             drainRecovered,
+            catchupRecovered,
           }));
         }
       }
     }
 
-    // ── 回収フェーズ（drain） ─────────────────────────────────────────
-    // stop() 後、新規レンジ要求は打ち切り、未回収（carryOver）の再要求だけを deadline まで
+    // ── 停止時の catch-up 目標（frozen target） ────────────────────────
+    // stop() 時点の FW 書き込み位置（最新シリアル）を1回だけ確定させる。ポーリング値
+    // （_lastCurrentSerial）は最大 POLLING_INTERVAL_MS ぶん古いので、可能なら問い合わせて
+    // 更新する。以降この値で固定し、停止後に新しく生成されるシリアルは追いかけない。
+    async _resolveCatchUpTarget() {
+      try {
+        const current = await this._retryValue(() => this._getCurrentSerial(), { retries: 3, intervalMs: 1 });
+        if (current && Number.isInteger(current.serial)) {
+          this._lastCurrentSerial = current.serial;
+          return current.serial;
+        }
+      } catch (_) { /* 取得できなければ最後のポーリング値へフォールバック */ }
+      return Number.isInteger(this._lastCurrentSerial) ? this._lastCurrentSerial : null;
+    }
+
+    // ── 回収フェーズ その1: catch-up（未要求バックログの回収） ──────────
+    // 追従が遅れていると、stop() 時点で「FW には溜まっているのに一度も要求していない」
+    // シリアル（forward backlog）が残る。carryOver の再要求だけではこれを取りに行かないため、
+    // 収録末尾がまるごと切り捨てられ、しかも missing にも dropped にも現れなかった。
+    // ここでは frozen target までの新規レンジを前方へ要求し続けて末尾を回収する。
+    // 回収できたシリアル数を返す。
+    async _catchUpLoop(frozenTarget, budgetOrDeadline) {
+      const state = this.state;
+      const budget = DrainBudget.coerce(budgetOrDeadline);
+      if (!budget || !Number.isInteger(frozenTarget)) return 0;
+      // 再同期中（lastSerial=null）は「どこまで要求済みか」が不明なので catch-up しない。
+      // 次のポーリングで最新へ再アンカーされる前提の状態であり、ここで推測すると
+      // summarizeSince の区間判定（lastSerial 基準）まで壊れる。
+      if (state.lastSerial === null) return 0;
+
+      // 目標が要求済み境界より後方（＝追従済み or 異常値）なら何もしない。
+      // wrap を挟むと数値の大小では判定できないので modular 距離で見る（半周超は異常値）。
+      const backlog = serialDistance(state.lastSerial, frozenTarget);
+      if (backlog === 0 || backlog > UINT16_MAX / 2) return 0;
+
+      // 収録スパンを frozen target まで延ばしておく。こうしておくことで、予算内に
+      // 回収しきれなかった末尾は finalizePendingLoss が stopped_pending として必ず計上し、
+      // #44 の不変条件（スパン内シリアル数 = 回収数 + dropped）が
+      // [先頭 .. frozen target] の全区間で成立する（＝黙った切り捨てが起きない）。
+      state.noteSpanTarget(frozenTarget);
+
+      let recovered = 0;
+      while (!budget.expired) {
+        const remaining = serialDistance(state.lastSerial, frozenTarget);
+        if (remaining <= 0) break;
+        const requestSize = Math.min(remaining, MAX_DATA_NUMBER_REQUESTED_AT_ONCE);
+        const startSerial = (state.lastSerial + 1) % UINT16_MAX;
+        const expectedSerials = new Set(calcExpectedSerials(startSerial, requestSize));
+
+        this._queue.drain();
+        await this._write(createGetSensorDataRequest([[startSerial, requestSize]]));
+
+        const shotTimeout = Math.min(ONE_SHOT_TIMEOUT_MS, budget.remainingMs());
+        if (shotTimeout <= 0) break;
+        const { received, noDataSerials } =
+          await this._receiveResponses(expectedSerials, shotTimeout, ONE_SHOT_IDLE_TIMEOUT_MS);
+
+        // 要求済み境界は無条件に前進させる。target は固定なので通常ループの resync
+        // （lastSerial=null にして最新へ再アンカー）は不要で、ここでやると末尾を
+        // 取りに行けなくなるうえ summarizeSince の区間が消える。
+        state.lastSerial = (startSerial + requestSize - 1) % UINT16_MAX;
+        this._classifyMissed(expectedSerials, received, noDataSerials);
+
+        const stored = this._absorbReceived(received);
+        recovered += stored;
+        if (stored > 0) budget.noteProgress();   // 届いている限り idle 予算を延長する
+        this._flushLossEvents();
+        if (typeof this.onProgress === 'function') {
+          this._safe(() => this.onProgress({
+            collected: state.rawStore.size,
+            lastReceived: received.size,
+            currentSerial: this._lastCurrentSerial,
+            lag: serialDistance(state.lastSerial, frozenTarget) +
+              state.carryOver.reduce((sum, [, c]) => sum + c, 0),
+            dropped: state.dropped,
+            draining: true,
+            catchup: true,
+          }));
+        }
+      }
+      return recovered;
+    }
+
+    // ── 回収フェーズ その2: drain（未回収の再要求） ────────────────────
+    // stop() 後、新規レンジ要求は打ち切り、未回収（carryOver）の再要求だけを予算内で
     // 続けて、FW リングバッファに残っているシリアルを回収する。FW から消えた分は no-data →
     // fw_nodata として確定計上し carryOver から抜く。回収できたシリアル数を返す。
     // 通常ループと同じ分類・通知（onSamples/onDataLoss/onProgress）を使うが、onProgress には
     // draining:true を付ける。
-    async _drainLoop(deadline) {
+    async _drainLoop(budgetOrDeadline) {
       const state = this.state;
+      const budget = DrainBudget.coerce(budgetOrDeadline);
       let recovered = 0;
-      while (state.carryOver.length > 0 && Date.now() < deadline) {
+      if (!budget) return recovered;
+      while (state.carryOver.length > 0 && !budget.expired) {
         const carryOverToSend = state.carryOver.slice(0, RE_REQUEST_DATA_NUM);
         state.carryOver = state.carryOver.slice(carryOverToSend.length);
         const expectedSerials = new Set(expandRequestsToList(carryOverToSend));
@@ -695,40 +836,16 @@
         this._queue.drain();
         await this._write(createGetSensorDataRequest(carryOverToSend));
 
-        const shotTimeout = Math.min(ONE_SHOT_TIMEOUT_MS, Math.max(0, deadline - Date.now()));
+        const shotTimeout = Math.min(ONE_SHOT_TIMEOUT_MS, budget.remainingMs());
         const { received, noDataSerials } =
           await this._receiveResponses(expectedSerials, shotTimeout, ONE_SHOT_IDLE_TIMEOUT_MS);
 
-        const allMissed = [...expectedSerials].filter((sn) => !received.has(sn));
-        const bleLoss = new Set(allMissed.filter((sn) => !noDataSerials.has(sn)));      // まだ届かない → 再要求へ戻す
-        const confirmedLost = allMissed.filter((sn) => noDataSerials.has(sn));           // FWから消失 → 回復不能
+        this._classifyMissed(expectedSerials, received, noDataSerials);
 
-        if (confirmedLost.length > 0) {
-          state.dropped += confirmedLost.length;
-          state.lossEvents.push({ reason: 'fw_nodata', dropped: confirmedLost.length });
-        }
-        if (bleLoss.size > 0) state.carryOver.push(...buildRequestsFromSerials(bleLoss));
-
-        const decodedSamples = [];
-        for (const [sn, dv] of received) {
-          if (state.rawStore.has(sn)) continue;
-          state.rawStore.set(sn, dv);
-          state.noteStored(sn);
-          recovered += 1;
-          const decoded = decodePacket(dv);
-          for (const s of decoded.samples) decodedSamples.push(s);
-        }
-        if (decodedSamples.length && typeof this.onSamples === 'function') {
-          this._safe(() => this.onSamples(this.deviceId, decodedSamples));
-        }
-        if (state.lossEvents.length > 0) {
-          const events = state.lossEvents.splice(0);
-          if (typeof this.onDataLoss === 'function') {
-            for (const ev of events) {
-              this._safe(() => this.onDataLoss({ ...ev, cumulative: state.dropped, currentSerial: this._lastCurrentSerial }));
-            }
-          }
-        }
+        const stored = this._absorbReceived(received);
+        recovered += stored;
+        if (stored > 0) budget.noteProgress();   // 届いている限り idle 予算を延長する
+        this._flushLossEvents();
         if (typeof this.onProgress === 'function') {
           this._safe(() => this.onProgress({
             collected: state.rawStore.size,
@@ -741,6 +858,49 @@
         }
       }
       return recovered;
+    }
+
+    // 受信結果を「再要求へ戻す分（BLEロス）」と「FWから消えた分（回復不能）」に分類する。
+    // catch-up / drain で共用（片方だけ直る事故を防ぐ）。
+    _classifyMissed(expectedSerials, received, noDataSerials) {
+      const state = this.state;
+      const missed = [...expectedSerials].filter((sn) => !received.has(sn));
+      const bleLoss = new Set(missed.filter((sn) => !noDataSerials.has(sn)));   // まだ届かない → 再要求へ戻す
+      const confirmedLost = missed.filter((sn) => noDataSerials.has(sn));       // FWから消失 → 回復不能
+      if (confirmedLost.length > 0) {
+        state.dropped += confirmedLost.length;
+        state.lossEvents.push({ reason: 'fw_nodata', dropped: confirmedLost.length });
+      }
+      if (bleLoss.size > 0) state.carryOver.push(...buildRequestsFromSerials(bleLoss));
+    }
+
+    // 受信パケットを rawStore へ格納し、デコード結果を onSamples へ流す。新規格納数を返す。
+    _absorbReceived(received) {
+      const state = this.state;
+      const decodedSamples = [];
+      let stored = 0;
+      for (const [sn, dv] of received) {
+        if (state.rawStore.has(sn)) continue;
+        state.rawStore.set(sn, dv);
+        state.noteStored(sn);
+        stored += 1;
+        for (const s of decodePacket(dv).samples) decodedSamples.push(s);
+      }
+      if (decodedSamples.length && typeof this.onSamples === 'function') {
+        this._safe(() => this.onSamples(this.deviceId, decodedSamples));
+      }
+      return stored;
+    }
+
+    // 蓄積した回復不能ロスイベントを onDataLoss へ通知する（catch-up / drain で共用）
+    _flushLossEvents() {
+      const state = this.state;
+      if (state.lossEvents.length === 0) return;
+      const events = state.lossEvents.splice(0);
+      if (typeof this.onDataLoss !== 'function') return;
+      for (const ev of events) {
+        this._safe(() => this.onDataLoss({ ...ev, cumulative: state.dropped, currentSerial: this._lastCurrentSerial }));
+      }
     }
 
     async _prepare() {
@@ -994,6 +1154,8 @@
   OrpheInsoleFifo.rawStoreToCSV = rawStoreToCSV;
   OrpheInsoleFifo.NotifyQueue = NotifyQueue;
   OrpheInsoleFifo.FifoLoopState = FifoLoopState;
+  OrpheInsoleFifo.DrainBudget = DrainBudget;
+  OrpheInsoleFifo.CATCHUP_MAX_BUDGET_FACTOR = CATCHUP_MAX_BUDGET_FACTOR;
 
   if (typeof global.OrpheInsoleFifo === 'undefined') {
     global.OrpheInsoleFifo = OrpheInsoleFifo;
