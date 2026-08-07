@@ -18,13 +18,31 @@ NotebookLM と違い、**台本のセリフをそのまま読ませる**ので�
   espeak-ng の日本語は漢字を正しく読めないため、pykakasi で漢字→かなに開いてから
   渡す（未導入だと読み上げが約2.7倍遅くなり不自然）。出力は WAV。
 
+■ 抑揚をもっと自然にしたい場合（有料・要 APIキー）
+    export OPENAI_API_KEY="sk-..."
+    python3 render_podcast.py --backend openai --chapters 0 --out test_openai.mp3
+  gpt-4o-mini-tts は instructions で「落ち着いた解説者として」「相槌を打つように」
+  といった演技指示ができるため、edge より抑揚が付く。全台本(約26,700字)でも数円程度。
+
+声を変えたい場合:
+    python3 render_podcast.py --list-voices          # 使える日本語ボイスを一覧
+    python3 render_podcast.py --voice-host ja-JP-DaichiNeural --voice-guest ja-JP-AoiNeural ...
+
 主なオプション:
     --chapters 0,1     章を指定（未指定なら全章）
     --limit N          先頭N ターンだけ（試聴用）
-    --rate  "+10%"     話速（edge のみ）
+    --rate  "+10%"     話速（edge。話者別の既定を上書き）
+    --pitch "+10Hz"    声の高さ（edge）
+    --voice-host / --voice-guest   話者ごとの声を指定
     --gap / --chapter-gap   セリフ間 / 章間の無音 [ms]
     --no-kana          espeak でかな変換をしない
     --list-voices      利用可能な日本語ボイスを表示（edge のみ）
+
+抑揚が平坦に感じるときの対処（効果が大きい順）:
+    1. --backend openai に変える（instructions で演技指示が効く）
+    2. --list-voices で別の日本語ボイスを試す（世代が新しい声ほど表現力が高い）
+    3. PROSODY_EDGE の rate / pitch を話者ごとに調整する
+    4. ffmpeg を入れて --gap を 400〜500ms にし、間を作る
 
 外部コマンド:
     ffmpeg  … 任意。あれば無音を正確に挟んで MP3 化する。無くても動作する
@@ -45,9 +63,31 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SCRIPT = os.path.join(HERE, "SCRIPT.md")
 
 # 話者 → 声。edge-tts の日本語ニューラルボイス。
+# --voice-host / --voice-guest で上書きできる。使える声は --list-voices で確認。
 VOICES_EDGE = {
     "ホスト": "ja-JP-KeitaNeural",    # 男性・聞き手
     "解説": "ja-JP-NanamiNeural",     # 女性・解説役
+}
+
+# 話者ごとのプロソディ（抑揚づけ）。edge-tts の既定は平坦になりがちなので、
+# 聞き手はやや速く高め（相槌らしく）、解説役はやや遅く低め（説明らしく）にして
+# 対話のコントラストを出す。--rate / --pitch で全体を追加調整できる。
+PROSODY_EDGE = {
+    "ホスト": {"rate": "+8%", "pitch": "+8Hz"},
+    "解説": {"rate": "+2%", "pitch": "-2Hz"},
+}
+
+# OpenAI TTS のボイス割り当てと、声の演技指示（instructions）。
+# gpt-4o-mini-tts は instructions でトーンを指定できるのが強み。
+VOICES_OPENAI = {
+    "ホスト": "ash",
+    "解説": "sage",
+}
+INSTRUCTIONS_OPENAI = {
+    "ホスト": "日本語のポッドキャストの聞き手。好奇心を持って相槌を打つように、"
+              "自然な抑揚で、やや軽快に話す。驚いたところは声を上げる。",
+    "解説": "日本語のポッドキャストの解説者。落ち着いた専門家として、"
+            "噛み砕いて丁寧に説明する。重要な数字はゆっくり強調して読む。",
 }
 # espeak-ng は1声しかないのでピッチで区別する
 VOICES_ESPEAK = {
@@ -139,13 +179,53 @@ def find_ffmpeg():
         return None
 
 
-async def synth_edge(turns, workdir, rate):
+async def synth_edge(turns, workdir, rate="", pitch="", voices=None):
+    """edge-tts で合成。話者ごとのプロソディを当てて平坦さを軽減する。"""
     import edge_tts
+    voices = voices or VOICES_EDGE
     files = []
     for i, (_ch, spk, text) in enumerate(turns):
         out = os.path.join(workdir, f"{i:05d}.mp3")
-        kwargs = {"rate": rate} if rate else {}
-        await edge_tts.Communicate(text, VOICES_EDGE[spk], **kwargs).save(out)
+        p = dict(PROSODY_EDGE.get(spk, {}))
+        if rate:
+            p["rate"] = rate      # 明示指定があれば話者ごとの既定を上書き
+        if pitch:
+            p["pitch"] = pitch
+        await edge_tts.Communicate(text, voices[spk], **p).save(out)
+        files.append(out)
+        if (i + 1) % 20 == 0:
+            print(f"  {i+1}/{len(turns)} 合成済み", flush=True)
+    return files
+
+
+def synth_openai(turns, workdir, model="gpt-4o-mini-tts", voices=None):
+    """OpenAI TTS で合成。instructions で話し方を指示できるぶん表現力が高い。
+
+    環境変数 OPENAI_API_KEY が必要。料金は gpt-4o-mini-tts で概ね $0.60/100万文字
+    なので、本台本（約26,700字）を全部読ませても数円程度。
+    """
+    import json
+    import urllib.request
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        sys.exit("OPENAI_API_KEY が設定されていません。\n"
+                 '  export OPENAI_API_KEY="sk-..." を実行してから再試行してください。')
+    voices = voices or VOICES_OPENAI
+    files = []
+    for i, (_ch, spk, text) in enumerate(turns):
+        out = os.path.join(workdir, f"{i:05d}.mp3")
+        body = json.dumps({
+            "model": model,
+            "voice": voices[spk],
+            "input": text,
+            "instructions": INSTRUCTIONS_OPENAI.get(spk, ""),
+            "response_format": "mp3",
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/audio/speech", data=body,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as r, open(out, "wb") as f:
+            f.write(r.read())
         files.append(out)
         if (i + 1) % 20 == 0:
             print(f"  {i+1}/{len(turns)} 合成済み", flush=True)
@@ -241,11 +321,15 @@ def concat_mp3_bytes(files, out_path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--script", default=DEFAULT_SCRIPT)
-    ap.add_argument("--backend", choices=["edge", "espeak"], default="edge")
+    ap.add_argument("--backend", choices=["edge", "openai", "espeak"], default="edge")
     ap.add_argument("--out", default="podcast.mp3")
     ap.add_argument("--chapters", help="例: 0,1  (未指定なら全章)")
     ap.add_argument("--limit", type=int, help="先頭N ターンのみ（試聴用）")
-    ap.add_argument("--rate", default="", help='話速。例 "+10%%"（edge のみ）')
+    ap.add_argument("--rate", default="", help='話速。例 "+10%%"（edge。話者別の既定を上書き）')
+    ap.add_argument("--pitch", default="", help='声の高さ。例 "+10Hz"（edge）')
+    ap.add_argument("--voice-host", default="", help="ホスト役の声を指定")
+    ap.add_argument("--voice-guest", default="", help="解説役の声を指定")
+    ap.add_argument("--openai-model", default="gpt-4o-mini-tts", help="OpenAI TTS のモデル")
     ap.add_argument("--gap", type=int, default=350, help="セリフ間の無音 [ms]")
     ap.add_argument("--chapter-gap", type=int, default=900, help="章の切れ目の無音 [ms]")
     ap.add_argument("--no-kana", action="store_true",
@@ -278,7 +362,19 @@ def main():
     with tempfile.TemporaryDirectory() as wd:
         print(f"合成中（backend={args.backend}）...")
         if args.backend == "edge":
-            files = asyncio.run(synth_edge(turns, wd, args.rate))
+            voices = dict(VOICES_EDGE)
+            if args.voice_host:
+                voices["ホスト"] = args.voice_host
+            if args.voice_guest:
+                voices["解説"] = args.voice_guest
+            files = asyncio.run(synth_edge(turns, wd, args.rate, args.pitch, voices))
+        elif args.backend == "openai":
+            voices = dict(VOICES_OPENAI)
+            if args.voice_host:
+                voices["ホスト"] = args.voice_host
+            if args.voice_guest:
+                voices["解説"] = args.voice_guest
+            files = synth_openai(turns, wd, args.openai_model, voices)
         else:
             files = synth_espeak(turns, wd, use_kana=not args.no_kana)
 
