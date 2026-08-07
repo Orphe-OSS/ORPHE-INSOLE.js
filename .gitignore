@@ -4,3 +4,7 @@ node_modules/
 # Python (podcast レンダラ等)
 __pycache__/
 *.pyc
+.venv/
+venv/
+*.mp3
+*.wav
