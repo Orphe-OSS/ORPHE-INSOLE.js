@@ -22,7 +22,11 @@ NotebookLM と違い、**台本のセリフをそのまま読ませる**ので�
     export OPENAI_API_KEY="sk-..."
     python3 render_podcast.py --backend openai --chapters 0 --out test_openai.mp3
   gpt-4o-mini-tts は instructions で「落ち着いた解説者として」「相槌を打つように」
-  といった演技指示ができるため、edge より抑揚が付く。全台本(約26,700字)でも数円程度。
+  といった演技指示ができるため、edge より抑揚が付く。
+  料金は「生成された音声の長さ」で決まり、概ね $0.015/分。
+  本台本は全6章で約81分なので **合計 約$1.2（約180円）**。章別の目安は
+  第0章 2分≒$0.03 / 前編(0-3章) 37分≒$0.55 / 後編(4-6章) 44分≒$0.66。
+  ※ 入力文字数だけで見積もると桁を誤るので注意（支配的なのは音声出力側）。
 
 声を変えたい場合:
     python3 render_podcast.py --list-voices          # 使える日本語ボイスを一覧
@@ -179,11 +183,23 @@ def find_ffmpeg():
         return None
 
 
-async def synth_edge(turns, workdir, rate="", pitch="", voices=None):
+
+def cache_path(cache_dir, backend, voice, extra, text, ext):
+    """合成済み音声のキャッシュ先を返す。同じ条件なら再合成せず再課金も起きない。"""
+    if not cache_dir:
+        return None
+    import hashlib
+    key = "|".join([backend, voice, repr(sorted(extra.items())) if extra else "", text])
+    h = hashlib.sha256(key.encode()).hexdigest()[:24]
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, f"{h}.{ext}")
+
+
+async def synth_edge(turns, workdir, rate="", pitch="", voices=None, cache_dir=None):
     """edge-tts で合成。話者ごとのプロソディを当てて平坦さを軽減する。"""
     import edge_tts
     voices = voices or VOICES_EDGE
-    files = []
+    files, hits = [], 0
     for i, (_ch, spk, text) in enumerate(turns):
         out = os.path.join(workdir, f"{i:05d}.mp3")
         p = dict(PROSODY_EDGE.get(spk, {}))
@@ -191,18 +207,26 @@ async def synth_edge(turns, workdir, rate="", pitch="", voices=None):
             p["rate"] = rate      # 明示指定があれば話者ごとの既定を上書き
         if pitch:
             p["pitch"] = pitch
-        await edge_tts.Communicate(text, voices[spk], **p).save(out)
+        cp = cache_path(cache_dir, "edge", voices[spk], p, text, "mp3")
+        if cp and os.path.exists(cp):
+            shutil.copyfile(cp, out); hits += 1
+        else:
+            await edge_tts.Communicate(text, voices[spk], **p).save(out)
+            if cp:
+                shutil.copyfile(out, cp)
         files.append(out)
         if (i + 1) % 20 == 0:
-            print(f"  {i+1}/{len(turns)} 合成済み", flush=True)
+            print(f"  {i+1}/{len(turns)} 完了（キャッシュ再利用 {hits}）", flush=True)
     return files
 
 
-def synth_openai(turns, workdir, model="gpt-4o-mini-tts", voices=None):
+def synth_openai(turns, workdir, model="gpt-4o-mini-tts", voices=None, cache_dir=None):
     """OpenAI TTS で合成。instructions で話し方を指示できるぶん表現力が高い。
 
-    環境変数 OPENAI_API_KEY が必要。料金は gpt-4o-mini-tts で概ね $0.60/100万文字
-    なので、本台本（約26,700字）を全部読ませても数円程度。
+    環境変数 OPENAI_API_KEY が必要。
+    料金は入力文字($0.60/100万トークン)より **音声出力($12/100万トークン)** が支配的で、
+    実効レートは概ね **$0.015/分**。本台本は約81分なので合計 約$1.2（約180円）。
+    cache_dir を指定すると合成済みの音声を再利用し、再実行時に再課金しない。
     """
     import json
     import urllib.request
@@ -211,9 +235,13 @@ def synth_openai(turns, workdir, model="gpt-4o-mini-tts", voices=None):
         sys.exit("OPENAI_API_KEY が設定されていません。\n"
                  '  export OPENAI_API_KEY="sk-..." を実行してから再試行してください。')
     voices = voices or VOICES_OPENAI
-    files = []
+    files, hits, billed = [], 0, 0
     for i, (_ch, spk, text) in enumerate(turns):
         out = os.path.join(workdir, f"{i:05d}.mp3")
+        cp = cache_path(cache_dir, "openai", voices[spk], {"m": model}, text, "mp3")
+        if cp and os.path.exists(cp):
+            shutil.copyfile(cp, out); files.append(out); hits += 1
+            continue
         body = json.dumps({
             "model": model,
             "voice": voices[spk],
@@ -226,9 +254,13 @@ def synth_openai(turns, workdir, model="gpt-4o-mini-tts", voices=None):
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=120) as r, open(out, "wb") as f:
             f.write(r.read())
-        files.append(out)
+        if cp:
+            shutil.copyfile(out, cp)
+        files.append(out); billed += 1
         if (i + 1) % 20 == 0:
-            print(f"  {i+1}/{len(turns)} 合成済み", flush=True)
+            print(f"  {i+1}/{len(turns)} 完了（新規課金 {billed} / キャッシュ再利用 {hits}）",
+                  flush=True)
+    print(f"  API呼び出し {billed} 件 / キャッシュ再利用 {hits} 件")
     return files
 
 
@@ -334,6 +366,8 @@ def main():
     ap.add_argument("--chapter-gap", type=int, default=900, help="章の切れ目の無音 [ms]")
     ap.add_argument("--no-kana", action="store_true",
                     help="espeak で漢字→かな変換をしない（既定は変換する）")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="合成結果をキャッシュしない（既定はキャッシュして再課金を防ぐ）")
     ap.add_argument("--list-voices", action="store_true")
     args = ap.parse_args()
 
@@ -357,6 +391,9 @@ def main():
     print(f"ターン数 {len(turns)} / 文字数 {chars} / 推定尺 約{chars/330:.0f}分 "
           f"(章: {sorted({t[0] for t in turns})})")
 
+    cache = None if args.no_cache else os.path.join(HERE, ".tts_cache")
+    if cache:
+        print(f"キャッシュ: {cache}（同じセリフ・同じ声なら再課金しません）")
     ffmpeg = find_ffmpeg()
     out = args.out
     with tempfile.TemporaryDirectory() as wd:
@@ -367,14 +404,14 @@ def main():
                 voices["ホスト"] = args.voice_host
             if args.voice_guest:
                 voices["解説"] = args.voice_guest
-            files = asyncio.run(synth_edge(turns, wd, args.rate, args.pitch, voices))
+            files = asyncio.run(synth_edge(turns, wd, args.rate, args.pitch, voices, cache))
         elif args.backend == "openai":
             voices = dict(VOICES_OPENAI)
             if args.voice_host:
                 voices["ホスト"] = args.voice_host
             if args.voice_guest:
                 voices["解説"] = args.voice_guest
-            files = synth_openai(turns, wd, args.openai_model, voices)
+            files = synth_openai(turns, wd, args.openai_model, voices, cache)
         else:
             files = synth_espeak(turns, wd, use_kana=not args.no_kana)
 
