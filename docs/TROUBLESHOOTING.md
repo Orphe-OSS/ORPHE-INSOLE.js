@@ -46,6 +46,25 @@ if (!navigator.bluetooth) {
 - streaming mode と受信データの対応を確認: mode 3 では `gotQuat`/`gotEuler` は来ない。mode 1 では `gotPress` は来ない
 - `gotEuler` だけ来ない場合: quaternion.js（CDN からの実行時ロード）が読み込めていない可能性。オフライン環境では発生する
 
+## 3b. Step Analysis だけ来ない（GAIT_NO_NOTIFICATIONS）
+
+Toolkit の Step 系プロファイルは、購読成功後に有効パケットの到着まで検証します。
+Raw（SENSOR_VALUES）は正常なのに `GAIT_NO_NOTIFICATIONS` で失敗する場合:
+
+- **デバイスFWが STEP_ANALYSIS を publish していない可能性**があります。
+  実測では **FW 1.0.1 の個体**が、購読成功・Raw 50通知/秒の正常受信下でも
+  STEP_ANALYSIS を transport レベルで0件のまま送信しませんでした（FW更新を検討してください）
+- FWバージョンは `await insole.getFirmwareVersion()` で確認できます（Toolkit 接続中は
+  ヘッダの FW バッジ / 歯車モーダルの Firmware 行にも表示）。標準BLE DIS(0x180A) 未実装の
+  FW では advertisement 由来（`insole.lastStatus.version`）が使われ、それも無い環境では
+  null（バッジ非表示）になります
+- advertisement からバージョンを読むには `watchAdvertisements()` 対応ブラウザが必要です。
+  未対応の Chrome では `--enable-features=WebBluetoothNewPermissionsBackend`
+  `--enable-experimental-web-platform-features` を付けて起動すると
+  `getDevices()` + `watchAdvertisements()` が有効になります
+- 切り分けには `session.snapshot().gaitDiagnostics` の `transportNotifications` を確認
+  （0のまま = FW側が送っていない / 増えるが valid 0 = デコード問題）
+
 ## 4. 記憶したデバイスに自動接続しない（毎回ダイアログが出る）
 
 - デバイス記憶による無ダイアログ再接続には `navigator.bluetooth.getDevices()` が必要（Chrome では既定で有効）。無効な環境では選択ダイアログへ自動フォールバックします
