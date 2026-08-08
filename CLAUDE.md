@@ -388,6 +388,12 @@ await insole.getDeviceInformation();
 // Returns: { battery: 0-2, mount_position, range: { acc, gyro } }
 // mount_position bit0: 0=LEFT, 1=RIGHT / bit1: 0=足底, 1=足背
 
+// FWバージョン（標準BLE DIS 0x180A → advertisement由来の insole.lastStatus.version の順。
+// どちらも取得できないFW/環境では null。例外は投げない）
+await insole.getFirmwareVersion();
+// 注意: 一部FW（実測: 1.0.1）は STEP_ANALYSIS を publish しない。Toolkitは該当FWで
+// Step Analysis を有効化しようとすると警告し、GAIT_NO_NOTIFICATIONS にFW版のヒントを含める
+
 // デバイス選択ダイアログを強制表示（別のINSOLEに切り替えたいとき）
 insole.selectBluetoothDevice();
 insole.forgetLastBluetoothDevice();

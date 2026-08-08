@@ -36,6 +36,15 @@ var cores = insoles;
  */
 var insoleToolkitSessions = [null, null];
 
+/**
+ * STEP_ANALYSIS 通知が実測で確認できていないファームウェアバージョンの一覧。
+ * （2026-08 実測: FW 1.0.1 の2個体で、購読成功・Raw 50通知/秒の正常受信下でも
+ *   STEP_ANALYSIS が transport レベルで0件のまま）
+ * 原因の断定ではなく切り分けの手がかりとして、Toolkit は該当FWで
+ * Step Analysis を有効化しようとしたときに警告を出す。
+ */
+var INSOLE_TOOLKIT_STEP_UNSUPPORTED_FW = Object.freeze(['1.0.1']);
+
 function freezeInsoleToolkitProfile(profile) {
     return Object.freeze({
         ...profile,
@@ -678,6 +687,7 @@ class InsoleToolkitSession {
             error.code = 'GAIT_UNAVAILABLE';
             throw error;
         }
+        await this._warnIfStepAnalysisUnconfirmedFirmware();
         if (this.gaitActive) {
             const beforeDiagnostics = this._gaitDiagnostics();
             try {
@@ -749,6 +759,38 @@ class InsoleToolkitSession {
     }
 
     /**
+     * FWバージョンを解決する（取得できない場合は null。例外は投げない）。
+     * OrpheInsole.getFirmwareVersion() → advertisement 由来の lastStatus.version の順。
+     */
+    async _resolveFirmwareVersion() {
+        try {
+            if (this.insole && typeof this.insole.getFirmwareVersion === 'function') {
+                return await this.insole.getFirmwareVersion();
+            }
+            if (this.insole && this.insole.lastStatus && this.insole.lastStatus.version) {
+                return this.insole.lastStatus.version;
+            }
+        } catch { /* バージョン不明として扱う */ }
+        return null;
+    }
+
+    /**
+     * STEP_ANALYSIS 通知が実測で確認できていない既知FWなら警告を出す（1セッション1回）。
+     * ブロックはせず、console.warn と onDiagnostic('fw-step-analysis-unconfirmed') で知らせる。
+     */
+    async _warnIfStepAnalysisUnconfirmedFirmware() {
+        if (this._warnedStepUnsupportedFirmware) return;
+        const firmwareVersion = await this._resolveFirmwareVersion();
+        if (!firmwareVersion || !INSOLE_TOOLKIT_STEP_UNSUPPORTED_FW.includes(firmwareVersion)) return;
+        this._warnedStepUnsupportedFirmware = true;
+        console.warn(
+            `InsoleToolkit: firmware ${firmwareVersion} has no confirmed STEP_ANALYSIS output. `
+            + 'Step Analysis may stay silent (GAIT_NO_NOTIFICATIONS). Update the device firmware if available.'
+        );
+        this._emitGaitDiagnostic('fw-step-analysis-unconfirmed', { firmwareVersion });
+    }
+
+    /**
      * startNotifications() のresolveだけで成功扱いにせず、実際の有効packet到着を確認する。
      * 無通知時はstreaming modeを再適用してSTEP_ANALYSISを再購読する。
      */
@@ -788,15 +830,23 @@ class InsoleToolkitSession {
                     Number(diagnostics?.invalidPackets || 0) - afterInvalidPackets
                 );
                 const hasTransport = transportDelta > 0;
-                const error = new Error(
-                    hasTransport
-                        ? 'InsoleToolkit: STEP_ANALYSIS notifications arrived but no valid packets were decoded.'
-                        : 'InsoleToolkit: STEP_ANALYSIS subscription started but no notifications arrived.'
-                );
+                const firmwareVersion = await this._resolveFirmwareVersion();
+                let message;
+                if (hasTransport) {
+                    message = 'InsoleToolkit: STEP_ANALYSIS notifications arrived but no valid packets were decoded.';
+                } else {
+                    // transport 0件はFW側が publish していない可能性が高い（実測: FW 1.0.1）
+                    message = 'InsoleToolkit: STEP_ANALYSIS subscription started but no notifications arrived. '
+                        + 'The device firmware may not support Step Analysis output'
+                        + (firmwareVersion ? ` (FW ${firmwareVersion})` : ' (firmware version unknown)')
+                        + '.';
+                }
+                const error = new Error(message);
                 error.code = hasTransport ? 'GAIT_INVALID_PACKETS' : 'GAIT_NO_NOTIFICATIONS';
                 error.diagnostics = diagnostics;
                 error.transportDelta = transportDelta;
                 error.invalidDelta = invalidDelta;
+                error.firmwareVersion = firmwareVersion;
                 throw error;
             }
 
@@ -1293,6 +1343,14 @@ function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) 
         updateInsoleBatteryInfo(span_battery);
     })
 
+    // FWバージョン（取得できた場合のみ表示。既知のStep Analysis未確認FWは警告色）
+    let span_fw = ITbuildElement('span',
+        `<span class="badge bg-light text-secondary border" id="fw_badge${insole_id}"></span>`,
+        'ms-1', '', span_group);
+    span_fw.id = `icon_fw${insole_id}`;
+    span_fw.style.display = 'none';
+    span_fw.setAttribute('title', 'firmware version');
+
     // 自動再接続ステータス（再接続試行中のみ表示）
     let span_reconnect = ITbuildElement('span',
         `<i class="bi bi-arrow-repeat"></i><span class="small" id="reconnect_text${insole_id}"></span>`,
@@ -1367,6 +1425,9 @@ function buildInsoleToolkit(parent_element, title, insole_id = 0, options = {}) 
   <div class="row mt-1 small text-muted">
     <div class="col-12">Mount Position: <span id="info_mount_position${insole_id}">-</span></div>
   </div>
+  <div class="row mt-1 small text-muted">
+    <div class="col-12">Firmware: <span id="info_firmware${insole_id}">-</span></div>
+  </div>
   <div class="d-grid gap-2 col-10 mx-auto mt-4">
     <button class="btn btn-warning text-white" type="button" onclick="resetInsoleModule(${insole_id});">Reset
       Analysis Logs</button>
@@ -1438,6 +1499,7 @@ async function toggleInsoleModule(dom, options = {}) {
 
         document.querySelector(`#ui${number}`).style.visibility = 'visible';
         updateInsoleLRBadge(number);
+        updateInsoleFirmwareBadge(number);
 
         // ユーザコールバックを保ったまま Toolkit 表示を更新する。
         installInsoleToolkitCallbacks(insole, session);
@@ -1487,6 +1549,7 @@ function installInsoleToolkitCallbacks(insole, session) {
         const icon = document.querySelector(`#icon_reconnect${this.id}`);
         if (icon) icon.style.display = 'none';
         updateInsoleLRBadge(this.id);
+        updateInsoleFirmwareBadge(this.id);
         if (typeof userOnReconnectSuccess === 'function') userOnReconnectSuccess.call(this, info);
     };
     const userOnReconnectFailed = insole.onReconnectFailed;
@@ -1524,6 +1587,43 @@ function updateInsoleLRBadge(no) {
     badge.innerText = isRight ? 'R' : 'L';
     badge.classList.remove('bg-secondary');
     badge.classList.add(isRight ? 'bg-primary' : 'bg-success');
+}
+
+/**
+ * FWバージョンbadgeを更新する。
+ * 標準DIS(0x180A) → advertisement(lastStatus) の順で解決し、どちらも取得できない
+ * FW・環境では非表示のまま（現行の一部INSOLE FWは0x180A未実装）。
+ * 既知の Step Analysis 未確認FW（INSOLE_TOOLKIT_STEP_UNSUPPORTED_FW）は警告色で表示する。
+ * @param {number} no - insole_id(0,1)
+ */
+async function updateInsoleFirmwareBadge(no) {
+    const badge = document.querySelector(`#fw_badge${no}`);
+    const wrap = document.querySelector(`#icon_fw${no}`);
+    if (!badge || !wrap) return;
+    let version = null;
+    try {
+        const insole = insoles[no];
+        if (insole && typeof insole.getFirmwareVersion === 'function') {
+            version = await insole.getFirmwareVersion();
+        }
+    } catch { version = null; }
+    if (!version) {
+        badge.innerText = '';
+        wrap.style.display = 'none';
+        return;
+    }
+    badge.innerText = `FW ${version}`;
+    wrap.style.display = '';
+    if (INSOLE_TOOLKIT_STEP_UNSUPPORTED_FW.includes(version)) {
+        badge.classList.remove('bg-light', 'text-secondary');
+        badge.classList.add('bg-warning', 'text-dark');
+        wrap.setAttribute('title',
+            `firmware ${version}: Step Analysis通知が確認できていないFWです（FW更新を検討してください）`);
+    } else {
+        badge.classList.remove('bg-warning', 'text-dark');
+        badge.classList.add('bg-light', 'text-secondary');
+        wrap.setAttribute('title', 'firmware version');
+    }
 }
 
 /**
@@ -1688,8 +1788,20 @@ async function updateInsoleModalParameters(no) {
         mount_el.innerText = `${isRight ? 'RIGHT' : 'LEFT'} / ${isInstep ? 'instep(足背)' : 'plantar(足底)'}`;
     }
 
+    const fw_el = document.querySelector(`#info_firmware${no}`);
+    if (fw_el) {
+        let version = null;
+        try {
+            version = typeof insoles[no].getFirmwareVersion === 'function'
+                ? await insoles[no].getFirmwareVersion()
+                : null;
+        } catch { version = null; }
+        fw_el.innerText = version || 'unknown';
+    }
+
     syncInsoleToolkitControls(no);
     updateInsoleLRBadge(no);
+    updateInsoleFirmwareBadge(no);
 }
 
 /**
@@ -1845,6 +1957,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         InsoleToolkitSession,
         INSOLE_TOOLKIT_PROFILES,
+        INSOLE_TOOLKIT_STEP_UNSUPPORTED_FW,
         resolveInsoleToolkitProfile,
         normalizeInsoleToolkitConfiguration,
         normalizeInsoleToolkitOutputs,

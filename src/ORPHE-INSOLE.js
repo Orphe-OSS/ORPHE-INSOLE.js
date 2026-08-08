@@ -489,6 +489,20 @@ class OrpheInsole {
     this.device_information = '';
 
     /**
+     * 最後に受信した advertisement のステータス（gotStatus と同じ形式）。
+     * 接続後も FW バージョン等を参照できるように保持します。
+     * advertisement 監視が動作した環境（watchAdvertisements 対応ブラウザ）でのみ更新されます。
+     * @property {?Object} lastStatus - 未受信の場合は null
+     */
+    this.lastStatus = null;
+
+    /**
+     * getFirmwareVersion() が解決したファームウェアバージョン文字列のキャッシュです。
+     * @property {?string} firmware_version - 未取得の場合は null
+     */
+    this.firmware_version = null;
+
+    /**
      * 歩容解析のデータを保存しておく連想配列です。
      * 注意: ORPHE INSOLE のファームウェアは現状 STEP_ANALYSIS 通知に未対応のため、
      * この値が更新されることはありません（FW対応待ち）。
@@ -1196,7 +1210,10 @@ class OrpheInsole {
       acceptAllDevices: false,
       optionalServices: [
         this.ORPHE_INFORMATION,
-        this.ORPHE_OTHER_SERVICE
+        this.ORPHE_OTHER_SERVICE,
+        // 標準BLE Device Information Service (0x180A)。
+        // FWが実装している場合に getFirmwareVersion() が Firmware Revision を読む。
+        'device_information'
       ],
       optionalManufacturerData: [
         0x0000
@@ -1217,6 +1234,9 @@ class OrpheInsole {
           throw new Error(`Bluetooth device "${device.name || device.id || 'unknown'}" is already assigned to ORPHE INSOLE ${String(inUseBy.id + 1).padStart(2, '0')}. Select a different device.`);
         }
         this.bluetoothDevice = device;
+        // デバイスが変わった可能性があるため、デバイス固有のキャッシュを破棄する
+        this.lastStatus = null;
+        this.firmware_version = null;
         this._usingRememberedBluetoothDevice = false;
         this._rememberedBluetoothDeviceUnavailable = false;
         this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
@@ -1296,21 +1316,26 @@ class OrpheInsole {
       txPower: event.txPower
     });
 
-    const dv = event.manufacturerData.get(0x0000);
+    const dv = event.manufacturerData ? event.manufacturerData.get(0x0000) : null;
+    // version(bytes 15-17) まで含まない短い manufacturer data は無視する
+    if (!dv || dv.byteLength < 18) return;
+
+    const status = {
+      name: event.device.name,
+      rssi: event.rssi,
+      txPower: event.txPower,
+      id: event.device.id,
+      battery: dv.getUint8(14),
+      model_type: dv.getUint8(5),
+      mounting_position: dv.getUint8(6),
+      human_activity_recognition: dv.getUint8(7),
+      version: `${dv.getUint8(15)}.${dv.getUint8(16)}.${dv.getUint8(17)}`
+    }
+    // 接続後も参照できるよう常に保持する（gotStatus 未設定でも更新される）
+    this.lastStatus = status;
 
     // カスタムコールバックがあれば呼び出し
     if (this.gotStatus) {
-      const status = {
-        name: event.device.name,
-        rssi: event.rssi,
-        txPower: event.txPower,
-        id: event.device.id,
-        battery: dv.getUint8(14),
-        model_type: dv.getUint8(5),
-        mounting_position: dv.getUint8(6),
-        human_activity_recognition: dv.getUint8(7),
-        version: `${dv.getUint8(15)}.${dv.getUint8(16)}.${dv.getUint8(17)}`
-      }
       this.gotStatus(status);
     }
   }
@@ -1916,6 +1941,62 @@ class OrpheInsole {
         reject(error);
       });
     });
+  }
+
+  /**
+   * ファームウェアバージョン文字列を取得します。例外は投げず、取得できない場合は null を返します。
+   *
+   * 解決順:
+   * 1. 標準BLE Device Information Service (0x180A) の Firmware / Software Revision String
+   *    （FWが実装している場合。接続済みであることが必要）
+   * 2. advertisement 由来の {@link OrpheInsole#lastStatus} の version
+   *    （watchAdvertisements が動作した環境で接続前に受信していた場合）
+   *
+   * 現行の一部FW（例: 1.0.1 個体）は 0x180A を実装していないため、
+   * ブラウザが advertisement 監視に対応していない環境では null になることがあります。
+   * 結果は {@link OrpheInsole#firmware_version} にキャッシュされます。
+   * @returns {Promise<?string>} 例: "1.0.1"。取得できない場合は null
+   */
+  async getFirmwareVersion() {
+    if (this.firmware_version) return this.firmware_version;
+    const fromDis = await this._readFirmwareRevisionString();
+    const version = fromDis || (this.lastStatus && this.lastStatus.version) || null;
+    if (version) this.firmware_version = version;
+    return version;
+  }
+
+  /**
+   * 標準BLE DIS(0x180A) から Firmware / Software Revision String を読む（内部用）。
+   * サービス未実装・権限なし・未接続の場合は null（例外は投げない）。
+   * @returns {Promise<?string>}
+   */
+  async _readFirmwareRevisionString() {
+    try {
+      if (!this.bluetoothDevice || !this.bluetoothDevice.gatt || !this.bluetoothDevice.gatt.connected) {
+        return null;
+      }
+      const service = await this.bluetoothDevice.gatt.getPrimaryService('device_information');
+      for (const characteristicName of ['firmware_revision_string', 'software_revision_string']) {
+        try {
+          const characteristic = await service.getCharacteristic(characteristicName);
+          const data = await characteristic.readValue();
+          const text = new TextDecoder().decode(data).replace(/\0+$/, '').trim();
+          if (text) return text;
+        } catch (error) {
+          this._log('firmware revision characteristic unavailable', {
+            characteristicName,
+            message: error && error.message ? error.message : String(error)
+          });
+        }
+      }
+      return null;
+    } catch (error) {
+      // 0x180A 未実装のFW・過去のgrant（optionalServices追加前）ではここに来る
+      this._log('device_information service (0x180A) unavailable', {
+        message: error && error.message ? error.message : String(error)
+      });
+      return null;
+    }
   }
 
 

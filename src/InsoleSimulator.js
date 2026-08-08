@@ -350,6 +350,14 @@ class OrpheInsoleSimulator {
         return this.device_information;
     }
 
+    /**
+     * 実SDK 互換。シミュレータでは固定文字列 "simulator" を返す。
+     * @returns {Promise<string>}
+     */
+    async getFirmwareVersion() {
+        return 'simulator';
+    }
+
     /** 実SDK 互換の no-op（シミュレータに解析ログはない）。 */
     resetAnalysisLogs() { }
 
