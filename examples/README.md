@@ -15,6 +15,7 @@
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
 | [exhibition](./exhibition/) | **展示用一覧ページ**（16:9のディスプレイでセンサ値を一覧。圧力マップ+全体圧力ゲージ+IMU+姿勢3D/Euler+Step Analysis） | なしでも可 | **DEMOモード内蔵**（合成歩行・合成歩容をループ再生） | showcaseのvizモジュール再利用、vh基準のノースクロールレイアウト |
 | [step-analysis](./step-analysis/) | 1歩ごとの歩容表 + Realtime Rawグラフ | INSOLE ×1〜2 | `?demo=1` またはデモ再生ボタン | `realtime-full-step`、左右自動割当、10歩統計 |
+| [gait-report](./gait-report/) | **歩行レポート生成**（記録開始→1歩ごとにライブ更新→左右20歩で平均±SD確定） | INSOLE ×1〜2 | **デモモード内蔵**（自動再生・約20秒で完成） | `realtime-full-step`、計測セッション（進捗/確定）、左右差・CV・接地/プロネーション分布、判定なし方針、印刷用CSS、ja/en切替 |
 | [sensor-dashboard](./sensor-dashboard/) | 2台同時ダッシュボード | INSOLE ×2 | ―（実機推奨） | L/R自動マッピング（mount_position） |
 | [balance-sway](./balance-sway/) | 重心動揺の可視化（CoP軌跡・軌跡長・楕円面積） | INSOLE ×2 | デモ再生内蔵 | CoP計算、圧力検証、医療注意書き |
 | [balance-tuner](./balance-tuner/) | 左右バランスの可聴化 | INSOLE ×2 | **デモモード内蔵**（既定でON） | Web Audio、荷重→音マッピング |
@@ -57,7 +58,7 @@
 
 ## 実機がない場合
 
-1. **showcase / exhibition / step-analysis / balance-tuner / udon** はページ内デモモードがそのまま動きます
+1. **showcase / exhibition / step-analysis / gait-report / balance-tuner / udon** はページ内デモモードがそのまま動きます
 2. 任意のサンプルを `OrpheInsoleSimulator` で動かす場合は
    `buildInsoleToolkit(..., { simulator: true })` を使うか、README の「実機がない場合（シミュレータ）」を参照
 

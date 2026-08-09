@@ -32,6 +32,12 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/gait-report/</loc>
+    <lastmod>2026-08-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/VISUALIZE/</loc>
     <lastmod>2026-07-13</lastmod>
     <changefreq>monthly</changefreq>
