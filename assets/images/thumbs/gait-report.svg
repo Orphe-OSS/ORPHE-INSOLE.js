@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Gait report example</title>
+  <desc id="desc">Recording progress bars for both feet above a gait report card with mean and SD tiles and a left/right comparison.</desc>
+  <rect width="640" height="400" fill="#edf1f4"/>
+  <rect x="0" y="0" width="640" height="70" fill="#ffffff"/>
+  <text x="28" y="28" fill="#66717a" font-family="Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2">TOOLKIT EXAMPLE / REALTIME FULL + STEP</text>
+  <text x="28" y="54" fill="#17212a" font-family="Arial, sans-serif" font-size="24" font-weight="700">Gait Report — 20 steps per foot</text>
+
+  <!-- recording progress -->
+  <rect x="28" y="84" width="584" height="52" rx="10" fill="#ffffff" stroke="#d8e0e5"/>
+  <text x="42" y="102" fill="#0b7a69" font-family="Arial, sans-serif" font-size="10" font-weight="700">REPORT COMPLETE — mean ± SD of 20 steps per foot</text>
+  <text x="42" y="122" fill="#0a9a84" font-family="Arial, sans-serif" font-size="9" font-weight="700">L</text>
+  <rect x="56" y="115" width="240" height="8" rx="4" fill="#dff5ef"/>
+  <rect x="56" y="115" width="240" height="8" rx="4" fill="#0a9a84"/>
+  <text x="304" y="122" fill="#66717a" font-family="Arial, sans-serif" font-size="9" font-weight="700">20/20</text>
+  <text x="352" y="122" fill="#f05d3f" font-family="Arial, sans-serif" font-size="9" font-weight="700">R</text>
+  <rect x="366" y="115" width="196" height="8" rx="4" fill="#f05d3f"/>
+  <text x="570" y="122" fill="#66717a" font-family="Arial, sans-serif" font-size="9" font-weight="700">20/20</text>
+
+  <!-- report card -->
+  <rect x="28" y="146" width="584" height="232" rx="12" fill="#ffffff" stroke="#c8d1cc"/>
+  <text x="46" y="170" fill="#2763e7" font-family="Arial, sans-serif" font-size="9" font-weight="800" letter-spacing="1.4">ORPHE GAIT REPORT</text>
+  <text x="46" y="188" fill="#17212a" font-family="Arial, sans-serif" font-size="15" font-weight="700">Gait Measurement Report</text>
+  <rect x="512" y="164" width="84" height="20" rx="10" fill="#0a9a84"/>
+  <text x="554" y="178" fill="#ffffff" font-family="Arial, sans-serif" font-size="9.5" font-weight="800" text-anchor="middle">COMPLETE</text>
+  <path d="M46 198 H596" stroke="#17212a" stroke-width="2"/>
+
+  <!-- stat tiles -->
+  <g font-family="Arial, sans-serif">
+    <rect x="46" y="210" width="128" height="62" rx="9" fill="#fbfcfa" stroke="#d6ddd9"/>
+    <text x="56" y="226" fill="#66717a" font-size="9" font-weight="700">Gait speed</text>
+    <text x="56" y="248" fill="#17212a" font-size="18" font-weight="800">1.21 <tspan font-size="9" fill="#66717a">m/s</tspan></text>
+    <text x="56" y="263" fill="#66717a" font-size="8.5">± 0.05 ・ n=40</text>
+
+    <rect x="184" y="210" width="128" height="62" rx="9" fill="#fbfcfa" stroke="#d6ddd9"/>
+    <text x="194" y="226" fill="#66717a" font-size="9" font-weight="700">Cadence</text>
+    <text x="194" y="248" fill="#17212a" font-size="18" font-weight="800">112 <tspan font-size="9" fill="#66717a">steps/min</tspan></text>
+    <text x="194" y="263" fill="#66717a" font-size="8.5">± 3 ・ n=40</text>
+
+    <rect x="322" y="210" width="128" height="62" rx="9" fill="#fbfcfa" stroke="#d6ddd9"/>
+    <text x="332" y="226" fill="#66717a" font-size="9" font-weight="700">Stride length</text>
+    <text x="332" y="248" fill="#17212a" font-size="18" font-weight="800">1.26 <tspan font-size="9" fill="#66717a">m</tspan></text>
+    <text x="332" y="263" fill="#66717a" font-size="8.5">± 0.04 ・ n=40</text>
+
+    <rect x="460" y="210" width="136" height="62" rx="9" fill="#fbfcfa" stroke="#d6ddd9"/>
+    <text x="470" y="226" fill="#66717a" font-size="9" font-weight="700">Cycle variability (CV)</text>
+    <text x="470" y="248" fill="#17212a" font-size="15" font-weight="800">L 2.0% / R 2.1%</text>
+    <text x="470" y="263" fill="#66717a" font-size="8.5">Reference: below 2.5%</text>
+  </g>
+
+  <!-- L/R comparison rows -->
+  <g font-family="Arial, sans-serif">
+    <text x="46" y="296" fill="#17212a" font-size="10" font-weight="800">Left / right comparison</text>
+
+    <text x="46" y="316" fill="#26323b" font-size="9.5">Stride length (m)</text>
+    <text x="200" y="316" fill="#0b7a69" font-size="9.5" font-weight="800">1.28</text>
+    <text x="248" y="316" fill="#cc4e35" font-size="9.5" font-weight="800">1.24</text>
+    <rect x="300" y="309" width="120" height="7" rx="3.5" fill="#e8ecef"/>
+    <rect x="344" y="309" width="16" height="7" rx="3.5" fill="#0a9a84"/>
+    <rect x="359" y="306" width="2" height="13" fill="#66717a"/>
+    <text x="430" y="316" fill="#17212a" font-size="9" font-weight="800">L +3.2%</text>
+
+    <text x="46" y="338" fill="#26323b" font-size="9.5">Stance time (s)</text>
+    <text x="200" y="338" fill="#0b7a69" font-size="9.5" font-weight="800">0.64</text>
+    <text x="248" y="338" fill="#cc4e35" font-size="9.5" font-weight="800">0.66</text>
+    <rect x="300" y="331" width="120" height="7" rx="3.5" fill="#e8ecef"/>
+    <rect x="361" y="331" width="12" height="7" rx="3.5" fill="#f05d3f"/>
+    <rect x="359" y="328" width="2" height="13" fill="#66717a"/>
+    <text x="430" y="338" fill="#17212a" font-size="9" font-weight="800">R +2.4%</text>
+
+    <text x="46" y="360" fill="#26323b" font-size="9.5">Foot strike</text>
+    <rect x="200" y="351" width="56" height="12" rx="6" fill="#ffffff" stroke="#66717a"/>
+    <text x="228" y="360" fill="#17212a" font-size="8.5" font-weight="700" text-anchor="middle">Heel 34</text>
+    <rect x="262" y="351" width="66" height="12" rx="6" fill="#ffffff" stroke="#d6ddd9"/>
+    <text x="295" y="360" fill="#66717a" font-size="8.5" text-anchor="middle">Midfoot 6</text>
+    <rect x="334" y="351" width="70" height="12" rx="6" fill="#ffffff" stroke="#d6ddd9"/>
+    <text x="369" y="360" fill="#66717a" font-size="8.5" text-anchor="middle">Forefoot 0</text>
+    <text x="430" y="360" fill="#66717a" font-size="8.5">mean ± SD, no pass/fail judgment</text>
+  </g>
+</svg>
