@@ -45,6 +45,19 @@
 
   const MAX_PENDING_STEPS = 64;    // 揃わないまま溜まる歩の上限（メモリ保護）
 
+  // ── step損失検出のパラメータ ──
+  // FWは overview/stride/pronation を各2回、その歩の直後にまとめて送る。
+  // 数歩あとの step のパケットが届いた時点でまだ揃っていない歩は、再送も終わって
+  // いるため回復不能とみなせる。
+  const STALE_STEP_DISTANCE = 8;   // 最新stepからこれ以上古いpendingは incomplete として計上
+  const GAP_COUNT_LIMIT = 64;      // これを超えるstep_number前進はgapではなく採番ジャンプ扱い
+  const MISSED_STEP_MEMORY = 256;  // gap計上済みstepを覚えておく数（後着で計上を取り消すため）
+
+  // uint16 の wraparound を考慮した前進距離（65535→0 をまたいでも正しく数える）
+  function stepDistance(from, to) {
+    return (to - from + 0x10000) % 0x10000;
+  }
+
   const CSV_HEADER =
     'step_number,gait_type,stride_direction,distance_m,' +
     'stance_phase_s,swing_phase_s,duration_s,cadence_hz,speed_mps,' +
@@ -246,24 +259,119 @@
     constructor() {
       this._pending = new Map();  // step_number -> { overview, stride, pronation }
       this._emitted = new Set();
+      this._lastSeenStep = null;  // 最新のstep_number（wraparound対応の前進判定に使う）
+      this._missedSteps = new Set(); // gap計上済みのstep_number（後着で計上を取り消すため）
+      this._stats = {
+        completedSteps: 0,   // 3点セットが揃って emit できた歩
+        incompleteSteps: 0,  // 一部のサブパケットだけ届いて回復不能になった歩（BLE欠損の疑い）
+        missingParts: { overview: 0, stride: 0, pronation: 0 }, // incomplete時に欠けていた種類の内訳
+        gapSteps: 0,         // 1サブパケットも届かなかった歩（FW未送信 or 全パケット欠損の疑い）
+        jumps: 0,            // 採番リセット/大ジャンプ（resetAnalysisLogs・FW再起動など）の回数
+      };
+      this.onStepLoss = null; // (info) 回復不能と判定した歩の通知（OrpheInsoleGaitが配線）
+    }
+
+    /** 損失統計のsnapshot（診断用・読み取り専用） */
+    stats() {
+      return {
+        ...this._stats,
+        missingParts: { ...this._stats.missingParts },
+        lastSeenStep: this._lastSeenStep,
+        pendingSteps: this._pending.size,
+      };
     }
 
     add(packet) {
       const step = packet.step_number;
       if (this._emitted.has(step)) return null; // 既出（2回目の送信）は無視
 
+      // gap計上済みの歩が遅れて届いた場合は計上を取り消す（以降は通常の集約に乗る）
+      if (this._missedSteps.delete(step)) {
+        this._stats.gapSteps = Math.max(0, this._stats.gapSteps - 1);
+      }
+
+      const isNewStep = !this._pending.has(step);
       let parts = this._pending.get(step);
       if (!parts) { parts = {}; this._pending.set(step, parts); }
       parts[packet.type] = packet;
 
+      if (isNewStep) this._noteStepSeen(step);
+
+      let row = null;
       if (parts.overview && parts.stride && parts.pronation) {
-        const row = buildGaitRow(step, parts);
+        row = buildGaitRow(step, parts);
         this._pending.delete(step);
         this._markEmitted(step);
-        return row;
+        this._stats.completedSteps++;
       }
+      this._evictStalePending();
       this._evictOldPending();
-      return null;
+      return row;
+    }
+
+    // step_number の前進から「1サブパケットも届かなかった歩（gap）」を検出する。
+    // 前進が GAP_COUNT_LIMIT を超える場合は欠損ではなく採番リセット/ジャンプとして扱う
+    // （resetAnalysisLogs や FW 再起動で step_number は巻き戻る）。
+    _noteStepSeen(step) {
+      if (this._lastSeenStep === null) { this._lastSeenStep = step; return; }
+      const forward = stepDistance(this._lastSeenStep, step);
+      if (forward === 0) return;
+      if (forward > GAP_COUNT_LIMIT) {
+        const backward = stepDistance(step, this._lastSeenStep);
+        if (backward <= GAP_COUNT_LIMIT) return; // 既知stepの少し後ろへの後着。lastSeenは動かさない
+        this._stats.jumps++;
+        const from = this._lastSeenStep;
+        this._lastSeenStep = step;
+        this._notifyLoss({ reason: 'step_number_jump', from, to: step, forward });
+        return;
+      }
+      if (forward > 1) {
+        const missed = [];
+        for (let i = 1; i < forward; i++) {
+          const missedStep = (this._lastSeenStep + i) % 0x10000;
+          if (this._pending.has(missedStep) || this._emitted.has(missedStep)) continue;
+          missed.push(missedStep);
+          this._missedSteps.add(missedStep);
+          while (this._missedSteps.size > MISSED_STEP_MEMORY) {
+            this._missedSteps.delete(this._missedSteps.values().next().value);
+          }
+        }
+        if (missed.length > 0) {
+          this._stats.gapSteps += missed.length;
+          this._notifyLoss({ reason: 'gap', steps: missed, count: missed.length });
+        }
+      }
+      this._lastSeenStep = step;
+    }
+
+    // 最新stepより STALE_STEP_DISTANCE 以上古い pending はサブパケットの再送が
+    // とうに終わっているため、回復不能（incomplete）として計上して捨てる。
+    _evictStalePending() {
+      if (this._lastSeenStep === null) return;
+      for (const [step, parts] of this._pending) {
+        const behind = stepDistance(step, this._lastSeenStep);
+        if (behind >= STALE_STEP_DISTANCE) {
+          this._pending.delete(step);
+          this._countIncomplete(step, parts);
+        }
+      }
+    }
+
+    _countIncomplete(step, parts) {
+      this._stats.incompleteSteps++;
+      const missing = [];
+      for (const type of ['overview', 'stride', 'pronation']) {
+        if (!parts[type]) {
+          this._stats.missingParts[type]++;
+          missing.push(type);
+        }
+      }
+      this._notifyLoss({ reason: 'incomplete', step_number: step, missing });
+    }
+
+    _notifyLoss(info) {
+      if (typeof this.onStepLoss !== 'function') return;
+      try { this.onStepLoss(info); } catch (_) { /* コールバック例外で集約を止めない */ }
     }
 
     // 古いものから捨てる。step_number は uint16 で 65535→0 に wraparound するため、
@@ -279,7 +387,10 @@
 
     _evictOldPending() {
       while (this._pending.size > MAX_PENDING_STEPS) {
-        this._pending.delete(this._pending.keys().next().value);
+        const oldest = this._pending.keys().next().value;
+        const parts = this._pending.get(oldest);
+        this._pending.delete(oldest);
+        this._countIncomplete(oldest, parts);
       }
     }
   }
@@ -306,6 +417,7 @@
       this.options = options;
       this.aggregator = new GaitAggregator();
       this.rows = [];              // 完成した歩容パラメーター（CSV 出力用）
+      this._attachAggregatorHooks();
       this._running = false;       // ユーザが「計測ON」を望む状態（切断中も維持）
       this._subscribed = false;    // 実際に STEP_ANALYSIS を購読中か
       this._startPromise = null;   // 進行中の start()（直列化用）
@@ -334,6 +446,7 @@
       this.onRaw = null;      // (deviceId, packet) デコード済みの全パケット
       this.onTransport = null; // (deviceId, info) decode前後のtransport診断
       this.onDiagnostic = null; // (deviceId, info) 購読・初回packet・timeout等の低頻度イベント
+      this.onStepLoss = null; // (deviceId, info) 回復不能と判定した歩の通知（incomplete/gap/jump）
       this.onError = null;    // (error)
     }
 
@@ -357,6 +470,9 @@
         lastTransport: this._lastTransport ? { ...this._lastTransport } : null,
         connectionGeneration: this._connectionGeneration,
         lifecycleGeneration: this._lifecycleGeneration,
+        // step単位の損失統計。incompleteSteps は一部サブパケットのみ到着（BLE欠損の疑い）、
+        // gapSteps は1つも到着しなかった歩（FW未送信 or 全欠損）、jumps は採番リセット。
+        stepLoss: this.aggregator.stats(),
       };
     }
 
@@ -421,6 +537,7 @@
       const continuing = this._running;
       if (!continuing) {
         this.aggregator = new GaitAggregator();
+        this._attachAggregatorHooks();
         this.rows = [];
         this._lifecycleGeneration++;
       }
@@ -805,6 +922,17 @@
     }
 
     // ── 内部ユーティリティ ────────────────────────────────────────────
+    // aggregator の損失通知を onStepLoss / onDiagnostic('step-loss') に配線する。
+    // aggregator は start() でリセット時に作り直されるため、そのたびに呼ぶ。
+    _attachAggregatorHooks() {
+      this.aggregator.onStepLoss = (info) => {
+        if (typeof this.onStepLoss === 'function') {
+          this._safe(() => this.onStepLoss(this.deviceId, { ...info }));
+        }
+        this._emitDiagnostic('step-loss', info);
+      };
+    }
+
     _resolvePacketWaiters(packetArrived) {
       for (const waiter of Array.from(this._packetWaiters)) {
         if (packetArrived && this._validPackets <= waiter.afterCount) continue;
@@ -847,6 +975,9 @@
   OrpheInsoleGait.buildGaitRow = buildGaitRow;
   OrpheInsoleGait.gaitRowToCsv = gaitRowToCsv;
   OrpheInsoleGait.GaitAggregator = GaitAggregator;
+  OrpheInsoleGait.stepDistance = stepDistance;
+  OrpheInsoleGait.STALE_STEP_DISTANCE = STALE_STEP_DISTANCE;
+  OrpheInsoleGait.GAP_COUNT_LIMIT = GAP_COUNT_LIMIT;
 
   if (typeof global.OrpheInsoleGait === 'undefined') {
     global.OrpheInsoleGait = OrpheInsoleGait;

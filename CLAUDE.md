@@ -270,6 +270,11 @@ gait.download('gait.csv');   // 参照実装互換CSV（1歩1行）
 - パケット（20byte, big-endian）: `byte[0]=51`, `byte[1]=`サブヘッダー（0=概要 / 1=ストライド /
   2=プロネーション / 4=motion）, `byte[2..3]=step_number`。overview/stride/pronation は取りこぼし
   対策で **2回ずつ**送られるため `GaitAggregator` が step 単位で集約・重複除去する（3種揃った歩だけ `onGait`）。
+- **row にならなかった歩の可視化**: `diagnostics().stepLoss` に step 単位の損失統計が入る
+  （`incompleteSteps`=一部サブパケットのみ到着・欠け種類の内訳つき / `gapSteps`=1つも届かなかった歩 /
+  `jumps`=採番リセット）。1歩ごとの通知は `gait.onStepLoss(deviceId, info)`。Toolkit 経由では
+  `session.snapshot().gaitDiagnostics.stepLoss` と `gait: { onStepLoss }` で参照できる。
+  実測で歩の38〜44%が row にならないケースがあり、その切り分け（BLE欠損 vs FW未送信）に使う。
 - 接地パターン `foot_strike`（heelStrike/midfoot/forefoot）と `pronation_type`
   （neutral/over/severeOver/under/severeUnder）は `orphe_core_sdk` と同じしきい値で分類。
 - 派生指標: `duration_s=stance+swing`, `stride_norm_m=|stride|`, `cadence_hz=1/duration`, `speed_mps=norm/duration`。

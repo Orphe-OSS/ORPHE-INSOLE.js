@@ -65,6 +65,22 @@ Raw（SENSOR_VALUES）は正常なのに `GAIT_NO_NOTIFICATIONS` で失敗する
 - 切り分けには `session.snapshot().gaitDiagnostics` の `transportNotifications` を確認
   （0のまま = FW側が送っていない / 増えるが valid 0 = デコード問題）
 
+### 3c. Step は来るが「歩いたのに row にならない歩」が多い
+
+通知は来ているのに `onGait` の歩数が体感より少ない場合は、
+`session.snapshot().gaitDiagnostics.stepLoss` で歩単位の損失を確認できます:
+
+| カウンタ | 意味 | 疑う場所 |
+|---|---|---|
+| `completedSteps` | 3点セットが揃って row になった歩 | — |
+| `incompleteSteps` + `missingParts` | 一部のサブパケットだけ届いた歩（欠けた種類の内訳つき） | BLE欠損（ホスト負荷・距離・干渉） |
+| `gapSteps` | FWが採番したのに1パケットも届かなかった歩 | FW未送信 or 全パケット欠損 |
+| `jumps` | 採番リセット/大ジャンプ | `resetAnalysisLogs()`・FW再起動（欠損ではない） |
+
+1歩ごとの通知は `gait.onStepLoss`（Toolkitでは `gait: { onStepLoss }`）でも受け取れます。
+実測（両足歩行・94歩区間）では 38〜44% の歩が row にならないケースがあり、
+この内訳での切り分けを目的に追加されました。
+
 ## 4. 記憶したデバイスに自動接続しない（毎回ダイアログが出る）
 
 - デバイス記憶による無ダイアログ再接続には `navigator.bluetooth.getDevices()` が必要（Chrome では既定で有効）。無効な環境では選択ダイアログへ自動フォールバックします
