@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `OrpheInsole.getFirmwareVersion()` — resolves the device firmware version as a string, first from the standard BLE Device Information Service (0x180A, now included in `optionalServices`; Firmware Revision String with Software Revision String fallback), then from the advertisement-derived `insole.lastStatus.version`; returns `null` instead of throwing when neither source is available (some current firmwares do not implement 0x180A, and advertisement watching requires a `watchAdvertisements()`-capable browser). `onAdvertisementReceived` now always stores the parsed status as `insole.lastStatus` (even when no `gotStatus` callback is set) and guards against manufacturer data shorter than the version bytes. The result is cached in `insole.firmware_version` and cleared when a different Bluetooth device is selected. The simulator implements the same method (returns `"simulator"`), and TypeScript definitions are updated.
+- `InsoleToolkit`: the connection header now shows a firmware badge (`FW x.y.z`) when the version can be resolved, and the settings modal gains a Firmware row. Firmware versions with no confirmed STEP_ANALYSIS output are listed in the exported `INSOLE_TOOLKIT_STEP_UNSUPPORTED_FW` (currently `1.0.1`, measured 2026-08 on two units that stayed at zero transport notifications while Raw streamed normally at 50 notifications/s): enabling Step Analysis on such firmware turns the badge to a warning color, logs a `console.warn`, and emits a `fw-step-analysis-unconfirmed` gait diagnostic — as a triage hint, not a hard block. `GAIT_NO_NOTIFICATIONS` errors now state that the firmware may not support Step Analysis output, include the firmware version when known, and carry it as `error.firmwareVersion`. Documented in `docs/TROUBLESHOOTING.md` (section 3b) together with the Chrome flags needed to read versions from advertisements.
+
 ## [1.3.1] - 2026-08-02
 
 ### Fixed

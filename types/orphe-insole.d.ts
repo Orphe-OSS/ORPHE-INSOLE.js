@@ -327,6 +327,15 @@ export class OrpheInsole {
     getDateTime(options?: InsoleBeginOptions): Promise<{ date: Date; raw: DataView; round_trip_time: number }>;
     getDeviceInformation(options?: InsoleBeginOptions): Promise<InsoleDeviceInformation>;
     setDeviceInformation(obj: object): void;
+    /**
+     * ファームウェアバージョンを取得する。標準BLE DIS(0x180A) → advertisement 由来の
+     * lastStatus.version の順で解決し、取得できない場合は null（例外は投げない）。
+     */
+    getFirmwareVersion(): Promise<string | null>;
+    /** 最後に受信した advertisement のステータス（未受信なら null）。 */
+    lastStatus: InsoleStatus | null;
+    /** getFirmwareVersion() が解決したバージョン文字列のキャッシュ（未取得なら null）。 */
+    firmware_version: string | null;
     autoStartWatchingAdvertisements(): Promise<void>;
     startWatchingAdvertisements(): void;
     stopWatchingAdvertisements(): void;
@@ -427,6 +436,8 @@ export declare class OrpheInsoleSimulator {
     isConnected(): boolean;
     setDataStreamingMode(mode: InsoleStreamingMode): Promise<void>;
     getDeviceInformation(): Promise<{ battery: number; mount_position: number; range: { acc: number; gyro: number } }>;
+    /** 実SDK 互換。シミュレータでは固定文字列 "simulator" を返す。 */
+    getFirmwareVersion(): Promise<string>;
     resetAnalysisLogs(): void;
     addSensorDataListener(listener: (event: InsoleSensorDataEvent) => void): () => boolean;
     removeSensorDataListener(listener: (event: InsoleSensorDataEvent) => void): boolean;
