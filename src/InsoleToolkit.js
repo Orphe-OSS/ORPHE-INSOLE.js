@@ -1207,6 +1207,7 @@ class InsoleToolkitSession {
             this.gait.onMotion = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onMotion', args);
             this.gait.onTransport = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onTransport', args);
             this.gait.onDiagnostic = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onDiagnostic', args);
+            this.gait.onStepLoss = (...args) => this._callModuleCallback(this._gaitCallbacks, 'onStepLoss', args);
             this.gait.onRaw = (...args) => {
                 this._captureStepPacket(args[1]);
                 this._callModuleCallback(this._gaitCallbacks, 'onRaw', args);

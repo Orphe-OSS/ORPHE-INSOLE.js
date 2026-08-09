@@ -680,6 +680,28 @@ export interface InsoleGaitTransportInfo {
     invalidPackets: number;
 }
 
+/**
+ * step単位の損失統計。
+ * incompleteSteps は一部サブパケットのみ到着した歩（BLE欠損の疑い）、
+ * gapSteps は1サブパケットも到着しなかった歩（FW未送信 or 全パケット欠損）、
+ * jumps は採番リセット/大ジャンプ（resetAnalysisLogs・FW再起動など）。
+ */
+export interface InsoleGaitStepLossStats {
+    completedSteps: number;
+    incompleteSteps: number;
+    missingParts: { overview: number; stride: number; pronation: number };
+    gapSteps: number;
+    jumps: number;
+    lastSeenStep: number | null;
+    pendingSteps: number;
+}
+
+/** 回復不能と判定した歩の通知（onStepLoss / onDiagnostic('step-loss')） */
+export type InsoleGaitStepLossEvent =
+    | { reason: 'incomplete'; step_number: number; missing: Array<'overview' | 'stride' | 'pronation'> }
+    | { reason: 'gap'; steps: number[]; count: number }
+    | { reason: 'step_number_jump'; from: number; to: number; forward: number };
+
 export interface InsoleGaitDiagnostics {
     running: boolean;
     subscribed: boolean;
@@ -691,6 +713,7 @@ export interface InsoleGaitDiagnostics {
     lastTransport: InsoleGaitTransportInfo | null;
     connectionGeneration: number;
     lifecycleGeneration: number;
+    stepLoss: InsoleGaitStepLossStats;
 }
 
 export interface InsoleGaitDiagnosticEvent {
@@ -703,6 +726,7 @@ export interface InsoleGaitDiagnosticEvent {
         | 'liveness-confirmed'
         | 'liveness-timeout'
         | 'liveness-retry'
+        | 'step-loss'
         | string;
     diagnostics: InsoleGaitDiagnostics | null;
     [key: string]: unknown;
@@ -756,6 +780,8 @@ export declare class OrpheInsoleGait {
     onTransport: ((deviceId: number, info: InsoleGaitTransportInfo) => void) | null;
     /** 購読・初回packet・timeout等の低頻度診断イベント */
     onDiagnostic: ((deviceId: number, info: InsoleGaitDiagnosticEvent) => void) | null;
+    /** 回復不能と判定した歩の通知（incomplete/gap/jump） */
+    onStepLoss: ((deviceId: number, info: InsoleGaitStepLossEvent) => void) | null;
     onError: ((error: unknown) => void) | null;
     diagnostics(): InsoleGaitDiagnostics;
     waitForPacket(options?: { afterCount?: number; timeoutMs?: number }): Promise<boolean>;
@@ -813,6 +839,7 @@ export interface InsoleToolkitGaitOptions extends InsoleGaitOptions {
     onRaw?: (deviceId: number, packet: InsoleGaitPacket) => void;
     onTransport?: (deviceId: number, info: InsoleGaitTransportInfo) => void;
     onDiagnostic?: (deviceId: number, info: InsoleGaitDiagnosticEvent) => void;
+    onStepLoss?: (deviceId: number, info: InsoleGaitStepLossEvent) => void;
     onError?: (error: unknown) => void;
 }
 
