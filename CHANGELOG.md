@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-08-10
+
 ### Added
 
 - `OrpheInsoleGait` step-loss diagnostics — the aggregator now classifies steps that never become a gait row, so silent step loss (observed at 38–44% on a real walk) is measurable and attributable. Three reasons are distinguished: `incomplete` (some sub-packets arrived but the triplet never completed before the stream moved `STALE_STEP_DISTANCE` (8) steps ahead — BLE loss suspected; the missing sub-packet types are counted per type), `gap` (a FW-numbered step arrived with no sub-packets at all — FW not sending or all six packets lost; canceled retroactively if the step arrives late), and `step_number_jump` (a forward jump beyond `GAP_COUNT_LIMIT` (64), treated as renumbering from `resetAnalysisLogs()` or an FW restart rather than loss). Counters are exposed as `diagnostics().stepLoss` (`completedSteps` / `incompleteSteps` / `missingParts` / `gapSteps` / `jumps` / `lastSeenStep` / `pendingSteps`) and flow through `InsoleToolkitSession.snapshot().gaitDiagnostics` unchanged; per-loss events surface via the new `onStepLoss(deviceId, info)` callback (also available in Toolkit `gait` options) and as `onDiagnostic` `step-loss` events. All step arithmetic is uint16-wraparound-safe (`stepDistance`), pending eviction still uses insertion order, and the `MAX_PENDING_STEPS` backstop now counts what it drops instead of discarding silently. Covered by `tests/insole-gait-step-loss.test.js`; TypeScript definitions updated.
