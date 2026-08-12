@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `examples/showcase/`: the Gait Analysis panel rendered **two identical Step cards per foot**. `startGait()` clears `gaitActiveIds` and only registers the device ids after all of its `await`s resolve, while `syncAdvancedSessionState()` — added so the recording cards follow mode changes made from the Toolkit settings modal — runs from the ~30 fps render loop and assigns `gaitActiveIds` itself as soon as any session reports `gaitActive`. Because `InsoleToolkitSession._startGait()` sets `gaitActive` **before** awaiting `_verifyGaitLiveness()` (up to `verifyTimeoutMs` × retries, default 1500 ms each), the render loop reliably lands inside that window and the ids end up registered twice (`[0,1,0,1]`), duplicating every card, doubling the step count in the status line, and downloading each CSV twice. The same reset-await-push shape affected FIFO, where duplicate ids double-counted collected and dropped packets. Registration now goes through a single `addActiveDeviceId()` helper that ignores ids already present, and `syncAdvancedSessionState()` skips the FIFO and Step blocks while the corresponding `start*()` is in flight (`fifoStarting` / `gaitStarting`, cleared in `finally`) so the starting call alone decides the final state. Covered by `tests/showcase-gait-panel.test.js`.
+- `examples/showcase/`: the Gait Analysis detail values were unreadable. The card's table used the bare Bootstrap `.table` class, whose `--bs-table-color` defaults to `#212529`, against the `.fifo-card` background `#10171c` — a contrast ratio of about 1.2:1, so only the `.text-muted` parameter names stayed legible. The table now uses `table-dark` like every other table on the page.
+
 ## [1.3.2] - 2026-08-10
 
 ### Added

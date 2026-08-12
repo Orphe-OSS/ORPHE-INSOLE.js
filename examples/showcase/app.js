@@ -319,6 +319,7 @@ let statokinesigram = null;
 // FIFO（ロスレス収録）: デバイスごとの収集器
 const fifos = [null, null];
 let fifoRunning = false;
+let fifoStarting = false;    // startFifo() の await 中（描画ループの追従処理を抑止する）
 let fifoStopping = false;
 let fifoActiveIds = [];
 let fifoStartedAt = 0;
@@ -329,6 +330,7 @@ let fifoStopStartedAt = 0;    // stop() を呼んだ時刻（drain 中の経過�
 const gaits = [null, null];
 const gaitLatest = [null, null];   // 各デバイスの最新の歩容パラメーター(row)
 let gaitRunning = false;
+let gaitStarting = false;          // startGait() の await 中（同上）
 let gaitActiveIds = [];
 let gaitDisplayDirty = false;
 
@@ -674,6 +676,13 @@ window.onload = function () {
         }
         return ids;
     }
+    // 記録カードの対象デバイスID一覧への追加は必ずこの関数を通す。
+    // start*() が await している間に描画ループの追従処理（syncAdvancedSessionState）が
+    // 走ると同じIDが2回入り、Stepカードが左右2枚ずつ出たり収集数が二重計上される。
+    function addActiveDeviceId(list, id) {
+        if (!list.includes(id)) list.push(id);
+        return list;
+    }
     function fifoCollectedTotal() {
         return fifoActiveIds.reduce((n, id) => n + (fifos[id] ? fifos[id].collectedCount : 0), 0);
     }
@@ -701,33 +710,39 @@ window.onload = function () {
         fifoStatus.textContent = i18nText('fifoStatusPreparing');
         fifoActiveIds = [];
         fifoDrainRecovered = 0;
-        const results = await Promise.all(ids.map(async (id) => {
-            const session = getInsoleToolkitSession(id);
-            if (!session || !session.fifo) return false;
-            try {
-                // FIFOはStepと排他。正式計測APIで原子的にFIFOへ切り替え、
-                // stopMeasurement() 後に直前のRealtime/Step設定を復元する。
-                await session.startMeasurement({
-                    profile: 'fifo-recording',
-                    metadata: { source: 'showcase-fifo-card' },
-                });
-                return session.fifoActive;
-            } catch (error) {
-                console.warn(`INSOLE${id}: failed to enable FIFO`, error);
-                return false;
+        // 開始が確定するまで追従処理を止める（この関数が最終状態を決める）
+        fifoStarting = true;
+        try {
+            const results = await Promise.all(ids.map(async (id) => {
+                const session = getInsoleToolkitSession(id);
+                if (!session || !session.fifo) return false;
+                try {
+                    // FIFOはStepと排他。正式計測APIで原子的にFIFOへ切り替え、
+                    // stopMeasurement() 後に直前のRealtime/Step設定を復元する。
+                    await session.startMeasurement({
+                        profile: 'fifo-recording',
+                        metadata: { source: 'showcase-fifo-card' },
+                    });
+                    return session.fifoActive;
+                } catch (error) {
+                    console.warn(`INSOLE${id}: failed to enable FIFO`, error);
+                    return false;
+                }
+            }));
+            results.forEach((ok, i) => { if (ok) addActiveDeviceId(fifoActiveIds, ids[i]); });
+            if (fifoActiveIds.length === 0) {
+                fifoStatus.textContent = i18nText('fifoFailed');
+                fifoToggle.disabled = false;
+                return;
             }
-        }));
-        results.forEach((ok, i) => { if (ok) fifoActiveIds.push(ids[i]); });
-        if (fifoActiveIds.length === 0) {
-            fifoStatus.textContent = i18nText('fifoFailed');
+            fifoRunning = true;
+            fifoStartedAt = performance.now();
             fifoToggle.disabled = false;
-            return;
+            fifoToggle.classList.replace('btn-primary', 'btn-danger');
+            updateFifoToggleLabel();
+        } finally {
+            fifoStarting = false;
         }
-        fifoRunning = true;
-        fifoStartedAt = performance.now();
-        fifoToggle.disabled = false;
-        fifoToggle.classList.replace('btn-primary', 'btn-danger');
-        updateFifoToggleLabel();
     }
     async function stopFifo(auto = false) {
         if (fifoStopping) return;
@@ -821,7 +836,9 @@ window.onload = function () {
             const tbody = cells.map(([k, v]) => `<tr><th class="fw-normal text-muted" style="width:42%">${k}</th><td>${v}</td></tr>`).join('');
             return `<div class="col-12 col-md-6"><div class="p-2 rounded border border-secondary">`
                 + `<div class="mb-1">${badge} <span class="text-muted small">step ${row.step_number}</span></div>`
-                + `<table class="table table-sm small mb-0"><tbody>${tbody}</tbody></table></div></div>`;
+                // table-dark 必須: 素の .table は --bs-table-color に既定の #212529 を使うため、
+                // .fifo-card の暗い背景（#10171c）の上で数値が読めなくなる。
+                + `<table class="table table-dark table-sm small mb-0"><tbody>${tbody}</tbody></table></div></div>`;
         }).join('');
     }
     async function startGait() {
@@ -832,40 +849,48 @@ window.onload = function () {
         gaitActiveIds = [];
         const startErrors = [];
         for (const id of ids) gaitLatest[id] = null;
-        const results = await Promise.all(ids.map(async (id) => {
-            const session = getInsoleToolkitSession(id);
-            if (!session || !session.gait) return false;
-            try {
-                await session.setOutputs({
-                    sensorValues: session.outputs.sensorValues,
-                    stepAnalysis: true,
-                });
-                return session.gaitActive;
-            } catch (error) {
-                console.warn(`INSOLE${id}: failed to enable Step Analysis`, error);
-                startErrors.push({
-                    id,
-                    code: error?.code || 'UNKNOWN',
-                    message: error?.message || String(error),
-                });
-                return false;
+        // Toolkit は購読直後に gaitActive を立て、その後 notify の疎通確認（最大1.5s×リトライ）を
+        // await する。その間に追従処理が割り込むと同じIDが二重登録され、Stepカードが
+        // 左右2枚ずつ出る。開始が確定するまで追従を止める。
+        gaitStarting = true;
+        try {
+            const results = await Promise.all(ids.map(async (id) => {
+                const session = getInsoleToolkitSession(id);
+                if (!session || !session.gait) return false;
+                try {
+                    await session.setOutputs({
+                        sensorValues: session.outputs.sensorValues,
+                        stepAnalysis: true,
+                    });
+                    return session.gaitActive;
+                } catch (error) {
+                    console.warn(`INSOLE${id}: failed to enable Step Analysis`, error);
+                    startErrors.push({
+                        id,
+                        code: error?.code || 'UNKNOWN',
+                        message: error?.message || String(error),
+                    });
+                    return false;
+                }
+            }));
+            results.forEach((ok, i) => { if (ok) addActiveDeviceId(gaitActiveIds, ids[i]); });
+            if (gaitActiveIds.length === 0) {
+                const codes = startErrors.map((item) => `INSOLE${item.id + 1}: ${item.code}`).join(', ');
+                gaitStatus.textContent = startErrors.length > 0
+                    ? i18nText('gaitStatusError', { codes })
+                    : i18nText('gaitStatusIdle');
+                gaitToggle.disabled = false;
+                return;
             }
-        }));
-        results.forEach((ok, i) => { if (ok) gaitActiveIds.push(ids[i]); });
-        if (gaitActiveIds.length === 0) {
-            const codes = startErrors.map((item) => `INSOLE${item.id + 1}: ${item.code}`).join(', ');
-            gaitStatus.textContent = startErrors.length > 0
-                ? i18nText('gaitStatusError', { codes })
-                : i18nText('gaitStatusIdle');
+            gaitRunning = true;
+            gaitDisplayDirty = true;
             gaitToggle.disabled = false;
-            return;
+            gaitToggle.classList.replace('btn-primary', 'btn-danger');
+            updateGaitToggleLabel();
+            renderGaitDisplay();
+        } finally {
+            gaitStarting = false;
         }
-        gaitRunning = true;
-        gaitDisplayDirty = true;
-        gaitToggle.disabled = false;
-        gaitToggle.classList.replace('btn-primary', 'btn-danger');
-        updateGaitToggleLabel();
-        renderGaitDisplay();
     }
     async function stopGait() {
         gaitToggle.disabled = true;
@@ -902,8 +927,13 @@ window.onload = function () {
     }
 
     // Toolkit 設定モーダルから切り替えた場合も、記録カード側の表示を同じ状態へ追従させる。
+    // ただし start*() の実行中は割り込まない（そちらが最終状態を確定させる）。
     function syncAdvancedSessionState() {
         const connectedIds = connectedInsoleIds();
+        if (!fifoStarting) syncFifoSessionState(connectedIds);
+        if (!gaitStarting) syncGaitSessionState(connectedIds);
+    }
+    function syncFifoSessionState(connectedIds) {
         const activeFifoIds = connectedIds.filter((id) => {
             const session = getInsoleToolkitSession(id);
             return !!(session && session.fifoActive);
@@ -915,9 +945,7 @@ window.onload = function () {
                 fifoStartedAt = performance.now();
                 fifoDownload.disabled = true;
             } else {
-                for (const id of activeFifoIds) {
-                    if (!fifoActiveIds.includes(id)) fifoActiveIds.push(id);
-                }
+                for (const id of activeFifoIds) addActiveDeviceId(fifoActiveIds, id);
             }
             fifoRunning = true;
             fifoToggle.classList.replace('btn-primary', 'btn-danger');
@@ -934,7 +962,8 @@ window.onload = function () {
                 : i18nText('fifoStatusDone', { packets: total });
             setFifoStatusLoss(dropped > 0);
         }
-
+    }
+    function syncGaitSessionState(connectedIds) {
         const activeGaitIds = connectedIds.filter((id) => {
             const session = getInsoleToolkitSession(id);
             return !!(session && session.gaitActive);
@@ -942,9 +971,7 @@ window.onload = function () {
         if (activeGaitIds.length > 0) {
             if (!gaitRunning) gaitActiveIds = activeGaitIds.slice();
             else {
-                for (const id of activeGaitIds) {
-                    if (!gaitActiveIds.includes(id)) gaitActiveIds.push(id);
-                }
+                for (const id of activeGaitIds) addActiveDeviceId(gaitActiveIds, id);
             }
             gaitRunning = true;
             gaitToggle.classList.replace('btn-primary', 'btn-danger');
