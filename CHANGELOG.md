@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `examples/insole-core-combo/` — connects two ORPHE INSOLE units (left/right) and one ORPHE CORE on a single page and records all three into one CSV on a shared PC-clock time basis (contributed by @tomiyata, #69). Live view uses Realtime streaming (mode 3, 200 Hz); recording switches the INSOLEs to the Toolkit `fifo-recording` profile (lossless FIFO) while the CORE stays on Realtime, stops all devices in parallel so one device's drain does not extend another's recording tail, trims every row to the [REC, STOP] window, and surfaces unrecoverable FIFO loss live as `!loss:n`. Ships with `src/CoreCompanionToolkit.js`, a single-CORE connection toolkit that coexists with `InsoleToolkit.js` (namespaced DOM IDs, independent `orpheCore` global): it works around the stock CORE chooser filter that hides real CR- devices (namePrefix OR services filter), guards the CORE SDK's non-settling `begin()` with a connect timeout, and trims CORE 3.0's 104-byte header-50 SENSOR_VALUES packets to the 92-byte layout the stock parser expects (the first 92 bytes share the same layout; verified against the parser's maximum used offset of 91). Covered by `tests/core-companion-toolkit.test.js`.
+
 ## [1.3.2] - 2026-08-10
 
 ### Added

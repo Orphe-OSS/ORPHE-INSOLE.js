@@ -12,6 +12,7 @@
 | [VISUALIZE](./VISUALIZE/) | 6chチャート+IMU可視化（推奨スターター） | INSOLE ×1 | ―（実機推奨） | rAF描画スロットリング |
 | [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた）＋2台同時の欠損比較 | INSOLE ×1〜2 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、デバイス別serial continuity、ja/en切替 |
 | [fifo-vs-realtime](./fifo-vs-realtime/) | 通常(push)/FIFO(pull)の実測比較 | INSOLE ×1〜2 | ―（実機推奨） | 欠損率、シリアル連続性マップ、droppedCount照合 |
+| [insole-core-combo](./insole-core-combo/) | **INSOLE ×2 + CORE ×1 の同時接続・同期CSV収録**（研究用計測ツール） | INSOLE ×2 + CORE ×1（各1台でも可） | ―（実機が目的） | `CoreCompanionToolkit`（CORE 1台の同居接続）、収録中のみ `fifo-recording` へ切替、PC時計基準の時刻同期と [REC, STOP] 窓トリム、`!loss` 欠損ライブ表示 |
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
 | [exhibition](./exhibition/) | **展示用一覧ページ**（16:9のディスプレイでセンサ値を一覧。圧力マップ+全体圧力ゲージ+IMU+姿勢3D/Euler+Step Analysis） | なしでも可 | **DEMOモード内蔵**（合成歩行・合成歩容をループ再生） | showcaseのvizモジュール再利用、vh基準のノースクロールレイアウト |
 | [step-analysis](./step-analysis/) | 1歩ごとの歩容表 + Realtime Rawグラフ | INSOLE ×1〜2 | `?demo=1` またはデモ再生ボタン | `realtime-full-step`、左右自動割当、10歩統計 |

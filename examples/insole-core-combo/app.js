@@ -446,8 +446,8 @@ function render(now) {
   if (now - lastRender < 33) return;
   lastRender = now;
 
-  // INSOLE 圧力（足型ヒートマップ + CoP + 6ch チャート）
-  for (let i = 0; i < 2; i++) {
+  // INSOLE 圧力（足型ヒートマップ + CoP + 6ch チャート）。window.onload 前は未初期化
+  for (let i = 0; i < pressurePanels.length; i++) {
     pressurePanels[i].render();
     if (latest.press[i]) updateSideBadge(i);
   }

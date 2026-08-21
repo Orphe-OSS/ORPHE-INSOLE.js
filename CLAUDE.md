@@ -29,7 +29,8 @@ ORPHE-INSOLE.js/
 │   ├── InsoleSimulator.js     # 実機なし開発用シミュレータ（OrpheInsoleSimulator）
 │   ├── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
 │   ├── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
-│   └── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
+│   ├── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
+│   └── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
 │   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
@@ -725,6 +726,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
 | FIFO入門（初心者向け） | examples/fifo-guide | `fifo-recording` プロファイル + startMeasurement/stopMeasurement、drain待ちUI、約30秒バッファの明示、serial continuity（Canvas集約 + 欠損range）、dropped と missing の区別、CSV照合、1〜2台同時収録のデバイス別比較 |
 | 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |
+| INSOLE+CORE同時計測 | examples/insole-core-combo | CoreCompanionToolkit（CORE 1台の同居接続。chooserフィルタ回避・104byteパケットシム内蔵）、収録中のみFIFOへ切替、PC時計基準の同期CSV・計測窓トリム |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 
 新規 example のレイアウト・デザイン・i18n は `examples/step-analysis/` と `examples/fifo-guide/` が雛形です
