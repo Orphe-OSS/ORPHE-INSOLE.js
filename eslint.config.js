@@ -32,6 +32,8 @@ module.exports = [
                 cores: 'writable',
                 buildInsoleToolkit: 'readonly',
                 buildCoreToolkit: 'readonly',
+                buildCoreCompanionToolkit: 'readonly',
+                orpheCore: 'writable',
                 getInsoleToolkitSession: 'readonly',
                 insoleToolkitSessions: 'readonly',
                 orphe_js_version_date: 'readonly',
