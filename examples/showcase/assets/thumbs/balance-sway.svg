@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <!-- crosshair axes -->
+  <g stroke="#2b3a44" stroke-width="1">
+    <line x1="160" y1="30" x2="160" y2="166"/>
+    <line x1="60" y1="98" x2="260" y2="98"/>
+  </g>
+  <!-- confidence ellipse -->
+  <ellipse cx="160" cy="98" rx="72" ry="44" fill="none" stroke="#9966ff" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.8"/>
+  <!-- CoP sway trace -->
+  <path d="M 150 96 C 132 78 176 70 188 88 C 202 108 168 120 148 112 C 124 102 138 82 162 84 C 190 86 198 104 178 116 C 158 128 130 118 134 98 C 138 80 160 76 172 92"
+    fill="none" stroke="#45e6e6" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="172" cy="92" r="5" fill="#ff6040"/>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">BALANCE SWAY</text>
+  <g fill="#9fb6c3" font-size="9">
+    <circle cx="230" cy="22" r="4" fill="#ff6040"/><text x="238" y="25">CoP</text>
+    <text x="266" y="25" fill="#9966ff">95% area</text>
+  </g>
+</svg>

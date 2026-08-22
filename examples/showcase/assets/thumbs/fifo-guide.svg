@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <!-- FW ring buffer -->
+  <g>
+    <rect x="28" y="52" width="30" height="26" rx="4" fill="#45e6e6"/>
+    <rect x="62" y="52" width="30" height="26" rx="4" fill="#45e6e6"/>
+    <rect x="96" y="52" width="30" height="26" rx="4" fill="#45e6e6"/>
+    <rect x="130" y="52" width="30" height="26" rx="4" fill="#10171c" stroke="#ff6040" stroke-width="2" stroke-dasharray="4 3"/>
+    <rect x="164" y="52" width="30" height="26" rx="4" fill="#45e6e6"/>
+    <rect x="198" y="52" width="30" height="26" rx="4" fill="#45e6e6"/>
+    <rect x="232" y="52" width="30" height="26" rx="4" fill="#45e6e6"/>
+    <rect x="266" y="52" width="26" height="26" rx="4" fill="#1d4c55"/>
+  </g>
+  <!-- re-request arrow for the missing packet -->
+  <path d="M 145 116 C 145 96 145 92 145 84" fill="none" stroke="#ffcd56" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffcd56"/>
+    </marker>
+  </defs>
+  <!-- collected serial strip -->
+  <g>
+    <rect x="28" y="122" width="264" height="14" rx="7" fill="#10171c" stroke="#2b3a44"/>
+    <rect x="28" y="122" width="200" height="14" rx="7" fill="#45e6e6" opacity="0.7"/>
+  </g>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">FIFO GUIDE</text>
+  <g fill="#9fb6c3" font-size="9">
+    <text x="28" y="46">FW buffer</text>
+    <text x="150" y="112" fill="#ffcd56">re-request</text>
+    <text x="28" y="150">serial continuity</text>
+  </g>
+</svg>

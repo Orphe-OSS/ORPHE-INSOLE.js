@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <!-- report sheet -->
+  <rect x="24" y="36" width="272" height="120" rx="8" fill="#10171c" stroke="#2b3a44"/>
+  <!-- score ring -->
+  <circle cx="76" cy="96" r="30" fill="none" stroke="#2b3a44" stroke-width="8"/>
+  <path d="M 76 66 A 30 30 0 1 1 50 111" fill="none" stroke="#45e6e6" stroke-width="8" stroke-linecap="round"/>
+  <text x="76" y="101" fill="#d7e3ea" font-size="16" font-weight="bold" text-anchor="middle">82</text>
+  <!-- metric bars -->
+  <g>
+    <rect x="130" y="62" width="150" height="8" rx="4" fill="#2b3a44"/>
+    <rect x="130" y="62" width="120" height="8" rx="4" fill="#45e6e6"/>
+    <rect x="130" y="84" width="150" height="8" rx="4" fill="#2b3a44"/>
+    <rect x="130" y="84" width="86" height="8" rx="4" fill="#ffcd56"/>
+    <rect x="130" y="106" width="150" height="8" rx="4" fill="#2b3a44"/>
+    <rect x="130" y="106" width="104" height="8" rx="4" fill="#ff6040"/>
+    <rect x="130" y="128" width="150" height="8" rx="4" fill="#2b3a44"/>
+    <rect x="130" y="128" width="132" height="8" rx="4" fill="#9966ff"/>
+  </g>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">GAIT REPORT</text>
+</svg>
