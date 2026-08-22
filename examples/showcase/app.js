@@ -1028,6 +1028,22 @@ window.onload = function () {
         });
     });
 
+    // --- アンカージャンプ位置を sticky header の実高に追従 ---
+    // EN表示や狭幅ではヘッダーが2行以上になり、固定70pxでは見出しがヘッダーに隠れる
+    const stickyHeader = document.querySelector('.showcase-header');
+    if (stickyHeader) {
+        const applyHeaderOffset = () => {
+            document.documentElement.style.setProperty(
+                '--showcase-header-offset', `${stickyHeader.offsetHeight + 16}px`);
+        };
+        applyHeaderOffset();
+        if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(applyHeaderOffset).observe(stickyHeader);
+        } else {
+            window.addEventListener('resize', applyHeaderOffset);
+        }
+    }
+
     // --- 描画ループ ---
     const liveBadge = document.getElementById('live_badge');
     const noticePress = document.getElementById('notice_press');

@@ -1,7 +1,10 @@
 /* ORPHE INSOLE Showcase */
 
-body {
-  scroll-padding-top: 70px;
+html {
+  /* --showcase-header-offset は app.js がヘッダー実高から更新する（EN表示や狭幅で2行になるため）。
+     body 指定では無効（スクロールコンテナは html）。ここが唯一のアンカーオフセットで、
+     section 側の scroll-margin と併用すると二重になるため付けないこと */
+  scroll-padding-top: var(--showcase-header-offset, 70px);
 }
 
 .showcase-header {
@@ -51,10 +54,6 @@ body {
 .language-switch button:focus-visible {
   outline: 2px solid #ff6040;
   outline-offset: 2px;
-}
-
-section {
-  scroll-margin-top: 70px;
 }
 
 .hero-product-image {
@@ -322,6 +321,59 @@ section {
   width: 0;
   background: #45e6e6;
   border-radius: 4px;
+}
+
+/* --- ヘッダーのホームリンク --- */
+.header-home-link {
+  color: #fff;
+  text-decoration: none;
+}
+
+.header-home-link:hover {
+  color: #45e6e6;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.header-home-link:hover .text-muted {
+  color: #45e6e6 !important;
+}
+
+/* --- 関連 example リンク（各セクション末尾のチップ） --- */
+.related-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.related-label {
+  color: #9fb6c3;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.related-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  border: 1px solid #2b3a44;
+  border-radius: 999px;
+  padding: 0.25rem 0.8rem;
+  font-size: 0.85rem;
+  color: #d7e3ea;
+  text-decoration: none;
+  background: #10171c;
+}
+
+.related-link:hover {
+  border-color: #45e6e6;
+  color: #fff;
+}
+
+.related-link strong {
+  color: #45e6e6;
+  white-space: nowrap;
 }
 
 /* --- 次のステップ（サムネイル付きカード） --- */
