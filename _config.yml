@@ -1,0 +1,42 @@
+# GitHub Pages (Jekyll) 設定
+#
+# GitHub Pages は既定で Jekyll を通してサイトを配信し、リポジトリ内の .md を
+# 自動で HTML に変換して公開する（jekyll-optional-front-matter）。このファイルが無いと
+# CLAUDE.md / CODEX_WORKPLAN.md / IMPROVEMENT_PLAN.md / AGENTS.md / reviews/*.md といった
+# 開発者・エージェント向けの内部文書が /CLAUDE.html 等として公開され、検索エンジンの
+# インデックス対象になる。ここでは公開対象を利用者向け文書に限定し、サイト全体の
+# メタデータ（title / description / lang）を明示する。
+#
+# index.html や examples/**/index.html など front matter の無い HTML は Jekyll に
+# 加工されずそのまま配信されるため、この設定はそれらの見え方を変えない。
+# 変換されるのは .md のみ（README.md / CHANGELOG.md / docs/*.md は利用者向けなので公開のまま）。
+#
+# 内部向けの .md を新しく追加したら、この exclude にも追加すること。
+
+title: ORPHE-INSOLE.js
+description: ORPHE INSOLE（6ch 圧力センサ + IMU 内蔵スマートインソール）を Web Bluetooth で扱う JavaScript SDK。歩容解析・圧力中心（CoP）・ロスレス収録・シミュレータを備え、ブラウザだけでプロトタイピングできる。
+lang: ja
+url: https://orphe-oss.github.io
+baseurl: /ORPHE-INSOLE.js
+
+# 公開しないもの（内部向け文書・開発用ファイル・ローカル専用領域）
+exclude:
+  # 開発・エージェント向けガイド／作業指示書／レビュー記録
+  - CLAUDE.md
+  - AGENTS.md
+  - CODEX_WORKPLAN.md
+  - IMPROVEMENT_PLAN.md
+  - reviews/
+  # ローカル専用の試作物（git 未追跡だが念のため）
+  - proto/
+  # Node 単体テスト・手動テストページ（利用者向けではない）
+  - tests/
+  # 開発依存・ビルド設定
+  - node_modules/
+  - package.json
+  - package-lock.json
+  - eslint.config.js
+  - jsdoc.json
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
