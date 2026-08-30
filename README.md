@@ -243,5 +243,5 @@ insole.begin({ streamingMode: 3 }); // gyro, acc, pressure at 200Hz
  * quaternion.js, https://github.com/infusion/Quaternion.js
 
 ## Copyright and licensing
- * Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc.
+ * Copyright (C) 2025, Tetsuaki BABA and ORPHE Inc.
  * See the usage policy above for ORPHE-INSOLE.js v1.0.0 and later.
