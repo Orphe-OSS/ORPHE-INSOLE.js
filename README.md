@@ -160,7 +160,11 @@ Following the current ORPHE-CORE.js policy, ORPHE-INSOLE.js v1.0.0 and later is 
 
 If you use ORPHE-INSOLE.js to build a paid app, paid service, commercial SDK integration, commissioned product, or business service, please contact ORPHE for a separate commercial agreement.
 
+Within the free-use scope above, you may modify this library and redistribute it, with or without modification, provided that [LICENSE.md](./LICENSE.md) (the usage policy and the copyright notice) is included unchanged.
+
 This usage policy follows the ORPHE-CORE.js v1.4.0 and later policy for this repository.
+
+The formal text of this policy is [LICENSE.md](./LICENSE.md) (`SPDX-License-Identifier: LicenseRef-ORPHE-Usage-Policy`).
 
 ## 利用方針と商用利用について
 
@@ -176,7 +180,11 @@ ORPHE-INSOLE.js は、ORPHE INSOLEを使う人のためのJavaScriptライブラ
 
 ORPHE-INSOLE.jsを使って、有料アプリ、有料サービス、商用SDK連携、受託開発、事業として提供するサービスを作る場合は、別途ORPHEとの商用契約が必要です。
 
+上記の無償利用の範囲内であれば、本ライブラリを改変し、また改変の有無を問わず再配布することができます。再配布の際は [LICENSE.md](./LICENSE.md)（利用方針と著作権表示）をそのまま同梱してください。
+
 この利用方針は、ORPHE-CORE.js v1.4.0以降の利用方針をこのリポジトリで踏襲するものです。
+
+正式な条文は [LICENSE.md](./LICENSE.md)（`SPDX-License-Identifier: LicenseRef-ORPHE-Usage-Policy`）を参照してください。
 
 ## 開発者向け情報
 ### 環境構築
