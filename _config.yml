@@ -31,8 +31,9 @@ exclude:
   - proto/
   # Node 単体テスト・手動テストページ（利用者向けではない）
   - tests/
-  # 開発依存・ビルド設定
+  # 開発依存・ビルド設定・生成スクリプト
   - node_modules/
+  - scripts/
   - package.json
   - package-lock.json
   - eslint.config.js

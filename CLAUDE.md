@@ -698,6 +698,11 @@ npm run generate-docs  # JSDoc
 
 ソースを編集したら必ず `npm test` と `npm run build` を実行してください。CDN利用者は `dist/orphe-insole.min.js` を読み込んでいます。
 
+ランディングページ（`index.html`）は日本語ページ（`/`）兼ソースで、英語ページ `en/index.html` は
+`scripts/build-landing.js`（`npm run build` に含まれる）が生成します。**文言は `index.html` 内の `translations`
+辞書を編集**し（マークアップ側の文字列は辞書で上書きされる）、`en/index.html` は直接編集しないこと。
+生成物の差分は CI（`npm run check:site`）と `tests/landing-i18n.test.js` が検査します。
+
 ### リリース手順（バージョンを上げるとき）
 
 README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y.Z`）で案内しており、
