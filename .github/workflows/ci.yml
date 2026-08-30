@@ -21,7 +21,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
-      - run: git diff --exit-code -- dist/
+      - run: git diff --exit-code -- dist/ index.html en/
 
   audit:
     runs-on: ubuntu-latest
