@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- The SDK no longer executes code from a moving branch. `src/ORPHE-INSOLE.js` auto-loads `float16.min.js` / `quaternion.js` from the ORPHE-CORE.js repository on jsDelivr; that URL pointed at `@main`, so even users pinned to `orphe-insole@vX.Y.Z` ran whatever was on CORE's default branch. The loader, `examples/insole-core-combo/`, and `src/CoreCompanionToolkit.js` now reference the immutable tag `ORPHE-CORE.js@v1.4.0`. Bundling these two helpers into `dist/` (so no cross-repository load happens at all) is the follow-up.
+
 ### Added
 
 - Landing page is now served as two static language pages generated from one source: `/` (Japanese, default and `x-default`) and `/en/` (English). `scripts/build-landing.js` reads the `translations` dictionary and `data-i18n*` attributes in `index.html`, applies the Japanese strings to `index.html` itself (which stays the single source), and emits `en/index.html` with English strings and `../`-prefixed relative paths; each page carries its own `lang`, title, description, `og:locale`, `canonical`, `hreflang` set, and JSON-LD `inLanguage`/`softwareVersion` (synced with package.json). Previously the English alternate was `/?lang=en`, which shares one URL and HTML with the Japanese page, so `hreflang` was ineffective and the static markup defaulted to English while the script defaulted to Japanese. The language buttons now navigate between the two pages, `?lang=` links are redirected to the matching page, and `?lang=` is validated with `hasOwnProperty` so prototype keys such as `constructor` are ignored. `npm run build` runs the generator, CI checks `index.html` and `en/` for drift (`npm run check:site`), `tests/landing-i18n.test.js` verifies metadata, link targets under `/en/`, and idempotency, and `sitemap.xml` lists both pages with the corrected `hreflang` alternates (the `demo-app` entry no longer claims a `?lang=en` alternate).

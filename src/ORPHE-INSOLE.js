@@ -53,8 +53,8 @@ function loadScript(src) {
 
 // 外部スクリプトの読み込み
 function _orpheInsoleAutoLoadOptionalLibs() {
-  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/float16.min.js');
-  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/quaternion.js');
+  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.0/js/float16.min.js');
+  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.0/js/quaternion.js');
 }
 if (typeof document !== 'undefined') {
   if (document.readyState === 'loading') {
