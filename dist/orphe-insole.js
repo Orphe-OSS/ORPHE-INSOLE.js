@@ -1,5 +1,5 @@
 var orphe_js_version_date = `
-Last modified: 2026/07/15 00:00:00
+Last modified: 2026/09/05 00:00:00
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
@@ -9,7 +9,7 @@ v1.1.0 接続安定化（デバイス記憶・高速再接続・自動再接続�
 v0.9.0 ベータ版
 @module OrpheInsole
 @author Tetsuaki BABA
-@version 1.2.1
+@version 1.3.3
 
 @description
 ## センサ座標系と圧力センサ配置 / Sensor frame and pressure sensor placement
