@@ -17,7 +17,7 @@ coreCompanionToolkit_version_date = coreCompanionToolkit_version_date.replace(/\
  *
  * 依存:
  *   - ORPHE-CORE.js（必須。ORPHE-INSOLE.js とは別 SDK）
- *     <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.0/js/ORPHE-CORE.js"></script>
+ *     <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.1/js/ORPHE-CORE.js"></script>
  *     を ORPHE-INSOLE.js より前に読み込むこと（後でも動作するが前を推奨）
  *   - Bootstrap 5 (CSS/JS) + bootstrap-icons
  *   - InsoleToolkit.js は必須ではない（単独でも使える）
@@ -68,7 +68,7 @@ function buildCoreCompanionToolkit(parent_element, title, options = {}) {
     if (!isOrpheCoreSdkLoaded()) {
         throw new Error(
             'buildCoreCompanionToolkit: ORPHE-CORE.js の読み込みが必要です。' +
-            '<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.0/js/ORPHE-CORE.js"></script> ' +
+            '<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.1/js/ORPHE-CORE.js"></script> ' +
             'を ORPHE-INSOLE.js より前に追加してください。' +
             '（ORPHE-INSOLE.js 単独では Orphe は INSOLE のエイリアスであり CORE には接続できません）'
         );

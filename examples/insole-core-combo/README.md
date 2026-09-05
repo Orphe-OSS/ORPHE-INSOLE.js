@@ -94,7 +94,7 @@ chooser. `CoreCompanionToolkit.js` replaces `requestDevice()` with an OR filter 
 
 ```html
 <!-- 1. ORPHE CORE SDK (load first) -->
-<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.0/js/ORPHE-CORE.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.1/js/ORPHE-CORE.js"></script>
 <!-- 2. ORPHE INSOLE SDK + Toolkits -->
 <script src="../../src/ORPHE-INSOLE.js"></script>
 <script src="../../src/InsoleToolkit.js"></script>
