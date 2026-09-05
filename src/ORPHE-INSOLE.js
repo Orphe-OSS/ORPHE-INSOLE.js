@@ -33,8 +33,11 @@ press.values[i] corresponds to sensor i+1.
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
 
-// 外部スクリプトを読み込む関数
-function loadScript(src) {
+// 同梱ライブラリ用の <script> 挿入。同一ファイル名が既に読み込まれていれば何もしない。
+// 同一 origin の相対 URL しか扱わないので crossorigin は付けない（file:// で開いたときに
+// オペーク origin の CORS 失敗でスクリプトが実行されない事故を避ける）。
+// グローバル名は ORPHE-CORE.js の loadScript と衝突しないよう INSOLE 固有にする。
+function _orpheInsoleLoadScript(src) {
   if (typeof document === 'undefined') return;
   const fileName = src.split('/').pop();
   if (fileName) {
@@ -47,14 +50,30 @@ function loadScript(src) {
   const script = document.createElement('script');
   script.src = src;
   script.type = 'text/javascript';
-  script.crossOrigin = 'anonymous';
   document.head.appendChild(script);
 }
 
-// 外部スクリプトの読み込み
+// 同梱ライブラリ（src/vendor/）の自動読み込み
+//
+// gotEuler の四元数→オイラー角変換に Quaternion.js（src/vendor/quaternion.js、MIT）を使う。
+//  - dist/orphe-insole(.min).js には scripts/build-dist.js が quaternion.js を同梱しているので、
+//    グローバル Quaternion が既に定義されておりここでは何もしない。
+//  - src/ORPHE-INSOLE.js を直接読み込むページ（examples 等）では、このスクリプト自身の URL を基準に
+//    vendor/quaternion.js を相対パスでロードする（../../src/ORPHE-INSOLE.js → ../../src/vendor/quaternion.js）。
+//  - 同一ページで ORPHE-CORE.js が先に quaternion.js を読み込んでいれば（Quaternion 定義済み）何もしない。
+//  - type="module" やインライン評価などで自身の URL が取れない場合は何もしない（gotEuler は呼ばれないが他は動作する）。
+// 以前は ORPHE-CORE.js リポジトリの jsDelivr URL（@main → @v1.4.x）から quaternion.js / float16.min.js を
+// ロードしていたが、別リポジトリのコードを実行時に取り込む構造を無くすため v1.3.4 で廃止した
+// （float16 は INSOLE 未使用。半精度は src/InsoleGait.js の f16be でデコードする）。
+var _orpheInsoleScriptBase = (function () {
+  if (typeof document === 'undefined' || !document.currentScript || !document.currentScript.src) return null;
+  return String(document.currentScript.src).replace(/[?#].*$/, '').replace(/[^/]*$/, '');
+})();
+
 function _orpheInsoleAutoLoadOptionalLibs() {
-  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.1/js/float16.min.js');
-  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@v1.4.1/js/quaternion.js');
+  if (typeof Quaternion !== 'undefined') return;
+  if (!_orpheInsoleScriptBase) return;
+  _orpheInsoleLoadScript(_orpheInsoleScriptBase + 'vendor/quaternion.js');
 }
 if (typeof document !== 'undefined') {
   if (document.readyState === 'loading') {
