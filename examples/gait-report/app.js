@@ -172,6 +172,13 @@
     });
   }
 
+  // Optional, page-local observer channel; no SDK callback replacement or recorder coupling.
+  function notifyCG(type, detail = {}) {
+    if (typeof root.dispatchEvent === "function" && typeof root.CustomEvent === "function") {
+      root.dispatchEvent(new root.CustomEvent("gait-report:cg-" + type, { detail }));
+    }
+  }
+
   // -------------------------------------------------------------- recording
 
   function expectedSides() {
@@ -186,6 +193,7 @@
   }
 
   function startRecording() {
+    notifyCG("reset");
     state.rows = { left: [], right: [] };
     state.recording = true;
     state.complete = false;
@@ -205,6 +213,7 @@
   }
 
   function clearData() {
+    notifyCG("reset");
     state.rows = { left: [], right: [] };
     state.recording = false;
     state.complete = false;
@@ -227,6 +236,8 @@
     const side = options.side || resolveDeviceSide(deviceId);
     if (options.source !== "demo") noteLiveData(deviceId);
 
+    // Notify even before Record and after the 20-cycle report is complete.
+    notifyCG("step", { side, source: options.source === "demo" ? "demo" : "live", row: { ...incomingRow } });
     state.lastStepAt = Date.now();
     state.dom.lastStepTime.textContent =
       new Date(state.lastStepAt).toLocaleTimeString(locale(), { hour12: false });
@@ -399,6 +410,7 @@
           if (snapshot.connected) {
             activateLiveConnection(deviceId, { forceSource: true });
           } else {
+            notifyCG("disconnect", { side: state.deviceSides[deviceId] });
             state.connected[deviceId] = false;
             resolveDeviceSide(deviceId);
             updateConnectionSource();
@@ -426,6 +438,7 @@
       activateLiveConnection(this.id, { forceSource: true });
     };
     insole.onDisconnect = function onDisconnect() {
+      notifyCG("disconnect", { side: state.deviceSides[this.id] });
       if (!state.demo.running) {
         setSourceCopy("waiting", "reconnectTitle", "reconnectWait", {
           titleParams: { device: this.id + 1 }
@@ -707,7 +720,7 @@
     updateConnectionSource();
     renderAll();
 
-    if (PAGE_PARAMS.get("demo") !== "0" && connectedDeviceIds().length === 0) {
+    if (PAGE_PARAMS.get("demo") === "1" && connectedDeviceIds().length === 0) {
       startDemo();
     }
   }
