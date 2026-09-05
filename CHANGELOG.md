@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-09-05
+
 ### Security
 
 - The SDK no longer executes code from a moving branch. `src/ORPHE-INSOLE.js` auto-loads `float16.min.js` / `quaternion.js` from the ORPHE-CORE.js repository on jsDelivr; that URL pointed at `@main`, so even users pinned to `orphe-insole@vX.Y.Z` ran whatever was on CORE's default branch. The loader, `examples/insole-core-combo/`, and `src/CoreCompanionToolkit.js` now reference the immutable tag `ORPHE-CORE.js@v1.4.0`. Bundling these two helpers into `dist/` (so no cross-repository load happens at all) is the follow-up.
