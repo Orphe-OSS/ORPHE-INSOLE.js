@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- ORPHE-CORE.js references (helper auto-load in `src/ORPHE-INSOLE.js`, `examples/insole-core-combo/`, `src/CoreCompanionToolkit.js`) now pin `@v1.4.1`, which fixes the header-50 quaternion scale (Q14 on CORE 3.0), per-sample timestamps, and the ±2 G accelerometer range mapping in the CORE SDK.
+
 ## [1.3.3] - 2026-09-05
 
 ### Security
