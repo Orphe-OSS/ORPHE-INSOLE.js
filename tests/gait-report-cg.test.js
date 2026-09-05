@@ -86,4 +86,33 @@ test('kinematic envelope: constant limb lengths, no foot penetration, periodic a
   }
   assert.ok(Model.pose({ ...base, trunkLean: 30 }, 0).head[0] > Model.pose(base, 0).head[0] + .1);
 });
+test('initial manual page and explicit demo opt-in, actual recorder still finalizes at 20/20', () => {
+  for (const query of ['', '?demo=0', '?demo=1']) {
+    let init;
+    const nodes = new Map(), events = [];
+    const node = id => {
+      if (!nodes.has(id)) nodes.set(id, { style: {}, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {} });
+      return nodes.get(id);
+    };
+    const ctx = vm.createContext({ GaitReportStats: Stats, GaitReportI18n: { getLanguage: () => 'ja', t: key => key },
+      URLSearchParams, location: { search: query }, document: { getElementById: node, querySelector: node,
+        addEventListener: (name, fn) => { if (name === 'DOMContentLoaded') init = fn; } },
+      addEventListener() {}, setInterval: () => 1, clearInterval() {},
+      buildInsoleToolkit() {}, getInsoleToolkitSession: () => ({}), insoles: [{ setup() {} }, { setup() {} }],
+      CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+      dispatchEvent: event => events.push(event) });
+    vm.runInContext(fs.readFileSync('examples/gait-report/app.js', 'utf8'), ctx); init();
+    const app = ctx.GaitReportLive;
+    assert.equal(app.state.demo.running, query === '?demo=1');
+    if (query === '?demo=1') {
+      for (let i = 0; i < 20; i++) for (const side of ['left', 'right']) app.handleStepRow(-1, app.demoRow(side, i + 1), { source: 'demo', side });
+      assert.equal(app.state.complete, true);
+      assert.equal(app.state.rows.left.length + app.state.rows.right.length, 40);
+      app.handleStepRow(-1, row(), { source: 'demo', side: 'left' });
+      assert.equal(app.state.rows.left.length + app.state.rows.right.length, 40);
+      assert.equal(events.filter(e => e.type === 'gait-report:cg-step').length, 41);
+      app.clearData(); assert.equal(events.at(-1).type, 'gait-report:cg-reset');
+    }
+  }
+});
 console.log(`Gait CG: ${passed} tests passed`);

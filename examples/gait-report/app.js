@@ -720,7 +720,7 @@
     updateConnectionSource();
     renderAll();
 
-    if (PAGE_PARAMS.get("demo") !== "0" && connectedDeviceIds().length === 0) {
+    if (PAGE_PARAMS.get("demo") === "1" && connectedDeviceIds().length === 0) {
       startDemo();
     }
   }

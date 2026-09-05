@@ -109,8 +109,9 @@ git diff --exit-code -- dist/ index.html en/
 python3 -m http.server 8765
 ```
 
-Open `/examples/gait-report/?demo=0` for manual mode; without `demo=0` the existing
-page still automatically runs its synthetic demo (preserved behavior).
+Open `/examples/gait-report/` for manual mode. Synthetic demo now requires the
+Play demo button or explicit `?demo=1`, so an unconnected visitor can use manual
+controls without their values being immediately overridden. `?demo=0` also works.
 
 1. In manual mode change speed from 1.2 to 0.8: CG cadence changes from 110.8 to
    73.8 steps/min; set trunk lean 25 degrees; check visible forward lean.
