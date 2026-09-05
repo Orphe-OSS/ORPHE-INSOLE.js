@@ -5,6 +5,8 @@ module.exports = [
     {
         ignores: [
             'dist/',
+            'src/vendor/',
+            'proto/',
             'docs/',
             'node_modules/'
         ]
