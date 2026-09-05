@@ -1,0 +1,14 @@
+Reference: OpenSim Gait2392 subject01_walk1_ik.mot and subject01_walk1_grf.mot, opensim-org/opensim-models.
+https://github.com/opensim-org/opensim-models/tree/master/Pipelines/Gait2392_Simbody
+Authors/model credits: Delp S.L., Loan J.P., Hoy M.G., Zajac F.E., Topp E.L., Rosen J.M., Thelen D.G., Anderson F.C., Seth A.
+License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
+Adaptation: left heel-contact cycle 1.2483–2.4617 s using 25 N vertical force threshold; resampled to 101 points; linear endpoint detrending; motion amplitude and phase adapted to user settings. This is one reference trial, not a normative population. Arm motion is procedural. Original foot coordinate orientation has not been used as a clinical anatomical angle.
+
+Source files:
+https://raw.githubusercontent.com/opensim-org/opensim-models/master/Pipelines/Gait2392_Simbody/subject01_walk1_ik.mot
+https://raw.githubusercontent.com/opensim-org/opensim-models/master/Pipelines/Gait2392_Simbody/subject01_walk1_grf.mot
+
+Rendering library: Three.js 0.185.1, MIT license. Loaded from jsDelivr on demand.
+https://github.com/mrdoob/three/blob/r185/LICENSE
+
+Adaptation for ORPHE Gait Report: framework-free kinematic model port, manual trunk lean, constrained foot contact and bounded gait-parameter input. No GIP code, weights or SMPL assets are included.
