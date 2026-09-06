@@ -31,6 +31,7 @@ ORPHE-INSOLE.js/
 │   ├── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
 │   ├── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
 │   └── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
+│   └── vendor/quaternion.js   # 同梱 Quaternion.js（MIT）。dist に同梱、src 直読みでは相対ロード（src/vendor/README.md）
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
 │   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
@@ -697,6 +698,9 @@ npm run generate-docs  # JSDoc
 ```
 
 ソースを編集したら必ず `npm test` と `npm run build` を実行してください。CDN利用者は `dist/orphe-insole.min.js` を読み込んでいます。
+`dist/orphe-insole.js` は `src/ORPHE-INSOLE.js` のコピーではなく、`scripts/build-dist.js` が
+同梱ライブラリ（`src/vendor/quaternion.js`）を先頭に連結して生成します（`npm run check:dist` で差分検査）。
+SDK は他リポジトリのコードを実行時にロードしません（`gotEuler` の Quaternion.js は同梱）。
 
 ランディングページ（`index.html`）は日本語ページ（`/`）兼ソースで、英語ページ `en/index.html` は
 `scripts/build-landing.js`（`npm run build` に含まれる）が生成します。**文言は `index.html` 内の `translations`
