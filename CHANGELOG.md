@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-09-06
+
 ### Security
 
 - **The SDK no longer loads any code from another repository at runtime.** `quaternion.js` (Quaternion.js v1.4.0, MIT; byte-identical to `Orphe-OSS/ORPHE-CORE.js@v1.4.1` `js/quaternion.js`) is now vendored at `src/vendor/quaternion.js`. `dist/orphe-insole.js` / `dist/orphe-insole.min.js` embed it, guarded so that an already-defined global `Quaternion` (for example from ORPHE-CORE.js loaded earlier on the same page) is never overwritten, and with the UMD's AMD/CommonJS branches disabled so `require()`-ing the dist keeps the SDK's own `module.exports`. `src/ORPHE-INSOLE.js`, when loaded directly, resolves `vendor/quaternion.js` relative to its own URL instead of fetching from jsDelivr. The `float16.min.js` auto-load is removed because the SDK never used it (half-precision fields are decoded by the built-in `f16be` in `src/InsoleGait.js`). See `src/vendor/README.md`.
