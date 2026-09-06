@@ -9,6 +9,6 @@ https://raw.githubusercontent.com/opensim-org/opensim-models/master/Pipelines/Ga
 https://raw.githubusercontent.com/opensim-org/opensim-models/master/Pipelines/Gait2392_Simbody/subject01_walk1_grf.mot
 
 Rendering library: Three.js 0.185.1, MIT license. Loaded from jsDelivr on demand.
-https://github.com/mrdoob/three/blob/r185/LICENSE
+https://github.com/mrdoob/three.js/blob/r185/LICENSE
 
 Adaptation for ORPHE Gait Report: framework-free kinematic model port, manual trunk lean, constrained foot contact and bounded gait-parameter input. No GIP code, weights or SMPL assets are included.
