@@ -74,6 +74,7 @@
       demoToggle: byId("demo-toggle"),
       clearButton: byId("clear-button"),
       printButton: byId("print-button"),
+      csvButton: byId("csv-button"),
       progressStrip: document.querySelector(".progress-strip"),
       progressStatus: byId("progress-status"),
       progLeftBar: byId("prog-left-bar"),
@@ -130,8 +131,31 @@
     return DEVICE_IDS.filter((deviceId) => state.connected[deviceId]);
   }
 
+  function insoleAt(deviceId) {
+    return Array.isArray(root.insoles) && deviceId >= 0 ? root.insoles[deviceId] || null : null;
+  }
+
+  // SDK が getFirmwareVersion() で解決した版（insole.firmware_version にキャッシュされる）を読む。
+  function deviceFirmwareVersion(deviceId) {
+    const insole = insoleAt(deviceId);
+    return insole && insole.firmware_version ? String(insole.firmware_version) : null;
+  }
+
+  // 接続のたびに FW 版の取得を促す（Toolkit の Step 有効化でも読まれるが、CSV の列に確実に載せるため）。
+  function refreshFirmwareVersion(deviceId) {
+    const insole = insoleAt(deviceId);
+    if (!insole || typeof insole.getFirmwareVersion !== "function") return;
+    let pending;
+    try {
+      pending = insole.getFirmwareVersion();
+    } catch {
+      return;
+    }
+    if (pending && typeof pending.catch === "function") pending.catch(() => null);
+  }
+
   function resolveDeviceSide(deviceId) {
-    const insole = Array.isArray(root.insoles) ? root.insoles[deviceId] : null;
+    const insole = insoleAt(deviceId);
     const mount = insole && insole.device_information
       ? insole.device_information.mount_position
       : null;
@@ -224,6 +248,32 @@
     renderAll();
   }
 
+  function recordedStepCount() {
+    return state.rows.left.length + state.rows.right.length;
+  }
+
+  // 記録した歩をそのまま CSV にする（確定前でも、そこまでの歩を書き出す）。
+  function downloadCsv() {
+    if (recordedStepCount() === 0) return;
+    const csv = Stats.buildRowsCsv(state.rows, {
+      source: state.sessionSource,
+      firmwareVersions: DEVICE_IDS.map(deviceFirmwareVersion),
+      sdkVersion: root.OrpheInsole && root.OrpheInsole.SDK_VERSION ? root.OrpheInsole.SDK_VERSION : null
+    });
+    const blob = new root.Blob([csv], { type: "text/csv" });
+    const url = root.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = Stats.csvFilename(state.startedAt || Date.now());
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    root.setTimeout(() => {
+      root.URL.revokeObjectURL(url);
+      if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+    }, 1000);
+  }
+
   function pulseReport(side) {
     const frame = state.dom.reportFrame;
     const cls = side === "right" ? "is-stepping-right" : "is-stepping-left";
@@ -255,6 +305,7 @@
       ...incomingRow,
       _side: side,
       _device_id: deviceId,
+      _fw_version: deviceFirmwareVersion(deviceId),
       _received_at: state.lastStepAt
     });
     pulseReport(side);
@@ -364,6 +415,7 @@
     }
     state.connected[deviceId] = true;
     resolveDeviceSide(deviceId);
+    refreshFirmwareVersion(deviceId);
     if (
       options.forceSource
       || demoWasRunning
@@ -503,6 +555,8 @@
     const demoButton = state.dom.demoToggle;
     demoButton.innerHTML = state.demo.running ? t("demoStopHtml") : t("demoPlayHtml");
     demoButton.classList.toggle("active", state.demo.running);
+
+    state.dom.csvButton.disabled = recordedStepCount() === 0;
   }
 
   function renderProgress() {
@@ -711,6 +765,7 @@
     state.dom.demoToggle.addEventListener("click", toggleDemo);
     state.dom.clearButton.addEventListener("click", clearData);
     state.dom.printButton.addEventListener("click", () => root.print());
+    state.dom.csvButton.addEventListener("click", downloadCsv);
 
     // i18n.js の初期 setLanguage は DOMContentLoaded の先頭で発火するため、
     // languagechange の購読は cacheDom() 後（=描画できる状態）に登録する。
@@ -734,6 +789,7 @@
     handleStepRow,
     startRecording,
     clearData,
+    downloadCsv,
     startDemo,
     stopDemo,
     demoRow,
