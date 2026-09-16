@@ -45,7 +45,7 @@ FIFO モードでは **Step Analysis を同時に使えず、クォータニオ�
 | `host_rx_ms` | そのサンプルを含む FIFO バッチがホストに**到着した**時刻（epoch ms）。FIFO はプル型で数百 ms 遅れるため真の時刻の上界 |
 | `host_time_est` / `host_time_est_ms` | `device_time_ms + offset`。offset は「バッチ到着時刻 − バッチ内の最新端末時刻」の**最小値**（最小遅延法）。ヘッダ行 `device_N_clock_offset_ms` に記録 |
 | `elapsed_ms` | `host_time_est_ms − recording_start_host_ms`。マーカーの `elapsed_ms` と同じ時間軸 |
-| `device_N_clock_offset_spread_ms` | バッチ間の offset の最大−最小。回収ジッタの大きさで、`host_time_est` の誤差上界の目安。**clock drift は出力しない**（FIFO の追従遅れが支配的で、実機では回帰の傾きが 10^5 ppm 級になり意味を持たなかった） |
+| `device_N_clock_offset_spread_ms` | 新しいデータを運んだバッチ間の offset の最大−最小（再送だけのバッチは除外。実機で再送バッチが 5.7 s と出て誤解を招いたため）。回収ジッタの大きさで、`host_time_est` の誤差上界の目安。**clock drift は出力しない**（FIFO の追従遅れが支配的で、実機では回帰の傾きが 10^5 ppm 級になり意味を持たなかった） |
 
 左右2台の端末時計はそれぞれ独立に写像されるため、`host_time_est` 同士を比べれば左右のずれ、
 `host_rx_ms − host_time_est_ms` を見れば写像の妥当性を後から検証できます。

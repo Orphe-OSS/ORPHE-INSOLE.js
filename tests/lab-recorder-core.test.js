@@ -96,6 +96,14 @@ function makeSeries(startSerial, packets, tStartMs, options = {}) {
     assert.equal(map.batches, 4);
     assert.equal(map.spanMs, 1500);
     assert.equal(map.offsetSpreadMs, 350, 'spread = max − min');
+    assert.equal(map.frontierBatches, 4);
+    // 再要求で古い serial だけが届いたバッチ（端末時刻が後退）は offset が大きいが spread に混ぜない
+    const withReRequest = Core.estimateClockMap([...batches, { hostRxMs: base + 3000 + 300, deviceTimeMaxMs: 1200 }]);
+    assert.equal(withReRequest.offsetMs, base + 250, '最小 offset は変わらない');
+    assert.equal(withReRequest.offsetSpreadMs, 350, '再送バッチ（offset 2100 ms）は spread に入らない');
+    assert.equal(withReRequest.offsetMaxMs, base + 600);
+    assert.equal(withReRequest.batches, 5);
+    assert.equal(withReRequest.frontierBatches, 4);
     assert.equal(Object.prototype.hasOwnProperty.call(map, 'driftPpm'), false, 'clock drift は出力しない（FIFO 追従遅れが支配的で誤解を招く）');
     assert.equal(Core.deviceToHostMs(map, 1234), base + 1484);
     assert.equal(Core.hostToDeviceMs(map, base + 1484), 1234);

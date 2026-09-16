@@ -166,6 +166,9 @@
    * 各バッチについて「到着ホスト時刻 − バッチ内の最新端末時刻」を取り、その最小値
    * （最も遅延の小さかった観測）を offset として採用する（最小遅延法）。
    * offset の最大−最小（spread）は回収ジッタの大きさで、写像誤差の上界の目安になる。
+   * spread は「最新端末時刻を前進させたバッチ（frontier）」だけで取る。再要求で古い serial だけが
+   * 届いたバッチは offset が数秒になるが、それは遅延ではなく再送なので spread に混ぜない
+   * （実機で 5.7 s と出て誤解を招いた）。offset の最小値には全バッチを使う（再送分は必ず大きいので影響しない）。
    * 注: 回帰の傾きを「clock drift」として出すのは誤り。FIFO の追従遅れ（lag の増減）が
    * 支配的で、実機では 10^5 ppm 級の値が出た（2026-09-16 実測）ため出力しない。
    *
@@ -178,12 +181,15 @@
     const points = [];
     let dayShift = 0;
     let previous = null;
+    let frontier = -Infinity;
     for (const batch of Array.isArray(batches) ? batches : []) {
       if (!batch || !isFiniteNumber(batch.hostRxMs) || !isFiniteNumber(batch.deviceTimeMaxMs)) continue;
       if (previous !== null && batch.deviceTimeMaxMs + dayShift < previous - DAY_MS / 2) dayShift += DAY_MS;
       const deviceTime = batch.deviceTimeMaxMs + dayShift;
       previous = deviceTime;
-      points.push({ deviceTime, offset: batch.hostRxMs - deviceTime });
+      const advances = deviceTime > frontier;
+      if (advances) frontier = deviceTime;
+      points.push({ deviceTime, offset: batch.hostRxMs - deviceTime, frontier: advances });
     }
     if (points.length === 0) {
       return {
@@ -191,8 +197,9 @@
         offsetMedianMs: null, offsetMaxMs: null, offsetSpreadMs: null, batches: 0, spanMs: 0
       };
     }
-    const offsets = points.map((point) => point.offset).sort((a, b) => a - b);
-    const offsetMin = offsets[0];
+    const offsetMin = Math.min(...points.map((point) => point.offset));
+    const frontierOffsets = points.filter((point) => point.frontier).map((point) => point.offset).sort((a, b) => a - b);
+    const offsets = frontierOffsets.length > 0 ? frontierOffsets : points.map((point) => point.offset).sort((a, b) => a - b);
     const offsetMax = offsets[offsets.length - 1];
     const median = offsets.length % 2 === 1
       ? offsets[(offsets.length - 1) / 2]
@@ -209,6 +216,7 @@
       offsetMaxMs: offsetMax,
       offsetSpreadMs: offsetMax - offsetMin,
       batches: points.length,
+      frontierBatches: frontierOffsets.length,
       spanMs
     };
   }
@@ -915,7 +923,7 @@
       "| `host_timezone` | IANA zone name and UTC offset of the host |",
       "| `device_N_side`, `device_N_firmware_version` | per-device provenance |",
       "| `device_N_clock_offset_ms` | host − device offset used for `host_time_est` (min-latency) |",
-      "| `device_N_clock_offset_spread_ms` | max − min of (host_rx − device_time) across FIFO batches: the retrieval jitter, an upper bound on the `host_time_est` mapping error. No clock-drift estimate is exported because FIFO retrieval lag dominates over a trial |",
+      "| `device_N_clock_offset_spread_ms` | max − min of (host_rx − device_time) across the FIFO batches that advanced the newest device time (batches carrying only re-requested older packets are excluded): the retrieval jitter, an upper bound on the `host_time_est` mapping error. No clock-drift estimate is exported because FIFO retrieval lag dominates over a trial |",
       "| `device_time_source`, `host_time_est_method`, `sampling_rate_hz_note`, `pressure_note`, `missing_value`, `read_hint` | fixed explanatory notes |",
       "",
       "## `*_markers.csv` columns",
