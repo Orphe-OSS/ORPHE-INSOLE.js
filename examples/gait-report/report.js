@@ -217,8 +217,9 @@
     "pronation_deg", "pronation_type", "pronation_z_deg", "calorie"
   ]);
   // fw_version: FW 版で pitch/roll の入れ替わりや Step Analysis 非対応など既知の差異があるため、後日の解析で必ず参照できるよう行ごとに持つ。
+  // sdk_version: 行を生成した ORPHE-INSOLE.js の版（OrpheInsole.SDK_VERSION）。デコード規則（gyro 換算・sentinel 処理など）の差異を追うため。
   // recorded_at: ISO 8601 の UTC（末尾 Z）。ローカル時刻や無指定のタイムゾーンは使わない。
-  const META_CSV_FIELDS = Object.freeze(["side", "device_id", "fw_version", "recorded_at", "source"]);
+  const META_CSV_FIELDS = Object.freeze(["side", "device_id", "fw_version", "sdk_version", "recorded_at", "source"]);
   const CSV_HEADER = META_CSV_FIELDS.concat(ROW_CSV_FIELDS).join(",");
 
   function csvCell(value) {
@@ -247,6 +248,7 @@
     merged.sort((a, b) => receivedAt(a) - receivedAt(b));
 
     const knownVersions = options.firmwareVersions || {};
+    const sdkVersion = options.sdkVersion ? String(options.sdkVersion) : null;
     const lines = [CSV_HEADER];
     for (const entry of merged) {
       const row = entry.row;
@@ -259,6 +261,7 @@
         entry.side,
         hasDevice ? deviceId : null,
         firmware,
+        sdkVersion,
         stamp === null ? null : new Date(stamp).toISOString(),
         options.source || null
       ];

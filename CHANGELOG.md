@@ -10,7 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Gait Report: embedded reference gait CG with manual parameters and bounded live/demo gait following, source/stale status, and a lazy-loaded Three.js viewer.
 
-- Gait Report: "Download CSV" button that saves the recorded steps (one row per step, both feet merged in received order). Columns are `side, device_id, fw_version, recorded_at, source` followed by the same columns as `OrpheInsoleGait` CSV (`step_number … calorie`), so existing Step Analysis CSV tooling can be reused. `fw_version` is the per-device firmware version (known FW differences affect Step Analysis availability and axis conventions); `recorded_at` is ISO 8601 UTC with a trailing `Z`. Enabled as soon as one step is recorded; works before the 20-step report is finalized.
+- Gait Report: "Download CSV" button that saves the recorded steps (one row per step, both feet merged in received order). Columns are `side, device_id, fw_version, sdk_version, recorded_at, source` followed by the same columns as `OrpheInsoleGait` CSV (`step_number … calorie`), so existing Step Analysis CSV tooling can be reused. `fw_version` is the per-device firmware version (known FW differences affect Step Analysis availability and axis conventions), `sdk_version` is the ORPHE-INSOLE.js version that decoded the rows, and `recorded_at` is ISO 8601 UTC with a trailing `Z`.
+- `OrpheInsole.SDK_VERSION`: static string equal to the package version (e.g. `"1.3.4"`), for recording data provenance. Kept in sync with `package.json` by `tests/insole-version-sync.test.js`. Enabled as soon as one step is recorded; works before the 20-step report is finalized.
 
 ### Changed
 

@@ -3412,6 +3412,9 @@ class OrpheInsole {
 }
 
 OrpheInsole.STREAMING_MODES = ORPHE_INSOLE_STREAMING_MODES;
+// package.json の version と同じ値を保つ（tests/insole-version-sync.test.js が検証）。
+// 記録データに SDK 版を残す用途（例: gait-report の CSV）で、デコード規則の差異を後から追えるようにする。
+OrpheInsole.SDK_VERSION = '1.3.4';
 
 // ── グローバル公開とエイリアス ─────────────────────────────────
 // 推奨クラス名は OrpheInsole。

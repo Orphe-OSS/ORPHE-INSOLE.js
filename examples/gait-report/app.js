@@ -257,7 +257,8 @@
     if (recordedStepCount() === 0) return;
     const csv = Stats.buildRowsCsv(state.rows, {
       source: state.sessionSource,
-      firmwareVersions: DEVICE_IDS.map(deviceFirmwareVersion)
+      firmwareVersions: DEVICE_IDS.map(deviceFirmwareVersion),
+      sdkVersion: root.OrpheInsole && root.OrpheInsole.SDK_VERSION ? root.OrpheInsole.SDK_VERSION : null
     });
     const blob = new root.Blob([csv], { type: "text/csv" });
     const url = root.URL.createObjectURL(blob);

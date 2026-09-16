@@ -235,6 +235,8 @@ export class OrpheInsole {
     static parseSensorValues(data: DataView, options?: ParseInsoleSensorValuesOptions): InsoleSensorPacket | null;
     static getStreamingModeInfo(mode: number): InsoleStreamingModeInfo | null;
     static readonly STREAMING_MODES: typeof ORPHE_INSOLE_STREAMING_MODES;
+    /** この SDK のバージョン（package.json の version と同じ、例 "1.3.4"）。記録データの来歴に残す用途。 */
+    static readonly SDK_VERSION: string;
 
     readonly ORPHE_INFORMATION: string;
     readonly ORPHE_DEVICE_INFORMATION: string;
