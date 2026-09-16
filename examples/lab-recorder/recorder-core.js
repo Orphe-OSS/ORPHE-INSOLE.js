@@ -165,11 +165,13 @@
    * FIFO はプル型なのでサンプルの到着時刻はホスト時刻より数百 ms 遅れる。
    * 各バッチについて「到着ホスト時刻 − バッチ内の最新端末時刻」を取り、その最小値
    * （最も遅延の小さかった観測）を offset として採用する（最小遅延法）。
-   * offset の端末時刻に対する回帰の傾きを drift の参考値として併記する。
+   * offset の最大−最小（spread）は回収ジッタの大きさで、写像誤差の上界の目安になる。
+   * 注: 回帰の傾きを「clock drift」として出すのは誤り。FIFO の追従遅れ（lag の増減）が
+   * 支配的で、実機では 10^5 ppm 級の値が出た（2026-09-16 実測）ため出力しない。
    *
    * @param {Array<{hostRxMs:number, deviceTimeMaxMs:number}>} batches 到着順
    * @returns {{available:boolean, method:string, offsetMs:number|null, offsetMinMs:number|null,
-   *   offsetMedianMs:number|null, offsetMaxMs:number|null, driftPpm:number|null,
+   *   offsetMedianMs:number|null, offsetMaxMs:number|null, offsetSpreadMs:number|null,
    *   batches:number, spanMs:number}}
    */
   function estimateClockMap(batches) {
@@ -186,7 +188,7 @@
     if (points.length === 0) {
       return {
         available: false, method: "min-latency", offsetMs: null, offsetMinMs: null,
-        offsetMedianMs: null, offsetMaxMs: null, driftPpm: null, batches: 0, spanMs: 0
+        offsetMedianMs: null, offsetMaxMs: null, offsetSpreadMs: null, batches: 0, spanMs: 0
       };
     }
     const offsets = points.map((point) => point.offset).sort((a, b) => a - b);
@@ -198,19 +200,6 @@
     const first = points[0].deviceTime;
     const last = points[points.length - 1].deviceTime;
     const spanMs = last - first;
-
-    let driftPpm = null;
-    if (points.length >= 3 && spanMs > 0) {
-      const meanX = points.reduce((sum, point) => sum + point.deviceTime, 0) / points.length;
-      const meanY = points.reduce((sum, point) => sum + point.offset, 0) / points.length;
-      let sxx = 0;
-      let sxy = 0;
-      for (const point of points) {
-        sxx += (point.deviceTime - meanX) ** 2;
-        sxy += (point.deviceTime - meanX) * (point.offset - meanY);
-      }
-      driftPpm = sxx > 0 ? (sxy / sxx) * 1e6 : null;
-    }
     return {
       available: true,
       method: "min-latency",
@@ -218,7 +207,7 @@
       offsetMinMs: offsetMin,
       offsetMedianMs: median,
       offsetMaxMs: offsetMax,
-      driftPpm,
+      offsetSpreadMs: offsetMax - offsetMin,
       batches: points.length,
       spanMs
     };
@@ -624,7 +613,7 @@
         `# device_${report.deviceId}_side: ${report.side || ""}`,
         `# device_${report.deviceId}_firmware_version: ${report.firmwareVersion || ""}`,
         `# device_${report.deviceId}_clock_offset_ms: ${report.clock.available ? report.clock.offsetMs.toFixed(3) : ""}`,
-        `# device_${report.deviceId}_clock_drift_ppm: ${isFiniteNumber(report.clock.driftPpm) ? report.clock.driftPpm.toFixed(1) : ""}`
+        `# device_${report.deviceId}_clock_offset_spread_ms: ${isFiniteNumber(report.clock.offsetSpreadMs) ? report.clock.offsetSpreadMs.toFixed(3) : ""}`
       );
     }
     lines.push(
@@ -781,7 +770,7 @@
           offset_ms: report.clock.offsetMs,
           offset_median_ms: report.clock.offsetMedianMs,
           offset_max_ms: report.clock.offsetMaxMs,
-          drift_ppm: report.clock.driftPpm,
+          offset_spread_ms: report.clock.offsetSpreadMs,
           batches: report.clock.batches,
           span_ms: report.clock.spanMs
         },
@@ -926,7 +915,7 @@
       "| `host_timezone` | IANA zone name and UTC offset of the host |",
       "| `device_N_side`, `device_N_firmware_version` | per-device provenance |",
       "| `device_N_clock_offset_ms` | host − device offset used for `host_time_est` (min-latency) |",
-      "| `device_N_clock_drift_ppm` | slope of (host_rx − device_time) vs device_time across FIFO batches; indicative only, dominated by retrieval jitter over short trials |",
+      "| `device_N_clock_offset_spread_ms` | max − min of (host_rx − device_time) across FIFO batches: the retrieval jitter, an upper bound on the `host_time_est` mapping error. No clock-drift estimate is exported because FIFO retrieval lag dominates over a trial |",
       "| `device_time_source`, `host_time_est_method`, `sampling_rate_hz_note`, `pressure_note`, `missing_value`, `read_hint` | fixed explanatory notes |",
       "",
       "## `*_markers.csv` columns",

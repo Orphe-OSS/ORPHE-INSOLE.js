@@ -912,6 +912,14 @@ h1 span {
   color: var(--warn);
 }
 
+.impulse-card .caution-line.weak {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #5f4400;
+  background: var(--warn-soft);
+}
+
 /* ── result ─────────────────────────────────────────────────────────── */
 .result-section,
 .how-section,

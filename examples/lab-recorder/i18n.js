@@ -109,6 +109,7 @@
       impulseTime: "端末時刻 / 経過",
       impulseWindow: "ウィンドウ",
       impulseProminence: "中央値比",
+      impulseWeak: "弱い候補: ピークが中央値の {ratio} 倍しかありません。踏み込みが無かった試行では通常の動きを拾っている可能性が高いので、却下を検討してください。",
       impulseCaution: "被験者に「開始時に踵で強く踏み込む」よう指示した試行でのみ意味を持ちます。歩行中の最大値を拾っている可能性があるため、必ず目視で確認してください。",
 
       liveLabel: "収録中のライブ状態",
@@ -156,7 +157,7 @@
       m_recovered: "drain / catch-up 回収", m_recovered_note: "停止後の回収フェーズで取れた serial 数",
       m_rate: "実測レート", m_rate_note: "(samples − 1) / 端末時刻スパン。公称 208 Hz",
       m_clock_offset: "clock offset", m_clock_offset_note: "host − device [ms]（最小遅延法）",
-      m_clock_drift: "clock drift", m_clock_drift_note: "バッチ到着から見た offset の傾き [ppm]。参考値",
+      m_clock_spread: "offset spread", m_clock_spread_note: "FIFO バッチ間の offset の最大−最小 [ms]。回収ジッタ＝host_time_est の誤差上界の目安",
       m_complete: "complete", m_complete_note: "missing = 0 かつ dropped = 0 かつ非 truncated",
       exportsLabel: "この試行の書き出し",
       csvHtml: '<i class="bi bi-download"></i> サンプル CSV',
@@ -316,6 +317,7 @@
       impulseTime: "device time / elapsed",
       impulseWindow: "window",
       impulseProminence: "peak ÷ median",
+      impulseWeak: "Weak candidate: the peak is only {ratio}× the median. If there was no stomp in this trial this is probably ordinary movement — consider rejecting it.",
       impulseCaution: "Meaningful only in trials where the participant was instructed to stomp firmly at the start. The peak may be an ordinary step, so always confirm visually.",
 
       liveLabel: "Live state while recording",
@@ -363,7 +365,7 @@
       m_recovered: "drain / catch-up", m_recovered_note: "Serials recovered after the stop button",
       m_rate: "measured rate", m_rate_note: "(samples − 1) / device-time span; nominal 208 Hz",
       m_clock_offset: "clock offset", m_clock_offset_note: "host − device [ms], min-latency method",
-      m_clock_drift: "clock drift", m_clock_drift_note: "Slope of the offset over FIFO batches [ppm]; indicative only",
+      m_clock_spread: "offset spread", m_clock_spread_note: "max − min of the offset across FIFO batches [ms]; retrieval jitter, an upper bound on the host_time_est error",
       m_complete: "complete", m_complete_note: "missing = 0 and dropped = 0 and not truncated",
       exportsLabel: "Exports for this trial",
       csvHtml: '<i class="bi bi-download"></i> Samples CSV',

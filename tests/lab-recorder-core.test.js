@@ -95,7 +95,8 @@ function makeSeries(startSerial, packets, tStartMs, options = {}) {
     assert.equal(map.offsetMedianMs, base + 350);
     assert.equal(map.batches, 4);
     assert.equal(map.spanMs, 1500);
-    assert.ok(Number.isFinite(map.driftPpm));
+    assert.equal(map.offsetSpreadMs, 350, 'spread = max − min');
+    assert.equal(Object.prototype.hasOwnProperty.call(map, 'driftPpm'), false, 'clock drift は出力しない（FIFO 追従遅れが支配的で誤解を招く）');
     assert.equal(Core.deviceToHostMs(map, 1234), base + 1484);
     assert.equal(Core.hostToDeviceMs(map, base + 1484), 1234);
 
@@ -261,6 +262,8 @@ function makeTrial(options = {}) {
     assert.ok(headerLines.some((line) => /^# recording_start_host: 2023-11-15T07:13:19\.500\+09:00$/.test(line)), headerLines.join('\n'));
     assert.ok(headerLines.some((line) => line.startsWith('# device_time_source:')));
     assert.ok(headerLines.some((line) => line.startsWith('# host_time_est_method:')));
+    assert.ok(headerLines.some((line) => /^# device_0_clock_offset_spread_ms: \d+\.\d{3}$/.test(line)), headerLines.join('\n'));
+    assert.equal(headerLines.some((line) => /drift/.test(line)), false);
 
     const dataLines = lines.slice(headerIndex + 1);
     assert.equal(dataLines.length, 72 + 80, 'device0 72 行 + device1 80 行');
@@ -344,6 +347,8 @@ function makeTrial(options = {}) {
     assert.equal(json.metadata.notes, 'line1\nline2', 'JSON は改行を保持する');
     assert.equal(json.devices[0].device_id, 0);
     assert.equal(json.devices[0].clock.method, 'min-latency');
+    assert.ok(Number.isFinite(json.devices[0].clock.offset_spread_ms));
+    assert.equal('drift_ppm' in json.devices[0].clock, false);
     assert.equal(json.devices[0].impulse_candidate.status, 'pending');
     assert.equal(json.markers.length, 2);
     assert.equal(json.loss_report.devices[0].missing, 1);

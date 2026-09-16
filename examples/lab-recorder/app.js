@@ -29,11 +29,12 @@
   const MAX_LOG_ENTRIES = 500;
   const STORAGE_KEY = "orphe-lab-recorder:v1";
   const DOWNLOAD_STAGGER_MS = 350;
+  const WEAK_IMPULSE_RATIO = 2;        // ピーク / 中央値 がこれ未満なら「弱い候補」と注記（実測: 踏み込みなし 1.05×、あり 4.4〜6.3×）
 
   const METRIC_ROWS = [
     "m_duration", "m_samples", "m_first", "m_last", "m_expected", "m_received", "m_missing",
     "m_missing_rate", "m_ranges", "m_dropped", "m_max_lag", "m_recovered", "m_rate",
-    "m_clock_offset", "m_clock_drift", "m_complete"
+    "m_clock_offset", "m_clock_spread", "m_complete"
   ];
 
   const dom = {};
@@ -695,6 +696,9 @@
         impulse
           ? `<dl class="impulse-facts">${facts.map(([key, value]) => `<div><dt>${escapeHtml(t(key))}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`
           : `<p class="empty-note">${escapeHtml(t("impulseNone"))}</p>`,
+        impulse && impulse.prominence !== null && impulse.prominence < WEAK_IMPULSE_RATIO
+          ? `<p class="caution-line weak"><i class="bi bi-exclamation-circle" aria-hidden="true"></i> <span>${escapeHtml(t("impulseWeak", { ratio: impulse.prominence.toFixed(2) }))}</span></p>`
+          : "",
         impulse ? [
           '<div class="actions">',
           `<button type="button" class="button secondary tiny" data-decision="accepted" ${status === "accepted" ? "disabled" : ""}>${escapeHtml(t("impulseAccept"))}</button>`,
@@ -883,7 +887,8 @@
       setMetric(id, "m_rate", report.measuredRateHz === null ? t("valueEmpty") : `${report.measuredRateHz.toFixed(2)} Hz`,
         report.measuredRateHz !== null && Math.abs(report.measuredRateHz - Core.NOMINAL_IMU_ODR_HZ) > 2 ? "warn" : null);
       setMetric(id, "m_clock_offset", report.clock.available ? `${report.clock.offsetMs.toFixed(1)} ms (n=${report.clock.batches})` : t("valueEmpty"));
-      setMetric(id, "m_clock_drift", Number.isFinite(report.clock.driftPpm) ? `${report.clock.driftPpm.toFixed(1)} ppm` : t("valueEmpty"));
+      setMetric(id, "m_clock_spread", Number.isFinite(report.clock.offsetSpreadMs) ? `${report.clock.offsetSpreadMs.toFixed(1)} ms` : t("valueEmpty"),
+        Number.isFinite(report.clock.offsetSpreadMs) && report.clock.offsetSpreadMs > 500 ? "warn" : null);
       setMetric(id, "m_complete", t(report.complete ? "yes" : "no"), report.complete ? "ok" : "bad");
     }
 
