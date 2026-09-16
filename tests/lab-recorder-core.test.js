@@ -466,4 +466,120 @@ function makeTrial(options = {}) {
     assert.equal(/fifo-guide/.test(html), false);
 }
 
+// ── charts.js: store / 数値処理（Canvas 非依存の部分） ─────────────────────
+{
+    const Charts = require('../examples/lab-recorder/charts.js');
+    assert.deepEqual(Charts.KINDS, ['acc', 'gyro', 'press']);
+    assert.equal(Charts.CHANNELS.press.length, 6);
+    assert.equal(Charts.COLORS.press.length, 6);
+
+    // niceRange: 対称は 0 中心・最小レンジで下限、非対称は 0 始まり
+    assert.deepEqual(Charts.niceRange(-0.3, 1.1, { symmetric: true, minSpan: 2 }), { min: -2, max: 2 });
+    assert.deepEqual(Charts.niceRange(-4.2, 6.37, { symmetric: true, minSpan: 2 }), { min: -10, max: 10 });
+    assert.deepEqual(Charts.niceRange(200, 800, { symmetric: false, minSpan: 1000 }), { min: 0, max: 2000 });
+    assert.deepEqual(Charts.niceRange(0, 5976, { symmetric: false, minSpan: 1000 }), { min: 0, max: 10000 });
+    assert.deepEqual(Charts.niceRange(NaN, NaN, { symmetric: true, minSpan: 2 }), { min: -2, max: 2 });
+    assert.equal(Charts.niceCeil(0), 1);
+    assert.equal(Charts.niceCeil(1.05), 2);
+    assert.equal(Charts.niceCeil(230), 250);
+    assert.equal(Charts.niceStep(2.3), 5);
+
+    // appendSamples: 順不同（再要求分）が dirty になり、sort で時刻順へ。日跨ぎも吸収
+    const store = Charts.createStore();
+    const batchA = makeSeries(10, 3, 86399950);        // 23:59:59.950 → 日跨ぎ
+    const batchB = makeSeries(13, 2, 86399950 + 3 * Core.PACKET_INTERVAL_MS);
+    assert.equal(Charts.appendSamples(store, batchB), 8);
+    // trim なしで追記すると順序が崩れて dirty になる
+    const raw = Charts.createStore();
+    Charts.appendSamples(raw, batchB, { keepSeconds: 0 });
+    Charts.appendSamples(raw, batchA, { keepSeconds: 0 });
+    assert.equal(raw.dirty, true, '古い serial が後から届くと dirty');
+    Charts.sortStore(raw);
+    assert.equal(raw.dirty, false);
+    // 既定（trim あり）では追記時に並べ替えまで済む
+    assert.equal(Charts.appendSamples(store, batchA), 12, '古い serial が後から届く');
+    assert.equal(store.dirty, false, 'trim が sort を済ませる');
+    for (let i = 1; i < store.x.length; i += 1) assert.ok(store.x[i] > store.x[i - 1], `x 単調増加 index=${i}`);
+    assert.equal(store.x.length, 20);
+    // baseMs は最初に届いた batchB の先頭。batchA はそれより前なので x は負
+    const negatives = store.x.filter((x) => x < 0).length;
+    assert.equal(negatives, 12, 'batchA（12 サンプル）は基準より前なので負の x');
+    assert.equal(store.serial[0], 10);
+    // 末尾のサンプル（日跨ぎ後）も基準からの秒として正しく連続する
+    const ext = Charts.extent(store);
+    assert.ok(ext.x1 - ext.x0 > 0.09 && ext.x1 - ext.x0 < 0.1, `span ${ext.x1 - ext.x0}`);
+    assert.equal(store.acc[2][0], 1);
+    assert.equal(store.press[5][0], 60);
+
+    // trim: keepSeconds より古いものを落とす
+    const long = Charts.createStore();
+    Charts.appendSamples(long, makeSeries(0, 600, 1000), { keepSeconds: 5 }); // 約 11.5 s
+    const longExt = Charts.extent(long);
+    assert.ok(longExt.x1 - longExt.x0 <= 5.05 && longExt.x1 - longExt.x0 > 4.9, `trim 後 span ${longExt.x1 - longExt.x0}`);
+    assert.equal(long.x.length, long.serial.length);
+    assert.equal(long.x.length, long.press[0].length);
+
+    // fromEntries + gapShades: 欠損 serial の区間だけ網掛け
+    const samples = makeSeries(100, 20, 36000000, { skip: [105, 106, 112] });
+    const entries = Core.orderSamples(samples);
+    const xOf = (entry) => (entry.device_time_ms - 36000000) / 1000;
+    const review = Charts.fromEntries(entries, xOf);
+    assert.equal(review.x.length, 68);
+    assert.equal(review.x[0], 0);
+    const shades = Charts.gapShades(entries, xOf);
+    assert.equal(shades.length, 2);
+    assert.equal(shades[0].serials, 2);
+    assert.equal(shades[1].serials, 1);
+    assert.ok(Math.abs(shades[0].x0 - (4 * Core.PACKET_INTERVAL_MS + 3 * Core.FRAME_INTERVAL_MS) / 1000) < 1e-9, '欠損直前の最後の frame から');
+    assert.ok(Math.abs(shades[0].x1 - (7 * Core.PACKET_INTERVAL_MS) / 1000) < 1e-9, '欠損直後の最初の frame まで');
+    assert.deepEqual(Charts.gapShades(Core.orderSamples(makeSeries(1, 5, 0)), xOf), []);
+
+    // envelope: 列ごとの min/max がピークを保つ
+    const xs = review.x;
+    const ys = review.acc[2].map((v, i) => (i === 30 ? 9 : v));
+    const env = Charts.envelope(xs, ys, xs[0], xs[xs.length - 1], 8);
+    assert.equal(env.length, 8);
+    assert.equal(Math.max(...env.filter(Boolean).map((c) => c.max)), 9, 'ピークが残る');
+    assert.equal(Math.min(...env.filter(Boolean).map((c) => c.min)), 1);
+    assert.deepEqual(Charts.envelope(xs, ys, 5, 5, 4), [null, null, null, null]);
+
+    // indexRange / nearestIndex / rangeOf
+    assert.deepEqual(Charts.indexRange([0, 1, 2, 3, 4], 1, 3), [1, 4]);
+    assert.equal(Charts.nearestIndex([0, 1, 2, 3], 1.4), 1);
+    assert.equal(Charts.nearestIndex([0, 1, 2, 3], 1.6), 2);
+    assert.equal(Charts.nearestIndex([0, 1, 2, 3], -5), 0);
+    assert.equal(Charts.nearestIndex([0, 1, 2, 3], 99), 3);
+    assert.equal(Charts.nearestIndex([], 1), -1);
+    assert.deepEqual(Charts.rangeOf(review, 'press', 0, 1), { min: 10, max: 60 });
+    assert.equal(Charts.rangeOf(Charts.createStore(), 'acc', 0, 1), null);
+
+    // resolveView: ライブは末尾追従、all は全体、zoom 優先、空は既定幅
+    const liveView = Charts.resolveView(long, '5', null);
+    assert.ok(Math.abs(liveView.x1 - longExt.x1) < 1e-9 && Math.abs(liveView.x1 - liveView.x0 - 5) < 1e-9);
+    const allView = Charts.resolveView(review, 'all', null);
+    assert.equal(allView.x0, 0);
+    assert.ok(allView.x1 >= review.x[review.x.length - 1]);
+    assert.deepEqual(Charts.resolveView(review, 'all', { x0: 0.1, x1: 0.2 }), { x0: 0.1, x1: 0.2 });
+    assert.deepEqual(Charts.resolveView(Charts.createStore(), '10', null), { x0: 0, x1: 10 });
+
+    // readoutAt / formatTick
+    const line = Charts.readoutAt(review, 0);
+    assert.match(line, /^t=0\.000 s {2}· {2}serial 100 {2}· {2}acc 0\.00 \/ 0\.00 \/ 1\.00 G/);
+    assert.match(line, /press 10 20 30 40 50 60$/);
+    assert.equal(Charts.readoutAt(review, 999), '');
+    assert.equal(Charts.formatTick(2), '2');
+    assert.equal(Charts.formatTick(0.5), '0.50');
+    assert.equal(Charts.formatTick(12.5), '12.5');
+    assert.equal(Charts.formatTick(2000), '2000');
+
+    // ページ資産: charts.js を読み込み、app.js が store を使う
+    const html = read('index.html');
+    assert.match(html, /charts\.js/);
+    assert.ok(html.indexOf('charts.js') < html.indexOf('app.js?'), 'charts.js は app.js より前に読み込む');
+    const app = read('app.js');
+    assert.match(app, /Charts\.appendSamples\(/);
+    assert.match(app, /Charts\.fromEntries\(/);
+    assert.match(app, /Charts\.gapShades\(/);
+}
+
 console.log('lab-recorder-core tests passed');

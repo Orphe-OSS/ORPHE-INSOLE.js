@@ -24,6 +24,7 @@
 | 6 | **欠損レポート** | `expected / received / missing / missing_rate / dropped / max_lag / missing_ranges / drain_recovered / catchup_recovered / measured_rate_hz / truncated / complete`。試行 JSON に内包し、単独 JSON でも保存可 |
 | 7 | **試行の連続実行** | 「保存して次へ」でサンプル CSV・マーカー CSV・試行 JSON を保存し、メタデータを引き継いで次の試行へ。セッション内の試行一覧（要約）を画面に持ち、`*_trials.csv` / セッション JSON で書き出し |
 | 8 | **左右2台のアライメント表示** | 収録開始からの serial の進みの差（packets ≈ ms 換算）と端末時刻差をライブ表示 |
+| 9 | **IMU / FSR 生データグラフ** | デバイスごとに ACC（x/y/z [G]）・GYRO（x/y/z [dps]）・PRESS（1〜6 [ADC]）の3面を Canvas で描画。収録中は FIFO バッチ到着ごとに直近 5 / 10 / 30 秒（または全体）を追記（再要求で後から届いた分も時刻順に差し込む）。停止後は試行全体に切り替わり、マーカー線・インパルス候補線（状態で色分け）・欠損区間の網掛けを重ねる。ドラッグでズーム、ダブルクリックで解除、ホバーで値を読める。多点は列ごとの min/max 包絡で間引きピークを保つ |
 
 ### やらないこと
 
@@ -59,6 +60,7 @@ examples/lab-recorder/
 ├── style.css
 ├── i18n.js            # LabRecorderI18n（ja / en、?lang= と端末言語・TZ による既定）
 ├── recorder-core.js   # LabRecorderCore（純関数。時刻付け・突き合わせ・連続性・CSV/JSON/辞書生成）
+├── charts.js          # LabRecorderCharts（IMU / FSR 生データの Canvas グラフ。store と数値処理は Node でテスト）
 ├── app.js             # Toolkit セッション（startMeasurement / stopMeasurement）を呼ぶ UI
 └── README.md
 tests/lab-recorder-core.test.js   # Node 単体テスト（npm test に含まれる）

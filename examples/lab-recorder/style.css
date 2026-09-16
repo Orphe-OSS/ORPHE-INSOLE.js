@@ -825,6 +825,136 @@ h1 span {
   font-size: 0.76rem;
 }
 
+/* ── raw data charts ────────────────────────────────────────────────── */
+.charts-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 12px;
+}
+
+.chart-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #8ea0ac;
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chart-window select {
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #e8eef2;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: #b7c4cc;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.chart-legend i.shade {
+  width: 12px;
+  height: 10px;
+  background: rgba(255, 117, 89, 0.35);
+}
+
+.charts-toolbar .hint {
+  margin: 0;
+  flex-basis: 100%;
+}
+
+.card.dark .button.ghost {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e8eef2;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chart-rows {
+  display: grid;
+  gap: 14px;
+}
+
+.chart-row {
+  display: grid;
+  gap: 6px;
+}
+
+.chart-row[hidden] {
+  display: none;
+}
+
+.chart-row-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.chart-row-name i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.chart-axis-note {
+  color: #8ea0ac;
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+.chart-canvases {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.chart-canvas {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border-radius: 8px;
+  background: #0b141b;
+  cursor: crosshair;
+}
+
+.chart-readout {
+  min-height: 1.2em;
+  margin: 0;
+  color: #b7c4cc;
+  font-size: 0.68rem;
+  white-space: pre-wrap;
+}
+
 /* ── impulse ────────────────────────────────────────────────────────── */
 .impulse-cards {
   display: grid;
@@ -1114,5 +1244,9 @@ footer {
   .live-stats,
   .impulse-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chart-canvases {
+    grid-template-columns: 1fr;
   }
 }

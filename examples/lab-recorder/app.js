@@ -19,8 +19,10 @@
    */
 
   const Core = root.LabRecorderCore;
+  const Charts = root.LabRecorderCharts;
   const I18n = root.LabRecorderI18n;
   if (!Core) throw new Error("lab-recorder: recorder-core.js must be loaded before app.js");
+  if (!Charts) throw new Error("lab-recorder: charts.js must be loaded before app.js");
   if (!I18n) throw new Error("lab-recorder: i18n.js must be loaded before app.js");
 
   const DEVICE_IDS = [0, 1];
@@ -57,6 +59,9 @@
       firmwareVersion: null,
       inRun: false,
       live: createLive(),
+      chartStore: Charts.createStore(),   // 収録中のライブ描画用
+      reviewStore: null,                  // 停止後の試行全体
+      reviewOverlays: null,
       result: null,
       report: null
     };
@@ -76,7 +81,8 @@
     sdkVersion: null,
     sdkVersionDate: null,
     sourceCopy: null,
-    renderQueued: false
+    renderQueued: false,
+    chart: { window: "10", liveWindow: "10", zoom: null, hoverX: null, drag: null, renderQueued: false }
   };
 
   const t = (key, params) => I18n.t(key, params);
@@ -94,8 +100,10 @@
     restoreMetadata();
     buildMetricTable();
     buildLiveGrid();
+    buildChartRows();
     syncDeviceVisibility();   // live カード生成後に、未接続の 2 台目を隠す
     wireControls();
+    wireCharts();
     wireKeyboard();
     for (const id of DEVICE_IDS) installDevice(id);
     setPhase("idle");
@@ -103,6 +111,7 @@
     renderImpulse();
     renderTrials();
     renderLive();
+    renderCharts();
     renderEnvLine();
     resolveSdkVersion();
     log("info", "logPageReady");
@@ -116,6 +125,8 @@
       renderTrials();
       renderResult();
       renderLive();
+      buildChartLegend();
+      renderCharts();
       renderLog();
       renderEnvLine();
       dom.recordButton.innerHTML = t(state.recording ? "recordStopHtml" : "recordStartHtml");
@@ -130,6 +141,7 @@
       "trials-body", "trials-empty", "session-csv-button", "session-json-button", "dictionary-button", "clear-session-button",
       "marker-button", "marker-label", "marker-body", "marker-empty",
       "live-grid", "alignment-canvas", "alignment-text",
+      "chart-window", "chart-legend", "chart-reset-zoom", "chart-rows",
       "impulse-cards", "impulse-empty",
       "result-card", "result-verdict", "result-summary", "metric-table-body", "metric-head-0", "metric-head-1",
       "csv-button", "markers-csv-button", "trial-json-button", "loss-json-button",
@@ -242,6 +254,8 @@
       if (dom.metricHead[id]) dom.metricHead[id].textContent = deviceLabel(id);
       const name = root.document.querySelector(`.live-device[data-device="${id}"] .live-name b`);
       if (name) name.textContent = deviceLabel(id);
+      const chartName = root.document.querySelector(`.chart-row[data-device="${id}"] .chart-row-name b`);
+      if (chartName) chartName.textContent = deviceLabel(id);
     }
   }
 
@@ -253,6 +267,8 @@
       root.document.querySelectorAll(`#metric-table-body td[data-device="${id}"]`).forEach((cell) => { cell.hidden = !show; });
       const card = root.document.querySelector(`.live-device[data-device="${id}"]`);
       if (card) card.hidden = !show;
+      const row = root.document.querySelector(`.chart-row[data-device="${id}"]`);
+      if (row) row.hidden = !show;
     }
     refreshDeviceNames();
   }
@@ -363,7 +379,9 @@
         serials: Array.from(serials)
       });
     }
+    Charts.appendSamples(entry.chartStore, samples);
     queueLiveRender();
+    queueChartRender();
   }
 
   function handleFifoProgress(id, info) {
@@ -419,7 +437,200 @@
     });
     dom.copyLogButton.addEventListener("click", copyLog);
     dom.clearLogButton.addEventListener("click", () => { logEntries.length = 0; renderLog(); });
-    root.addEventListener("resize", drawAlignment);
+    root.addEventListener("resize", () => { drawAlignment(); renderCharts(); });
+  }
+
+  // ── IMU / FSR グラフ ───────────────────────────────────────────────
+  function buildChartRows() {
+    dom.chartRows.innerHTML = "";
+    for (const id of DEVICE_IDS) {
+      const row = root.document.createElement("div");
+      row.className = "chart-row";
+      row.dataset.device = String(id);
+      row.innerHTML = [
+        `<div class="chart-row-name"><i style="background:${DEVICE_COLORS[id]}"></i><b></b><span class="chart-axis-note"></span></div>`,
+        '<div class="chart-canvases">',
+        Charts.KINDS.map((kind) => `<canvas class="chart-canvas" data-kind="${kind}" height="150"></canvas>`).join(""),
+        "</div>",
+        '<p class="chart-readout mono"></p>'
+      ].join("");
+      dom.chartRows.appendChild(row);
+    }
+    buildChartLegend();
+  }
+
+  function buildChartLegend() {
+    const items = [];
+    Charts.CHANNELS.acc.forEach((axis, index) => items.push([Charts.COLORS.acc[index], `acc/gyro ${axis}`]));
+    Charts.CHANNELS.press.forEach((channel, index) => items.push([Charts.COLORS.press[index], `press ${channel}`]));
+    items.push([Charts.MARKER_COLOR, t("chartLegendMarker")]);
+    items.push([Charts.IMPULSE_COLORS.pending, t("chartLegendImpulse")]);
+    dom.chartLegend.innerHTML = items.map(([color, label]) => (
+      `<span><i style="background:${color}"></i>${escapeHtml(label)}</span>`
+    )).join("") + `<span><i class="shade"></i>${escapeHtml(t("chartLegendMissing"))}</span>`;
+  }
+
+  function isReviewCharts() {
+    return state.phase === "review" && DEVICE_IDS.some((id) => device(id).reviewStore);
+  }
+
+  function setChartWindow(value) {
+    state.chart.window = value;
+    if (dom.chartWindow.value !== value) dom.chartWindow.value = value;
+  }
+
+  function wireCharts() {
+    dom.chartWindow.addEventListener("change", () => {
+      state.chart.window = dom.chartWindow.value;
+      if (!isReviewCharts()) state.chart.liveWindow = dom.chartWindow.value;
+      state.chart.zoom = null;
+      renderCharts();
+    });
+    dom.chartResetZoom.addEventListener("click", () => {
+      state.chart.zoom = null;
+      renderCharts();
+    });
+    dom.chartRows.addEventListener("mousemove", (event) => {
+      const canvas = event.target.closest ? event.target.closest("canvas.chart-canvas") : null;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const view = currentChartView(Number(canvas.closest(".chart-row").dataset.device));
+      const x = Charts.pixelToX(canvas, event.clientX - rect.left, view);
+      state.chart.hoverX = x;
+      if (state.chart.drag) state.chart.drag.x1 = x;
+      queueChartRender();
+    });
+    dom.chartRows.addEventListener("mouseleave", () => {
+      state.chart.hoverX = null;
+      queueChartRender();
+    });
+    dom.chartRows.addEventListener("mousedown", (event) => {
+      const canvas = event.target.closest ? event.target.closest("canvas.chart-canvas") : null;
+      if (!canvas || !isReviewCharts()) return;
+      const rect = canvas.getBoundingClientRect();
+      const view = currentChartView(Number(canvas.closest(".chart-row").dataset.device));
+      const x = Charts.pixelToX(canvas, event.clientX - rect.left, view);
+      state.chart.drag = { x0: x, x1: x };
+      event.preventDefault();
+    });
+    root.document.addEventListener("mouseup", () => {
+      const drag = state.chart.drag;
+      if (!drag) return;
+      state.chart.drag = null;
+      const lo = Math.min(drag.x0, drag.x1);
+      const hi = Math.max(drag.x0, drag.x1);
+      if (hi - lo > 0.05) state.chart.zoom = { x0: lo, x1: hi };
+      renderCharts();
+    });
+    dom.chartRows.addEventListener("dblclick", () => {
+      state.chart.zoom = null;
+      renderCharts();
+    });
+  }
+
+  function chartStoreFor(id) {
+    const entry = device(id);
+    return isReviewCharts() ? entry.reviewStore : entry.chartStore;
+  }
+
+  function currentChartView(id) {
+    return Charts.resolveView(chartStoreFor(id), state.chart.window, state.chart.zoom);
+  }
+
+  /** 停止後: analyzeDevice の entries から試行全体の store と重ね描き（マーカー・候補・欠損）を作る */
+  function buildReviewCharts() {
+    if (!state.trial) return;
+    const aligned = Core.alignMarkers(state.trial);
+    for (const report of state.trial.devices) {
+      const entry = device(report.deviceId);
+      const firstDeviceTime = report.entries.length > 0 ? report.entries[0].device_time_ms : 0;
+      const clockOk = report.clock.available;
+      const xOfDeviceTime = (deviceMs) => {
+        if (!Number.isFinite(deviceMs)) return null;
+        if (clockOk) return (Core.deviceToHostMs(report.clock, deviceMs) - state.trial.startedHostMs) / 1000;
+        return (deviceMs - firstDeviceTime) / 1000;
+      };
+      const xOf = (item) => xOfDeviceTime(item.device_time_ms);
+      entry.reviewStore = Charts.fromEntries(report.entries, xOf);
+      const markers = aligned.map((marker) => {
+        const detail = marker.devices[report.deviceId];
+        const x = detail && Number.isFinite(detail.aligned_device_time_ms)
+          ? xOfDeviceTime(detail.aligned_device_time_ms)
+          : (clockOk ? (marker.host_time_ms - state.trial.startedHostMs) / 1000 : null);
+        return { x, label: `#${marker.marker_index}${marker.label ? ` ${marker.label}` : ""}`, color: Charts.MARKER_COLOR };
+      }).filter((marker) => Number.isFinite(marker.x));
+      if (report.impulse) {
+        markers.push({
+          x: xOfDeviceTime(report.impulse.device_time_ms),
+          label: `impulse ${report.impulse.acc_norm_g.toFixed(1)}G (${report.impulse.status})`,
+          color: Charts.IMPULSE_COLORS[report.impulse.status] || Charts.IMPULSE_COLORS.pending,
+          dashed: true
+        });
+      }
+      entry.reviewOverlays = { markers, shades: Charts.gapShades(report.entries, xOf), axisKey: clockOk ? "chartAxisReview" : "chartAxisLive" };
+    }
+    state.chart.zoom = null;
+    setChartWindow("all");
+  }
+
+  /** 収録中のマーカー線: 打刻ホスト時刻を、そのデバイスの直近バッチの (hostRx − 端末時刻) で端末時間軸へ写す */
+  function liveMarkerOverlays(id) {
+    const entry = device(id);
+    const store = entry.chartStore;
+    const batches = entry.live.batches;
+    if (store.baseMs === null || batches.length === 0) return [];
+    let offset = Infinity;
+    for (const batch of batches) {
+      if (Number.isFinite(batch.deviceTimeMaxMs)) offset = Math.min(offset, batch.hostRxMs - batch.deviceTimeMaxMs);
+    }
+    if (!Number.isFinite(offset)) return [];
+    return state.markers.map((marker) => ({
+      x: (marker.host_time_ms - offset - store.baseMs) / 1000,
+      label: `#${marker.marker_index}`,
+      color: Charts.MARKER_COLOR
+    }));
+  }
+
+  function queueChartRender() {
+    if (state.chart.renderQueued) return;
+    state.chart.renderQueued = true;
+    root.requestAnimationFrame(() => {
+      state.chart.renderQueued = false;
+      renderCharts();
+    });
+  }
+
+  function renderCharts() {
+    if (!dom.chartRows) return;
+    const review = isReviewCharts();
+    const ratio = root.devicePixelRatio || 1;
+    dom.chartResetZoom.hidden = !state.chart.zoom;
+    for (const id of DEVICE_IDS) {
+      const row = dom.chartRows.querySelector(`.chart-row[data-device="${id}"]`);
+      if (!row || row.hidden) continue;
+      const entry = device(id);
+      const store = chartStoreFor(id);
+      const view = currentChartView(id);
+      const overlays = review && entry.reviewOverlays ? entry.reviewOverlays : { markers: liveMarkerOverlays(id), shades: [] };
+      const drag = state.chart.drag;
+      const shades = drag ? [...overlays.shades, { x0: Math.min(drag.x0, drag.x1), x1: Math.max(drag.x0, drag.x1) }] : overlays.shades;
+      const empty = store && store.x.length > 0 ? t("chartEmptyWindow") : t("chartEmptyLive");
+      row.querySelectorAll("canvas.chart-canvas").forEach((canvas) => {
+        const kind = canvas.dataset.kind;
+        Charts.drawPanel(canvas, store, kind, view, {
+          markers: overlays.markers,
+          shades,
+          hoverX: state.chart.hoverX,
+          title: t(kind === "acc" ? "chartAcc" : kind === "gyro" ? "chartGyro" : "chartPress"),
+          emptyText: empty,
+          ratio
+        });
+      });
+      row.querySelector(".chart-axis-note").textContent = t(review && overlays.axisKey ? overlays.axisKey : "chartAxisLive");
+      const readout = row.querySelector(".chart-readout");
+      const index = store ? Charts.nearestIndex(store.x, state.chart.hoverX) : -1;
+      readout.textContent = index >= 0 && Number.isFinite(state.chart.hoverX) ? Charts.readoutAt(store, index) : t("chartReadoutEmpty");
+    }
   }
 
   function wireKeyboard() {
@@ -474,6 +685,9 @@
     state.recording = true;
     state.startedHostMs = Date.now();
     state.markers = [];
+    state.chart.zoom = null;
+    state.chart.hoverX = null;
+    setChartWindow(state.chart.liveWindow);
     state.trial = {
       metadata,
       startedHostMs: state.startedHostMs,
@@ -556,11 +770,13 @@
         log("warn", "logImpulseNone", { device: deviceLabel(report.deviceId) });
       }
     }
+    buildReviewCharts();
     setPhase("review");
     renderResult();
     renderMarkers();
     renderImpulse();
     renderLive();
+    renderCharts();
   }
 
   function analyzeDeviceResult(id, result) {
@@ -601,6 +817,9 @@
       const entry = device(id);
       entry.inRun = false;
       entry.live = createLive();
+      entry.chartStore = Charts.createStore();
+      entry.reviewStore = null;
+      entry.reviewOverlays = null;
       entry.result = null;
       entry.report = null;
     }
@@ -610,6 +829,7 @@
     renderMarkers();
     renderImpulse();
     renderLive();
+    renderCharts();
   }
 
   // ── 同期マーカー ──────────────────────────────────────────────────
@@ -636,6 +856,7 @@
       serials: state.runDeviceIds.map((id) => `${deviceLabel(id)}=${lastReceived[id] === null ? "—" : lastReceived[id]}`).join(", ")
     });
     renderMarkers();
+    queueChartRender();
   }
 
   function renderMarkers() {
@@ -713,6 +934,8 @@
           report.impulse.status = button.dataset.decision;
           log("info", "logImpulseDecision", { device: deviceLabel(report.deviceId), status: t(statusKeyFor(report.impulse.status)) });
           renderImpulse();
+          buildReviewCharts();
+          renderCharts();
         });
       });
       container.appendChild(card);
@@ -960,9 +1183,15 @@
     state.runDeviceIds = [];
     for (const id of DEVICE_IDS) {
       device(id).live = createLive();
+      device(id).chartStore = Charts.createStore();
+      device(id).reviewStore = null;
+      device(id).reviewOverlays = null;
       device(id).result = null;
       device(id).report = null;
     }
+    state.chart.zoom = null;
+    state.chart.hoverX = null;
+    setChartWindow(state.chart.liveWindow);
     dom.elapsedText.textContent = "0.0 s";
     setPhase(connectedIds().length > 0 ? "ready" : "idle");
     syncDeviceVisibility();
@@ -970,6 +1199,7 @@
     renderMarkers();
     renderImpulse();
     renderLive();
+    renderCharts();
   }
 
   function renderTrials() {

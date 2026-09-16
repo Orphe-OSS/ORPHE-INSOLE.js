@@ -171,6 +171,32 @@
         <p class="empty-note" id="marker-empty" data-i18n="markerEmpty"></p>
       </section>
 
+      <!-- IMU / FSR 生データグラフ（収録中はライブ、停止後は試行全体） -->
+      <section class="charts-section card dark" aria-label="IMU と圧力の生データグラフ" data-i18n-aria-label="chartsLabel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="chartsEyebrow">RAW DATA</p>
+            <h2 data-i18n="chartsTitle"></h2>
+          </div>
+          <p data-i18n="chartsDescription"></p>
+        </div>
+        <div class="charts-toolbar">
+          <label class="chart-window">
+            <span data-i18n="chartWindowLabel"></span>
+            <select id="chart-window">
+              <option value="5" data-i18n="chartWindow5"></option>
+              <option value="10" selected data-i18n="chartWindow10"></option>
+              <option value="30" data-i18n="chartWindow30"></option>
+              <option value="all" data-i18n="chartWindowAll"></option>
+            </select>
+          </label>
+          <div class="chart-legend" id="chart-legend" aria-hidden="true"></div>
+          <button id="chart-reset-zoom" class="button ghost tiny" type="button" hidden data-i18n-html="chartResetZoomHtml"></button>
+          <span class="hint" id="chart-zoom-hint" data-i18n="chartZoomHint"></span>
+        </div>
+        <div id="chart-rows" class="chart-rows"></div>
+      </section>
+
       <!-- ライブ -->
       <section class="live-section card dark" aria-label="収録中のライブ状態" data-i18n-aria-label="liveLabel">
         <div class="section-heading">
@@ -313,6 +339,7 @@ const csv = LabRecorderCore.buildTrialCsv({ metadata, devices: [report], markers
   <script src="../../src/InsoleFifo.js"></script>
   <script src="../../src/InsoleToolkit.js"></script>
   <script src="./recorder-core.js?v=20260916-lab-recorder"></script>
+  <script src="./charts.js?v=20260916-lab-recorder"></script>
   <script src="./i18n.js?v=20260916-lab-recorder"></script>
   <script src="./app.js?v=20260916-lab-recorder"></script>
 </body>
