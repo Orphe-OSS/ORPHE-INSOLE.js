@@ -216,7 +216,9 @@
     "landing_force", "strike_angle_deg", "foot_strike",
     "pronation_deg", "pronation_type", "pronation_z_deg", "calorie"
   ]);
-  const META_CSV_FIELDS = Object.freeze(["side", "device_id", "recorded_at", "source"]);
+  // fw_version: FW 版で pitch/roll の入れ替わりや Step Analysis 非対応など既知の差異があるため、後日の解析で必ず参照できるよう行ごとに持つ。
+  // recorded_at: ISO 8601 の UTC（末尾 Z）。ローカル時刻や無指定のタイムゾーンは使わない。
+  const META_CSV_FIELDS = Object.freeze(["side", "device_id", "fw_version", "recorded_at", "source"]);
   const CSV_HEADER = META_CSV_FIELDS.concat(ROW_CSV_FIELDS).join(",");
 
   function csvCell(value) {
@@ -244,14 +246,19 @@
     };
     merged.sort((a, b) => receivedAt(a) - receivedAt(b));
 
+    const knownVersions = options.firmwareVersions || {};
     const lines = [CSV_HEADER];
     for (const entry of merged) {
       const row = entry.row;
       const deviceId = finite(row._device_id);
+      const hasDevice = deviceId !== null && deviceId >= 0;
       const stamp = finite(row._received_at);
+      // 記録時点の FW 版を優先し、取得前に届いた歩は保存時点で判明している同デバイスの版で補う。
+      const firmware = row._fw_version || (hasDevice ? knownVersions[deviceId] : null) || null;
       const meta = [
         entry.side,
-        deviceId !== null && deviceId >= 0 ? deviceId : null,
+        hasDevice ? deviceId : null,
+        firmware,
         stamp === null ? null : new Date(stamp).toISOString(),
         options.source || null
       ];

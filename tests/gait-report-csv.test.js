@@ -10,8 +10,16 @@ const Stats = require("../examples/gait-report/report.js");
 const Gait = require("../src/InsoleGait.js");
 
 let passed = 0;
+const pendingAsync = [];
 function test(name, fn) {
-  fn();
+  const result = fn();
+  if (result && typeof result.then === "function") {
+    pendingAsync.push(result.then(() => {
+      passed += 1;
+      console.log(`  ok - ${name}`);
+    }));
+    return;
+  }
   passed += 1;
   console.log(`  ok - ${name}`);
 }
@@ -20,6 +28,7 @@ function test(name, fn) {
 
 test("row columns match OrpheInsoleGait.CSV_HEADER (reference-implementation compatible order)", () => {
   assert.deepEqual([...Stats.ROW_CSV_FIELDS], Gait.CSV_HEADER.split(","));
+  assert.deepEqual([...Stats.META_CSV_FIELDS], ["side", "device_id", "fw_version", "recorded_at", "source"]);
   assert.equal(Stats.CSV_HEADER, `${Stats.META_CSV_FIELDS.join(",")},${Gait.CSV_HEADER}`);
 });
 
@@ -79,10 +88,12 @@ test("buildRowsCsv writes header + one line per recorded step, ordered by receiv
   const cells = lines.slice(1).map((line) => line.split(","));
   assert.deepEqual(cells.map((c) => c[0]), ["right", "left", "left"]);
   assert.deepEqual(cells.map((c) => c[1]), ["1", "0", "0"]);
-  assert.deepEqual(cells.map((c) => c[2]), [
+  assert.deepEqual(cells.map((c) => c[3]), [
     "2026-09-16T00:00:01.000Z", "2026-09-16T00:00:02.000Z", "2026-09-16T00:00:04.000Z"
   ]);
-  assert.deepEqual(cells.map((c) => c[3]), ["live", "live", "live"]);
+  // recorded_at は ISO 8601 の UTC（末尾 Z）。タイムゾーン無しやローカル表記を許さない。
+  for (const c of cells) assert.match(c[3], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  assert.deepEqual(cells.map((c) => c[4]), ["live", "live", "live"]);
   const stepIdx = Stats.META_CSV_FIELDS.length + Stats.ROW_CSV_FIELDS.indexOf("step_number");
   assert.deepEqual(cells.map((c) => c[stepIdx]), ["1", "2", "3"]);
   for (const c of cells) assert.equal(c.length, Stats.META_CSV_FIELDS.length + Stats.ROW_CSV_FIELDS.length);
@@ -106,13 +117,30 @@ test("buildRowsCsv formats like the SDK CSV: integers plain, floats 4 decimals, 
   assert.equal(col("foot_strike"), "heelStrike");
 });
 
-test("buildRowsCsv leaves device_id empty for demo rows (-1) and handles missing metadata", () => {
+test("buildRowsCsv leaves device_id / fw_version empty for demo rows (-1) and handles missing metadata", () => {
   const csv = Stats.buildRowsCsv({
     left: [recorded("left", -1, null)],
     right: [recorded("right", undefined, undefined)]
-  });
+  }, { firmwareVersions: ["1.0.1", "1.0.1"] });
   const cells = csv.trimEnd().split("\n").slice(1).map((line) => line.split(","));
-  assert.deepEqual(cells.map((c) => c.slice(0, 4)), [["left", "", "", ""], ["right", "", "", ""]]);
+  // デバイス無し（デモ）の行には firmwareVersions のフォールバックも適用しない。
+  assert.deepEqual(cells.map((c) => c.slice(0, 5)), [["left", "", "", "", ""], ["right", "", "", "", ""]]);
+});
+
+test("buildRowsCsv writes fw_version per row: recorded value first, then the device's known version", () => {
+  const t0 = Date.UTC(2026, 8, 16);
+  const csv = Stats.buildRowsCsv({
+    left: [
+      recorded("left", 0, t0 + 1, { _fw_version: null }),        // 取得前に届いた歩 → 保存時点の版で補う
+      recorded("left", 0, t0 + 2, { _fw_version: "1.0.1" })      // 記録時点の版を優先
+    ],
+    right: [
+      recorded("right", 1, t0 + 3, { _fw_version: "1.1.0" }),
+      recorded("right", 1, t0 + 4, { _fw_version: undefined })   // device 1 の版が不明なら空
+    ]
+  }, { source: "live", firmwareVersions: ["1.0.1", null] });
+  const fw = csv.trimEnd().split("\n").slice(1).map((line) => line.split(",")[2]);
+  assert.deepEqual(fw, ["1.0.1", "1.0.1", "1.1.0", ""]);
 });
 
 test("buildRowsCsv quotes text cells containing commas or quotes", () => {
@@ -153,6 +181,18 @@ test("app.js enables the CSV button only when steps are recorded and downloads t
     return nodes.get(id);
   };
   let blobText = null;
+  const fwReads = [];
+  const insoles = [0, 1].map((deviceId) => ({
+    setup() {},
+    device_information: { mount_position: deviceId },   // 0 → left, 1 → right
+    firmware_version: null,
+    async getFirmwareVersion() {
+      fwReads.push(deviceId);
+      await Promise.resolve();   // SDK は DIS の GATT read を待ってからキャッシュする
+      this.firmware_version = deviceId === 0 ? "1.0.1" : "1.1.0";
+      return this.firmware_version;
+    }
+  }));
   const ctx = vm.createContext({
     GaitReportStats: Stats,
     GaitReportI18n: { getLanguage: () => "ja", t: (key) => key },
@@ -173,7 +213,8 @@ test("app.js enables the CSV button only when steps are recorded and downloads t
     Blob: class { constructor(parts) { blobText = parts.join(""); } },
     URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
     addEventListener() {}, setInterval: () => 1, clearInterval() {}, setTimeout: () => 1,
-    buildInsoleToolkit() {}, getInsoleToolkitSession: () => ({}), insoles: [{ setup() {} }, { setup() {} }],
+    buildInsoleToolkit() {}, getInsoleToolkitSession: () => ({}), insoles,
+    Promise,
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     dispatchEvent() {}
   });
@@ -181,6 +222,7 @@ test("app.js enables the CSV button only when steps are recorded and downloads t
   init();
   const app = ctx.GaitReportLive;
   const csvButton = node("csv-button");
+  const csvLines = () => blobText.trimEnd().split("\n");
 
   assert.equal(csvButton.disabled, true, "disabled before any step is recorded");
   assert.equal(typeof csvButton.listeners.click, "function", "click handler is wired");
@@ -199,14 +241,97 @@ test("app.js enables the CSV button only when steps are recorded and downloads t
   assert.equal(clicks.length, 1);
   assert.match(clicks[0], /^gait-report_\d{8}-\d{6}\.csv$/);
   assert.equal(anchors[0].parentNode, ctx.document.body, "anchor is attached before click");
-  const lines = blobText.trimEnd().split("\n");
+  const lines = csvLines();
   assert.equal(lines[0], Stats.CSV_HEADER);
   assert.equal(lines.length, 2);
-  assert.ok(lines[1].startsWith("left,,"), "demo rows have no device id");
-  assert.equal(lines[1].split(",")[3], "demo");
+  assert.ok(lines[1].startsWith("left,,,"), "demo rows have no device id and no fw_version");
+  assert.equal(lines[1].split(",")[4], "demo");
 
   app.clearData();
   assert.equal(csvButton.disabled, true, "disabled again after clear");
 });
 
-console.log(`gait-report-csv: ${passed} tests passed`);
+test("app.js records the device firmware version on live rows and writes it to the fw_version column", async () => {
+  const nodes = new Map();
+  let init;
+  const node = (id) => {
+    if (!nodes.has(id)) {
+      nodes.set(id, {
+        id, style: {}, dataset: {}, disabled: false,
+        classList: { add() {}, remove() {}, toggle() {} },
+        listeners: {},
+        addEventListener(name, fn) { this.listeners[name] = fn; }
+      });
+    }
+    return nodes.get(id);
+  };
+  let blobText = null;
+  const fwReads = [];
+  const insoles = [0, 1].map((deviceId) => ({
+    setup() {},
+    device_information: { mount_position: deviceId },   // 0 → left, 1 → right
+    firmware_version: null,
+    async getFirmwareVersion() {
+      fwReads.push(deviceId);
+      await Promise.resolve();   // SDK は DIS の GATT read を待ってからキャッシュする
+      this.firmware_version = deviceId === 0 ? "1.0.1" : "1.1.0";
+      return this.firmware_version;
+    }
+  }));
+  const ctx = vm.createContext({
+    GaitReportStats: Stats,
+    GaitReportI18n: { getLanguage: () => "ja", t: (key) => key },
+    URLSearchParams,
+    location: { search: "" },
+    Date, Promise,
+    document: {
+      getElementById: node,
+      querySelector: node,
+      addEventListener: (name, fn) => { if (name === "DOMContentLoaded") init = fn; },
+      createElement: () => ({ style: {}, parentNode: null, click() {} }),
+      body: { appendChild(el) { el.parentNode = this; }, removeChild() {} }
+    },
+    Blob: class { constructor(parts) { blobText = parts.join(""); } },
+    URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
+    addEventListener() {}, setInterval: () => 1, clearInterval() {}, setTimeout: () => 1,
+    buildInsoleToolkit() {}, getInsoleToolkitSession: () => ({}), insoles,
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+    dispatchEvent() {}
+  });
+  vm.runInContext(fs.readFileSync("examples/gait-report/app.js", "utf8"), ctx);
+  init();
+  const app = ctx.GaitReportLive;
+
+  app.startRecording();
+  // 接続直後の1歩目: getFirmwareVersion() はまだ解決していないので記録時点の版は無い。
+  app.handleStepRow(0, app.demoRow("left", 1));
+  assert.deepEqual(fwReads, [0], "connecting device 0 triggers a firmware version read");
+  assert.equal(app.state.rows.left[0]._fw_version, null);
+  await Promise.resolve();   // getFirmwareVersion() resolves
+  app.handleStepRow(0, app.demoRow("left", 2));
+  assert.equal(app.state.rows.left[1]._fw_version, "1.0.1", "later steps carry the cached version");
+  app.handleStepRow(1, app.demoRow("right", 1));
+  await Promise.resolve();
+  app.handleStepRow(1, app.demoRow("right", 2));
+  assert.deepEqual(fwReads, [0, 1]);
+  assert.equal(app.state.sessionSource, "live");
+
+  app.downloadCsv();
+  const rows = blobText.trimEnd().split("\n").slice(1).map((line) => line.split(","));
+  assert.equal(rows.length, 4);
+  // fw_version: 取得前に届いた歩も、保存時点で判明している同デバイスの版で補われる。
+  assert.deepEqual(rows.map((c) => [c[0], c[1], c[2], c[4]]), [
+    ["left", "0", "1.0.1", "live"],
+    ["left", "0", "1.0.1", "live"],
+    ["right", "1", "1.1.0", "live"],
+    ["right", "1", "1.1.0", "live"]
+  ]);
+  for (const c of rows) assert.match(c[3], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+});
+
+Promise.all(pendingAsync).then(() => {
+  console.log(`gait-report-csv: ${passed} tests passed`);
+}).catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

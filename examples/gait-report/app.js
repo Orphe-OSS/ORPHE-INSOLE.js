@@ -131,8 +131,31 @@
     return DEVICE_IDS.filter((deviceId) => state.connected[deviceId]);
   }
 
+  function insoleAt(deviceId) {
+    return Array.isArray(root.insoles) && deviceId >= 0 ? root.insoles[deviceId] || null : null;
+  }
+
+  // SDK が getFirmwareVersion() で解決した版（insole.firmware_version にキャッシュされる）を読む。
+  function deviceFirmwareVersion(deviceId) {
+    const insole = insoleAt(deviceId);
+    return insole && insole.firmware_version ? String(insole.firmware_version) : null;
+  }
+
+  // 接続のたびに FW 版の取得を促す（Toolkit の Step 有効化でも読まれるが、CSV の列に確実に載せるため）。
+  function refreshFirmwareVersion(deviceId) {
+    const insole = insoleAt(deviceId);
+    if (!insole || typeof insole.getFirmwareVersion !== "function") return;
+    let pending;
+    try {
+      pending = insole.getFirmwareVersion();
+    } catch {
+      return;
+    }
+    if (pending && typeof pending.catch === "function") pending.catch(() => null);
+  }
+
   function resolveDeviceSide(deviceId) {
-    const insole = Array.isArray(root.insoles) ? root.insoles[deviceId] : null;
+    const insole = insoleAt(deviceId);
     const mount = insole && insole.device_information
       ? insole.device_information.mount_position
       : null;
@@ -232,7 +255,10 @@
   // 記録した歩をそのまま CSV にする（確定前でも、そこまでの歩を書き出す）。
   function downloadCsv() {
     if (recordedStepCount() === 0) return;
-    const csv = Stats.buildRowsCsv(state.rows, { source: state.sessionSource });
+    const csv = Stats.buildRowsCsv(state.rows, {
+      source: state.sessionSource,
+      firmwareVersions: DEVICE_IDS.map(deviceFirmwareVersion)
+    });
     const blob = new root.Blob([csv], { type: "text/csv" });
     const url = root.URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -278,6 +304,7 @@
       ...incomingRow,
       _side: side,
       _device_id: deviceId,
+      _fw_version: deviceFirmwareVersion(deviceId),
       _received_at: state.lastStepAt
     });
     pulseReport(side);
@@ -387,6 +414,7 @@
     }
     state.connected[deviceId] = true;
     resolveDeviceSide(deviceId);
+    refreshFirmwareVersion(deviceId);
     if (
       options.forceSource
       || demoWasRunning

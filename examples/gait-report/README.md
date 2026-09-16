@@ -41,7 +41,8 @@ ORPHE INSOLE の **Step Analysis**（`OrpheInsoleGait` / Toolkit `realtime-full-
 |---|---|
 | `side` | `left` / `right`（mount_position から判定した足） |
 | `device_id` | Toolkit のデバイス番号（0 / 1）。デモ再生の行は空 |
-| `recorded_at` | ブラウザが row を受信した時刻（ISO 8601, UTC） |
+| `fw_version` | そのデバイスの FW バージョン（`getFirmwareVersion()`: DIS 0x180A → advertisement の順）。FW 版で pitch/roll の入れ替わりや Step Analysis 非対応などの既知差があるため必ず残す。取得できない FW/環境とデモ再生の行は空 |
+| `recorded_at` | ブラウザが row を受信した時刻。**ISO 8601 の UTC（末尾 `Z`、例 `2026-09-16T10:45:37.118Z`）**。ローカル時刻は使わない |
 | `source` | `live`（実機）/ `demo`（合成データ） |
 | `step_number` 〜 `calorie` | [`src/InsoleGait.js`](../../src/InsoleGait.js) の CSV と同じ21列・同じ順（`OrpheInsoleGait.CSV_HEADER`） |
 
