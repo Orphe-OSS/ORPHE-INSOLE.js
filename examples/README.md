@@ -11,6 +11,7 @@
 |---|---|---|---|---|
 | [VISUALIZE](./VISUALIZE/) | 6chチャート+IMU可視化（推奨スターター） | INSOLE ×1 | ―（実機推奨） | rAF描画スロットリング |
 | [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた）＋2台同時の欠損比較 | INSOLE ×1〜2 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、デバイス別serial continuity、ja/en切替 |
+| [lab-recorder](./lab-recorder/) | **研究室向け収録機（実験的・公開未定）**: FIFO 収録に同期マーカー（MARK / Space）・踏み込みインパルス候補・試行メタデータ・来歴列（firmware_version / sdk_version / device_time / host_time_est）・欠損レポート・データ辞書・試行の連続実行・左右アライメント表示を加える | INSOLE ×1〜2 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、`recorder-core.js`（純関数: 端末時刻 unwrap・最小遅延クロック写像・最近傍突き合わせ・CSV/JSON 生成）、ja/en切替 |
 | [fifo-vs-realtime](./fifo-vs-realtime/) | 通常(push)/FIFO(pull)の実測比較 | INSOLE ×1〜2 | ―（実機推奨） | 欠損率、シリアル連続性マップ、droppedCount照合 |
 | [insole-core-combo](./insole-core-combo/) | **INSOLE ×2 + CORE ×1 の同時接続・同期CSV収録**（研究用計測ツール） | INSOLE ×2 + CORE ×1（各1台でも可） | ―（実機が目的） | `CoreCompanionToolkit`（CORE 1台の同居接続）、収録中のみ `fifo-recording` へ切替、PC時計基準の時刻同期と [REC, STOP] 窓トリム、`!loss` 欠損ライブ表示 |
 | [showcase](./showcase/) | 製品紹介1ページ（LIVE/DEMO切替） | なしでも可 | **DEMOモード内蔵**（合成歩行+CSV再生） | i18n、CSV入出力、圧力ヒートマップ+CoP |
@@ -33,6 +34,8 @@
 2. 同じページで2台同時収録もでき、デバイスごとの欠損を1台の基準と比較できる
    （2台同時はホストのBluetooth負荷が上がり片側だけ欠損することがある）
 3. Realtime との実測比較は [fifo-vs-realtime](./fifo-vs-realtime/)
+4. 研究室で被験者・試行を替えながら収録し、他の計測系と時間軸を揃えたい場合は [lab-recorder](./lab-recorder/)
+   （同期マーカー・インパルス候補・来歴列つき CSV・データ辞書。実験的・公開未定）
 3. `dropped`（収録中の回復不能ロス累計）と最終CSVの `missing`（区間内の欠損serial数）は
    定義が違うため一致しないことがあります。**両方が 0 のときだけ「欠損なし」**と判断してください。
 
