@@ -115,4 +115,73 @@ test('initial manual page and explicit demo opt-in, actual recorder still finali
     }
   }
 });
+test('hold(): finalized report mean is replayed, never goes stale, later steps ignored, reset releases', () => {
+  const feed = new Feed(); feed.push(event(), base, 1);
+  const rows = {
+    left: Array.from({ length: 20 }, (_, i) => row({ speed_mps: 1.0 + (i % 2) * 0.2, stride_norm_m: 1.2 })),
+    right: Array.from({ length: 20 }, () => row({ speed_mps: 1.1, stride_norm_m: 1.2, stance_phase_s: .70 }))
+  };
+  assert.equal(feed.hold(rows, 'live'), 40);
+  let s = feed.snapshot(base, 2);
+  assert.equal(s.state, 'held'); assert.equal(s.held, true); assert.equal(s.source, 'live');
+  // Same mean as the report card: speed (1.0/1.2 alternating + 1.1) → 1.1, stride 1.2 → step 0.6.
+  assert.ok(Math.abs(s.parameters.speed - 1.1) < 1e-9); assert.ok(Math.abs(s.parameters.step - .6) < 1e-9);
+  assert.deepEqual(s.counts, { left: 20, right: 20 });
+  assert.equal(s.singleSide, false);
+  // Stays held far beyond the live stale window.
+  assert.equal(feed.snapshot(base, 2 + 10 * STALE_MS).state, 'held');
+  // Later live steps (e.g. slowing down after the 20th step) do not move the CG.
+  assert.equal(feed.push(event('left', { speed_mps: .5, stride_norm_m: .9 }), base, 3), false);
+  assert.ok(Math.abs(feed.snapshot(base, 3).parameters.speed - 1.1) < 1e-9);
+  feed.disconnect('left'); assert.equal(feed.snapshot(base, 4).counts.left, 20);
+  // Recorder rows are taken as-is (copies are the caller's job); hold() ignores non-row entries.
+  assert.equal(new Feed().hold({ left: [null, row()], right: undefined }, 'demo'), 1);
+  feed.reset(); assert.equal(feed.snapshot(base, 5).state, 'manual');
+  assert.equal(feed.push(event(), base, 6), true); assert.equal(feed.snapshot(base, 6).state, 'tracking');
+});
+test('hold() fails closed when the report mean is outside the model range or has no usable rows', () => {
+  const feed = new Feed();
+  feed.hold({ left: [row({ stride_norm_m: 2.0 })], right: [] }, 'live');
+  assert.equal(feed.snapshot({ ...base, height: 140 }, 1).state, 'unsupported');
+  const empty = new Feed(); empty.hold({ left: [], right: [] }, 'live');
+  const s = empty.snapshot(base, 1);
+  assert.equal(s.state, 'unsupported'); assert.deepEqual(s.parameters, base);
+  const unknown = new Feed(); unknown.hold({ left: [row()], right: [] }, 'bogus');
+  assert.equal(unknown.snapshot(base, 1).source, 'live');
+});
+test('app.js emits gait-report:cg-complete with copied rows and the session source when the report finalizes', () => {
+  let init;
+  const nodes = new Map(), events = [];
+  const node = id => {
+    if (!nodes.has(id)) nodes.set(id, { style: {}, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {} });
+    return nodes.get(id);
+  };
+  const ctx = vm.createContext({ GaitReportStats: Stats, GaitReportI18n: { getLanguage: () => 'ja', t: key => key },
+    URLSearchParams, location: { search: '' }, document: { getElementById: node, querySelector: node,
+      addEventListener: (name, fn) => { if (name === 'DOMContentLoaded') init = fn; } },
+    addEventListener() {}, setInterval: () => 1, clearInterval() {},
+    buildInsoleToolkit() {}, getInsoleToolkitSession: () => ({}), insoles: [{ setup() {} }, { setup() {} }],
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+    dispatchEvent: event => events.push(event) });
+  vm.runInContext(fs.readFileSync('examples/gait-report/app.js', 'utf8'), ctx); init();
+  const app = ctx.GaitReportLive;
+  app.startDemo();
+  for (let i = 0; i < 20; i++) for (const side of ['left', 'right']) app.handleStepRow(-1, app.demoRow(side, i + 1), { source: 'demo', side });
+  const complete = events.filter(e => e.type === 'gait-report:cg-complete');
+  assert.equal(complete.length, 1);
+  assert.equal(complete[0].detail.source, 'demo');
+  assert.equal(complete[0].detail.rows.left.length, 20); assert.equal(complete[0].detail.rows.right.length, 20);
+  complete[0].detail.rows.left.length = 0;
+  assert.equal(app.state.rows.left.length, 20, 'the event carries copies, not the recorder arrays');
+  // The held rows are the recorder rows, so Feed.hold reproduces the report card mean exactly.
+  const feed = new Feed(); feed.hold({ left: app.state.rows.left, right: app.state.rows.right }, 'demo');
+  const report = Stats.buildReport(app.state.rows);
+  assert.ok(Math.abs(feed.snapshot(base, 0).parameters.speed - report.combined.fields.speed_mps.mean) < 1e-12);
+  assert.ok(Math.abs(feed.snapshot(base, 0).parameters.step * 2 - report.combined.fields.stride_m.mean) < 1e-12);
+  // Steps after completion still notify the CG (ignored by a held feed) but never re-emit cg-complete.
+  app.handleStepRow(-1, row(), { source: 'demo', side: 'left' });
+  assert.equal(events.filter(e => e.type === 'gait-report:cg-complete').length, 1);
+  app.startRecording();
+  assert.equal(events.at(-1).type, 'gait-report:cg-reset');
+});
 console.log(`Gait CG: ${passed} tests passed`);

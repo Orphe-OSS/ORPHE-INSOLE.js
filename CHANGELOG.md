@@ -11,10 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Gait Report: embedded reference gait CG with manual parameters and bounded live/demo gait following, source/stale status, and a lazy-loaded Three.js viewer.
 - Gait Report: "Download CSV" button that saves the recorded steps (one row per step, both feet merged in received order). Columns are `side, device_id, fw_version, sdk_version, recorded_at, source` followed by the same columns as `OrpheInsoleGait` CSV (`step_number … calorie`), so existing Step Analysis CSV tooling can be reused. `fw_version` is the per-device firmware version (known FW differences affect Step Analysis availability and axis conventions), `sdk_version` is the ORPHE-INSOLE.js version that decoded the rows, and `recorded_at` is ISO 8601 UTC with a trailing `Z`. Enabled as soon as one step is recorded; works before the 20-step report is finalized.
 - `OrpheInsole.SDK_VERSION`: static string equal to the package version (e.g. `"1.3.4"`), for recording data provenance. Kept in sync with `package.json` by `tests/insole-version-sync.test.js`.
+- Gait Report: sound cues (`examples/gait-report/sound.js`, Web Audio, no audio files) when recording starts (two tones), on every recorded step (left = lower tone, right = higher tone) and when the 20-step report is finalized (three tones). A "Sound on/off" button in the control strip persists the choice in `localStorage`; failures (no AudioContext, autoplay blocked) never interrupt recording.
+- Gait Report README: sources for the reference ranges (Perry & Burnfield 2010; Bohannon 1997) and why a short indoor course with turns reads slower than the ranges.
 
 ### Changed
 
 - Gait Report starts without synthetic data by default; automatic demo is now opt-in via `?demo=1` (or the existing Play demo button).
+- Gait Report CG: once the 20-step report is finalized, the animation holds the same mean as the report (`gait-report:cg-complete` → `Feed.hold`) instead of continuing to follow later steps and pausing 8 s after the last one. Start recording / Clear release the hold. The status line reads "Replaying the finalized report mean".
 
 ## [1.3.4] - 2026-09-06
 
