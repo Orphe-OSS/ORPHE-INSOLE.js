@@ -3,6 +3,7 @@
 
   const Stats = root.GaitReportStats;
   const I18n = root.GaitReportI18n;
+  const Sound = root.GaitReportSound || null;   // optional: sound.js が無いページでも動く
 
   if (!Stats) {
     throw new Error("gait-report: report.js must be loaded before app.js");
@@ -64,6 +65,19 @@
     return Stats.formatNumber(value, decimals);
   }
 
+  function cue(name, detail) {
+    if (!Sound || typeof Sound.play !== "function") return;
+    try {
+      Sound.play(name, detail);
+    } catch {
+      // 効果音の失敗で計測を止めない
+    }
+  }
+
+  function soundEnabled() {
+    return Boolean(Sound && typeof Sound.isEnabled === "function" && Sound.isEnabled());
+  }
+
   function cacheDom() {
     const byId = (id) => document.getElementById(id);
     state.dom = {
@@ -75,6 +89,7 @@
       clearButton: byId("clear-button"),
       printButton: byId("print-button"),
       csvButton: byId("csv-button"),
+      soundToggle: byId("sound-toggle"),
       progressStrip: document.querySelector(".progress-strip"),
       progressStatus: byId("progress-status"),
       progLeftBar: byId("prog-left-bar"),
@@ -225,6 +240,7 @@
     state.completedAt = null;
     state.idleReceiving = false;
     state.sessionSource = state.demo.running ? "demo" : "live";
+    cue("start");
     renderAll();
   }
 
@@ -233,6 +249,12 @@
     state.complete = true;
     state.completedAt = Date.now();
     if (state.demo.running) stopDemo({ preserveSource: true });
+    // CG は確定したレポートの平均を保持し続ける（以降の歩は反映しない）。recorder の行はコピーで渡す。
+    notifyCG("complete", {
+      source: state.sessionSource,
+      rows: { left: state.rows.left.slice(), right: state.rows.right.slice() }
+    });
+    cue("complete");
     renderAll();
   }
 
@@ -309,6 +331,7 @@
       _received_at: state.lastStepAt
     });
     pulseReport(side);
+    cue("step", { side });
 
     const expected = expectedSides();
     const done = expected.length > 0
@@ -557,6 +580,25 @@
     demoButton.classList.toggle("active", state.demo.running);
 
     state.dom.csvButton.disabled = recordedStepCount() === 0;
+
+    const soundButton = state.dom.soundToggle;
+    if (soundButton) {
+      if (!Sound) {
+        soundButton.hidden = true;
+      } else {
+        const on = soundEnabled();
+        soundButton.innerHTML = t(on ? "soundOnHtml" : "soundOffHtml");
+        soundButton.classList.toggle("active", on);
+        if (typeof soundButton.setAttribute === "function") soundButton.setAttribute("aria-pressed", String(on));
+      }
+    }
+  }
+
+  function toggleSound() {
+    if (!Sound) return;
+    Sound.setEnabled(!soundEnabled());
+    if (soundEnabled()) cue("start");   // ON にした瞬間に鳴らして音量を確認できるようにする
+    renderButtons();
   }
 
   function renderProgress() {
@@ -766,6 +808,7 @@
     state.dom.clearButton.addEventListener("click", clearData);
     state.dom.printButton.addEventListener("click", () => root.print());
     state.dom.csvButton.addEventListener("click", downloadCsv);
+    if (state.dom.soundToggle) state.dom.soundToggle.addEventListener("click", toggleSound);
 
     // i18n.js の初期 setLanguage は DOMContentLoaded の先頭で発火するため、
     // languagechange の購読は cacheDom() 後（=描画できる状態）に登録する。
@@ -790,6 +833,7 @@
     startRecording,
     clearData,
     downloadCsv,
+    toggleSound,
     startDemo,
     stopDemo,
     demoRow,

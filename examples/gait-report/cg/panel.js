@@ -10,8 +10,9 @@
     ja: { title: 'CGによる歩行の参考再現', auto: '受信データを自動反映', play: '再生', pause: '一時停止', joints: '関節を表示',
       perspective: '斜め', side: '側面', front: '正面', manual: '手動設定', live: 'ORPHE INSOLEに追従', demo: '合成デモに追従',
       stale: '受信待ち · 動作停止', unsupported: '再現範囲外 · 動作停止', loading: '3Dを読み込み中…',
+      held: '確定したレポートの平均を再現中（「記録開始」「クリア」で解除）',
       error: '3Dを読み込めません。通信・WebGLを確認し、ページを再読み込みしてください。レポートの計測は継続できます。',
-      detail: '直近の有効データを左右最大6周期・8秒以内で平均。速度・ストライド長÷2・立脚期割合を反映します。CGは20歩の集計確定後も更新します。',
+      detail: '計測中は直近の有効データを左右最大6周期・8秒以内で平均。速度・ストライド長÷2・立脚期割合を反映します。左右20歩の集計が確定した後は、そのレポートと同じ平均値を再現し続けます（以降の歩は反映せず、「記録開始」「クリア」で解除）。',
       limits: '全身動作は参照波形による合成です。本人の姿勢・関節角・接地時刻の再現ではありません。左右の歩幅は対称、接地は半周期差と仮定します。',
       missing: '立脚期割合なし：手動値を使用。', single: '片側の立脚期割合を反対側にも仮適用。',
       rejected: '欠損値／範囲外の入力を除外。', mismatch: '計測ケーデンスと差があります。CGは速度と歩幅を優先。',
@@ -22,8 +23,9 @@
     en: { title: 'Reference gait animation', auto: 'Follow incoming gait data', play: 'Play', pause: 'Pause', joints: 'Show joints',
       perspective: 'Perspective', side: 'Side', front: 'Front', manual: 'Manual settings', live: 'Following ORPHE INSOLE', demo: 'Following synthetic demo',
       stale: 'Waiting for data · paused', unsupported: 'Outside model range · paused', loading: 'Loading 3D…',
+      held: 'Replaying the finalized report mean (Start recording / Clear to release)',
       error: '3D unavailable. Check your connection and WebGL, then reload. Report recording remains available.',
-      detail: 'Mean of up to 6 valid cycles per side received within 8 seconds. Applies speed, stride length / 2 and stance percentage. Updates continue after the 20-cycle report is complete.',
+      detail: 'While recording: mean of up to 6 valid cycles per side received within 8 seconds. Applies speed, stride length / 2 and stance percentage. Once the 20-step report is finalized, the CG keeps replaying the same mean as the report (later steps are ignored until Start recording / Clear).',
       limits: 'Synthesized from reference motion, not measured whole-body posture, joint angles or contact timing. Assumes symmetric step length and a half-cycle offset between feet.',
       missing: 'No stance data: using manual values.', single: 'One-sided stance is provisionally mirrored.', rejected: 'Missing/out-of-range input excluded.',
       mismatch: 'Measured cadence differs. CG prioritizes speed and step length.', measured: 'Measured', cadence: 'CG cadence', samples: 'Valid cycles L / R',
@@ -43,7 +45,9 @@
     if (!panel) return;
     const snapshot = feed.snapshot(manual, performance.now());
     const follow = automatic && snapshot.state !== 'manual';
-    target = follow ? (snapshot.state === 'tracking' ? snapshot.parameters : current) : manual;
+    // 'held' = finalized report mean; animates like tracking but never goes stale.
+    const live = snapshot.state === 'tracking' || snapshot.state === 'held';
+    target = follow ? (live ? snapshot.parameters : current) : manual;
     status.textContent = follow ? t(snapshot.state === 'tracking' ? snapshot.source : snapshot.state) : t('manual');
     const cadence = Model.metrics(target).cadence;
     numbers.textContent = `${t('cadence')}: ${cadence.toFixed(1)} steps/min · ${t('samples')}: ${snapshot.counts.left} / ${snapshot.counts.right}`;
@@ -54,13 +58,14 @@
       input.disabled = automatic && snapshot.state !== 'manual' && measuredKeys.includes(key);
       if (document.activeElement !== input) input.value = Number(target[key].toFixed(3));
     }
-    panel.dataset.running = String(playing && (!follow || snapshot.state === 'tracking'));
+    panel.dataset.running = String(playing && (!follow || live));
     panel.querySelectorAll('[data-cg-text]').forEach(el => { const text = t(el.dataset.cgText); if (el.textContent !== text) el.textContent = text; });
     play.textContent = t(playing ? 'pause' : 'play');
   }
   function onStep(event) { feed.push(event.detail, manual, performance.now()); refresh(); }
   root.addEventListener('gait-report:cg-step', onStep, { signal });
   root.addEventListener('gait-report:cg-reset', () => { feed.reset(); phase = 0; current = { ...manual }; refresh(); }, { signal });
+  root.addEventListener('gait-report:cg-complete', event => { feed.hold(event.detail.rows, event.detail.source); refresh(); }, { signal });
   root.addEventListener('gait-report:cg-disconnect', event => { feed.disconnect(event.detail.side); refresh(); }, { signal });
   root.addEventListener('gait-report:languagechange', refresh, { signal });
   async function loadRenderer() {
