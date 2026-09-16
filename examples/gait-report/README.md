@@ -11,6 +11,7 @@ ORPHE INSOLE の **Step Analysis**（`OrpheInsoleGait` / Toolkit `realtime-full-
 - **左右比較**: ストライド長・立脚時間・遊脚時間・プロネーション角・着地衝撃の左右平均±SDと左右差（%）
 - **接地の分類内訳**: foot strike（ヒール/ミッドフット/フォアフット）と pronation type の歩数内訳を左右別に表示
 - 「印刷」でレポートカードだけをA4に印刷できます
+- 「CSV保存」で記録した歩を1歩1行の CSV として保存できます（後述）
 
 ## このexampleがやらないこと（設計方針）
 
@@ -31,8 +32,27 @@ ORPHE INSOLE の **Step Analysis**（`OrpheInsoleGait` / Toolkit `realtime-full-
 - 2台接続時は左右そろって20歩ずつ集まるまで計測が続きます。
 - 左右は `device_information.mount_position` の bit0 から判定します（デバイス番号からの推測はしません）。
 
-実機がない場合は、ページを開くと自動で**合成歩行データのデモ**が再生され、
-約20秒でレポートが完成するところまで確認できます（`?demo=0` で無効化）。
+### CSV 保存
+
+「CSV保存」は、記録中・確定後を問わず **その時点で記録されている歩** を1歩1行で書き出します
+（1歩でも記録されると有効になります）。ファイル名は記録開始時刻から `gait-report_YYYYMMDD-HHMMSS.csv`。
+
+| 列 | 内容 |
+|---|---|
+| `side` | `left` / `right`（mount_position から判定した足） |
+| `device_id` | Toolkit のデバイス番号（0 / 1）。デモ再生の行は空 |
+| `recorded_at` | ブラウザが row を受信した時刻（ISO 8601, UTC） |
+| `source` | `live`（実機）/ `demo`（合成データ） |
+| `step_number` 〜 `calorie` | [`src/InsoleGait.js`](../../src/InsoleGait.js) の CSV と同じ21列・同じ順（`OrpheInsoleGait.CSV_HEADER`） |
+
+- 左右の行は受信時刻の昇順にマージされます（左右2台の時系列を1本で追えます）。
+- 数値は SDK の CSV と同じ書式（整数はそのまま、小数は4桁）。FW の未確定値（`-1`）や欠損（空欄）は
+  **そのまま**出力し、レポート側の除外規則は適用しません（生データとして扱うため）。
+- フットクリアランス（遊脚中の足の最大/最小高さ）は Step Analysis の通知に含まれないため列にありません。
+  `stride_z_m` は **前の接地点から次の接地点までの高低差**（階段などで変化）で、クリアランスではありません。
+
+実機がない場合は、「デモ再生」ボタン（または `?demo=1`）で**合成歩行データのデモ**を再生でき、
+約20秒でレポートが完成するところまで確認できます。
 
 ### `?verify=0` — FW疎通デバッグモード
 
@@ -70,7 +90,7 @@ insoles[0].setup();   // 必須（buildInsoleToolkit は setup() を呼びませ
 |---|---|
 | [`src/InsoleGait.js`](../../src/InsoleGait.js) | Step Analysis characteristic の購読と1歩ごとの row 集約 |
 | [`src/InsoleToolkit.js`](../../src/InsoleToolkit.js) | 接続UI、`realtime-full-step` プロファイル、通知livenessの検証 |
-| [`./report.js`](./report.js) | 集計ロジック（平均±SD・CV・左右差・分布・確定判定）。純関数のみで Node からテスト可能 |
+| [`./report.js`](./report.js) | 集計ロジック（平均±SD・CV・左右差・分布・確定判定）と CSV 生成（`buildRowsCsv`）。純関数のみで Node からテスト可能 |
 | [`./i18n.js`](./i18n.js) | ja / en の表示文言（step-analysis と同じ仕組み） |
 
 集計の仕様:
@@ -98,6 +118,7 @@ Firefox / Safari は Web Bluetooth 非対応です。
 
 ```bash
 node tests/gait-report-stats.test.js
+node tests/gait-report-csv.test.js
 node --check examples/gait-report/app.js
 ```
 

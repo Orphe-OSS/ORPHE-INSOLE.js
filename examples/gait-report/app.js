@@ -74,6 +74,7 @@
       demoToggle: byId("demo-toggle"),
       clearButton: byId("clear-button"),
       printButton: byId("print-button"),
+      csvButton: byId("csv-button"),
       progressStrip: document.querySelector(".progress-strip"),
       progressStatus: byId("progress-status"),
       progLeftBar: byId("prog-left-bar"),
@@ -222,6 +223,28 @@
     state.idleReceiving = false;
     state.sessionSource = null;
     renderAll();
+  }
+
+  function recordedStepCount() {
+    return state.rows.left.length + state.rows.right.length;
+  }
+
+  // 記録した歩をそのまま CSV にする（確定前でも、そこまでの歩を書き出す）。
+  function downloadCsv() {
+    if (recordedStepCount() === 0) return;
+    const csv = Stats.buildRowsCsv(state.rows, { source: state.sessionSource });
+    const blob = new root.Blob([csv], { type: "text/csv" });
+    const url = root.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = Stats.csvFilename(state.startedAt || Date.now());
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    root.setTimeout(() => {
+      root.URL.revokeObjectURL(url);
+      if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+    }, 1000);
   }
 
   function pulseReport(side) {
@@ -503,6 +526,8 @@
     const demoButton = state.dom.demoToggle;
     demoButton.innerHTML = state.demo.running ? t("demoStopHtml") : t("demoPlayHtml");
     demoButton.classList.toggle("active", state.demo.running);
+
+    state.dom.csvButton.disabled = recordedStepCount() === 0;
   }
 
   function renderProgress() {
@@ -711,6 +736,7 @@
     state.dom.demoToggle.addEventListener("click", toggleDemo);
     state.dom.clearButton.addEventListener("click", clearData);
     state.dom.printButton.addEventListener("click", () => root.print());
+    state.dom.csvButton.addEventListener("click", downloadCsv);
 
     // i18n.js の初期 setLanguage は DOMContentLoaded の先頭で発火するため、
     // languagechange の購読は cacheDom() 後（=描画できる状態）に登録する。
@@ -734,6 +760,7 @@
     handleStepRow,
     startRecording,
     clearData,
+    downloadCsv,
     startDemo,
     stopDemo,
     demoRow,

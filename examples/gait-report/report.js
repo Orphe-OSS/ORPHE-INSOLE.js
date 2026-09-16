@@ -207,6 +207,67 @@
     return number === null ? "—" : number.toFixed(decimals);
   }
 
+  // CSV 出力: 記録した歩（Step Analysis row）を1歩1行で書き出す。
+  // 列は src/InsoleGait.js の CSV_HEADER と同じ順（参照実装互換）で、先頭に記録メタ列を置く。
+  const ROW_CSV_FIELDS = Object.freeze([
+    "step_number", "gait_type", "stride_direction", "distance_m",
+    "stance_phase_s", "swing_phase_s", "duration_s", "cadence_hz", "speed_mps",
+    "foot_angle_deg", "stride_x_m", "stride_y_m", "stride_z_m", "stride_norm_m",
+    "landing_force", "strike_angle_deg", "foot_strike",
+    "pronation_deg", "pronation_type", "pronation_z_deg", "calorie"
+  ]);
+  const META_CSV_FIELDS = Object.freeze(["side", "device_id", "recorded_at", "source"]);
+  const CSV_HEADER = META_CSV_FIELDS.concat(ROW_CSV_FIELDS).join(",");
+
+  function csvCell(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return "";
+      return Number.isInteger(value) ? String(value) : value.toFixed(4);
+    }
+    const text = String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+  }
+
+  function buildRowsCsv(rowsBySide, options = {}) {
+    const source = rowsBySide || {};
+    const merged = [];
+    for (const side of SIDES) {
+      for (const row of source[side] || []) {
+        if (row) merged.push({ side, row });
+      }
+    }
+    // 受信時刻の昇順に並べる（安定ソート。同時刻・欠損は左→右の挿入順を保つ）。
+    const receivedAt = (entry) => {
+      const value = finite(entry.row._received_at);
+      return value === null ? 0 : value;
+    };
+    merged.sort((a, b) => receivedAt(a) - receivedAt(b));
+
+    const lines = [CSV_HEADER];
+    for (const entry of merged) {
+      const row = entry.row;
+      const deviceId = finite(row._device_id);
+      const stamp = finite(row._received_at);
+      const meta = [
+        entry.side,
+        deviceId !== null && deviceId >= 0 ? deviceId : null,
+        stamp === null ? null : new Date(stamp).toISOString(),
+        options.source || null
+      ];
+      lines.push(meta.concat(ROW_CSV_FIELDS.map((field) => row[field])).map(csvCell).join(","));
+    }
+    return `${lines.join("\n")}\n`;
+  }
+
+  function csvFilename(date) {
+    const stamp = date instanceof Date ? date : new Date(date || Date.now());
+    if (Number.isNaN(stamp.getTime())) return "gait-report.csv";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `gait-report_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}`
+      + `-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.csv`;
+  }
+
   const api = {
     TARGET_STEPS,
     SIDES,
@@ -229,7 +290,12 @@
     distribution,
     buildReport,
     sideFromMountPosition,
-    formatNumber
+    formatNumber,
+    ROW_CSV_FIELDS,
+    META_CSV_FIELDS,
+    CSV_HEADER,
+    buildRowsCsv,
+    csvFilename
   };
 
   return Object.freeze(api);

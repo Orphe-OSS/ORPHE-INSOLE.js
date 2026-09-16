@@ -25,6 +25,8 @@
       demoStopHtml: '<i class="bi bi-stop-fill"></i> デモ停止',
       clearHtml: '<i class="bi bi-arrow-counterclockwise"></i> クリア',
       printHtml: '<i class="bi bi-printer"></i> 印刷',
+      csvHtml: '<i class="bi bi-download"></i> CSV保存',
+      csvTitle: "記録した歩を1歩1行のCSVで保存します（記録開始後に有効）",
       settingsGuide: '<strong>Gait Report を使いたいときは、Toolkit UI の歯車を開き、次のように設定してください。</strong><p><span>Data Outputs: <b>Raw Sensor Data</b> と <b>Step Analysis</b> をON</span><span>Raw Data Acquisition: <b>Realtime</b></span><span>Realtime Streaming Format: <b>4: gyro + acc + press + quat (100Hz)</b></span><span class="settings-guide-default">このデモプログラムでは初期設定で上記の設定となっています</span></p>',
       progressLabel: "計測の進捗",
       progressIdle: "「記録開始」を押して歩き始めてください。",
@@ -132,6 +134,8 @@
       demoStopHtml: '<i class="bi bi-stop-fill"></i> Stop demo',
       clearHtml: '<i class="bi bi-arrow-counterclockwise"></i> Clear',
       printHtml: '<i class="bi bi-printer"></i> Print',
+      csvHtml: '<i class="bi bi-download"></i> Download CSV',
+      csvTitle: "Save the recorded steps as CSV, one row per step (enabled once recording has started)",
       settingsGuide: '<strong>To use the Gait Report, open the gear icon in the Toolkit UI and use these settings.</strong><p><span>Data Outputs: turn on <b>Raw Sensor Data</b> and <b>Step Analysis</b></span><span>Raw Data Acquisition: <b>Realtime</b></span><span>Realtime Streaming Format: <b>4: gyro + acc + press + quat (100Hz)</b></span><span class="settings-guide-default">This demo program uses these settings by default.</span></p>',
       progressLabel: "Recording progress",
       progressIdle: "Press Start recording, then start walking.",
@@ -273,6 +277,9 @@
     });
     root.document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
       element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+    });
+    root.document.querySelectorAll("[data-i18n-title]").forEach((element) => {
+      element.setAttribute("title", t(element.dataset.i18nTitle));
     });
     root.document.querySelectorAll("[data-lang-button]").forEach((button) => {
       const active = button.dataset.langButton === currentLanguage;
