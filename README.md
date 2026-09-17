@@ -24,6 +24,10 @@ INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-sho
 通常モード（リアルタイム通知）と FIFO（ロスレス収録）だけを比較する旧サンプルは
 [fifo-vs-realtime](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/fifo-vs-realtime) に残しています。
 
+研究室で被験者・試行を替えながら収録し、モーションキャプチャや振動計と時間軸を揃えたい場合は
+[lab-recorder](examples/lab-recorder/)（実験的・公開未定）を利用できます。FIFO 収録に同期マーカー・踏み込みインパルス候補・
+試行メタデータ・来歴列（firmware_version / sdk_version / device_time / host_time_est）・欠損レポート・データ辞書を加えたページです。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 

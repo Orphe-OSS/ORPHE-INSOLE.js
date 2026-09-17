@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="description"
+    content="研究室向けの ORPHE INSOLE 収録ページ。FIFO ロスレス収録に、他の計測系と時間軸を揃えるための同期マーカー・踏み込みインパルス検出と、後から来歴を追えるメタデータ・FW版・時刻源の記録を加えます。">
+  <title>ORPHE INSOLE Lab Recorder</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="./style.css?v=20260916-lab-recorder">
+</head>
+
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="top-row">
+        <a class="back-link" href="../../index.html#examples" aria-label="Examples 一覧へ戻る" data-i18n-aria-label="backLabel">
+          <i class="bi bi-arrow-left"></i> EXAMPLES
+        </a>
+        <div class="language-switch" role="group" aria-label="言語" data-i18n-aria-label="languageLabel">
+          <button type="button" data-lang-button="ja" aria-pressed="true">JA</button>
+          <button type="button" data-lang-button="en" aria-pressed="false">EN</button>
+        </div>
+      </div>
+      <div class="title-line">
+        <div>
+          <p class="eyebrow" data-i18n="eyebrow">TOOLKIT EXAMPLE / LAB RECORDER</p>
+          <h1>Lab Recorder <span>sync + provenance</span></h1>
+        </div>
+        <div class="toolkit-cluster" aria-label="ORPHE INSOLE 接続" data-i18n-aria-label="toolkitLabel">
+          <div id="toolkit0" class="toolkit-slot"></div>
+          <div id="toolkit1" class="toolkit-slot"></div>
+        </div>
+      </div>
+      <p class="lead-copy" data-i18n="leadCopy"></p>
+      <p class="constraint-note"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> <span data-i18n="fifoConstraint"></span></p>
+    </div>
+  </header>
+
+  <main class="page-shell workspace">
+    <!-- ── 左: セッション（メタデータ + 試行一覧） ───────────────────── -->
+    <aside class="session-panel" aria-label="試行メタデータとセッション" data-i18n-aria-label="sessionLabel">
+      <div class="panel-heading">
+        <p class="eyebrow" data-i18n="sessionEyebrow">SESSION</p>
+        <h2 data-i18n="sessionTitle">試行メタデータ</h2>
+        <p data-i18n="sessionDescription"></p>
+      </div>
+      <form id="metadata-form" class="metadata-form" autocomplete="off">
+        <label>
+          <span data-i18n="fieldParticipant">participant_id</span>
+          <input type="text" id="meta-participant_id" name="participant_id" maxlength="64">
+        </label>
+        <label>
+          <span data-i18n="fieldTrial">trial_number</span>
+          <input type="text" id="meta-trial_number" name="trial_number" maxlength="16" inputmode="numeric">
+          <small data-i18n="fieldTrialHint"></small>
+        </label>
+        <label>
+          <span data-i18n="fieldCondition">condition</span>
+          <input type="text" id="meta-condition" name="condition" maxlength="120">
+        </label>
+        <label>
+          <span data-i18n="fieldSurface">surface</span>
+          <input type="text" id="meta-surface" name="surface" maxlength="120">
+        </label>
+        <label>
+          <span data-i18n="fieldFootwear">footwear</span>
+          <input type="text" id="meta-footwear" name="footwear" maxlength="120">
+          <small data-i18n="fieldFootwearHint"></small>
+        </label>
+        <label>
+          <span data-i18n="fieldNotes">notes</span>
+          <textarea id="meta-notes" name="notes" rows="2" maxlength="2000"></textarea>
+        </label>
+        <label>
+          <span data-i18n="fieldImpulseWindow">踏み込み検出ウィンドウ [s]</span>
+          <input type="number" id="impulse-window" min="1" max="120" step="1" value="10">
+          <small data-i18n="fieldImpulseWindowHint"></small>
+        </label>
+      </form>
+      <p class="panel-note" data-i18n="sessionPersistNote"></p>
+
+      <div class="trials-block">
+        <h3 data-i18n="trialsTitle">このセッションの試行</h3>
+        <div class="table-frame compact">
+          <table class="data-table trials-table">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="trialsColTrial">trial</th>
+                <th scope="col" data-i18n="trialsColCondition">condition</th>
+                <th scope="col" data-i18n="trialsColSamples">samples</th>
+                <th scope="col" data-i18n="trialsColLoss">missing / dropped</th>
+                <th scope="col" data-i18n="trialsColMarkers">markers</th>
+                <th scope="col" data-i18n="trialsColImpulse">impulse</th>
+              </tr>
+            </thead>
+            <tbody id="trials-body"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="trials-empty" data-i18n="trialsEmpty"></p>
+        <div class="actions wrap">
+          <button id="session-csv-button" class="button ghost" type="button" disabled data-i18n-html="sessionCsvHtml"></button>
+          <button id="session-json-button" class="button ghost" type="button" disabled data-i18n-html="sessionJsonHtml"></button>
+          <button id="dictionary-button" class="button ghost" type="button" data-i18n-html="dictionaryHtml"></button>
+          <button id="clear-session-button" class="button ghost" type="button" disabled data-i18n-html="clearSessionHtml"></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── 右: 収録・マーカー・結果 ─────────────────────────────────── -->
+    <div class="main-column">
+      <section class="control-strip" aria-label="収録の状態と操作" data-i18n-aria-label="controlsLabel">
+        <div class="source-state">
+          <span id="source-badge" class="source-badge waiting">WAITING</span>
+          <div>
+            <strong id="source-title" data-i18n="sourceConnectTitle"></strong>
+            <span id="source-detail" data-i18n="sourceConnectDetail"></span>
+          </div>
+        </div>
+        <div class="actions">
+          <div class="elapsed-box">
+            <span data-i18n="elapsedLabel">経過</span>
+            <b id="elapsed-text" class="mono">0.0 s</b>
+          </div>
+          <button id="record-button" class="button primary" type="button" disabled data-i18n-html="recordStartHtml"></button>
+          <button id="save-next-button" class="button secondary" type="button" disabled data-i18n-html="saveNextHtml"></button>
+          <button id="discard-button" class="button ghost" type="button" disabled data-i18n-html="discardHtml"></button>
+        </div>
+      </section>
+
+      <div class="settings-guide">
+        <i class="bi bi-gear-fill" aria-hidden="true"></i>
+        <div data-i18n-html="settingsGuide"></div>
+      </div>
+
+      <!-- 同期マーカー -->
+      <section class="marker-section card" aria-label="同期イベントマーカー" data-i18n-aria-label="markerLabel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="markerEyebrow">SYNC MARKER</p>
+            <h2 data-i18n="markerTitle"></h2>
+          </div>
+          <p data-i18n="markerDescription"></p>
+        </div>
+        <div class="marker-controls">
+          <button id="marker-button" class="marker-button" type="button" disabled data-i18n-html="markerButtonHtml"></button>
+          <div class="marker-side">
+            <input type="text" id="marker-label" class="marker-label-input" maxlength="120"
+              placeholder="ラベル（任意）" data-i18n-placeholder="markerLabelPlaceholder">
+            <p class="hint" data-i18n="markerHint"></p>
+          </div>
+        </div>
+        <div class="table-frame">
+          <table class="data-table marker-table">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="markerColIndex">#</th>
+                <th scope="col" data-i18n="markerColLabel">label</th>
+                <th scope="col" data-i18n="markerColHost">host time</th>
+                <th scope="col" data-i18n="markerColElapsed">elapsed</th>
+                <th scope="col" data-i18n="markerColLastSerial"></th>
+                <th scope="col" data-i18n="markerColAligned"></th>
+              </tr>
+            </thead>
+            <tbody id="marker-body"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="marker-empty" data-i18n="markerEmpty"></p>
+      </section>
+
+      <!-- IMU / FSR 生データグラフ（収録中はライブ、停止後は試行全体） -->
+      <section class="charts-section card dark" aria-label="IMU と圧力の生データグラフ" data-i18n-aria-label="chartsLabel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="chartsEyebrow">RAW DATA</p>
+            <h2 data-i18n="chartsTitle"></h2>
+          </div>
+          <p data-i18n="chartsDescription"></p>
+        </div>
+        <div class="charts-toolbar">
+          <label class="chart-window">
+            <span data-i18n="chartWindowLabel"></span>
+            <select id="chart-window">
+              <option value="5" data-i18n="chartWindow5"></option>
+              <option value="10" selected data-i18n="chartWindow10"></option>
+              <option value="30" data-i18n="chartWindow30"></option>
+              <option value="all" data-i18n="chartWindowAll"></option>
+            </select>
+          </label>
+          <div class="chart-legend" id="chart-legend" aria-hidden="true"></div>
+          <button id="chart-reset-zoom" class="button ghost tiny" type="button" hidden data-i18n-html="chartResetZoomHtml"></button>
+          <span class="hint" id="chart-zoom-hint" data-i18n="chartZoomHint"></span>
+        </div>
+        <div id="chart-rows" class="chart-rows"></div>
+      </section>
+
+      <!-- ライブ -->
+      <section class="live-section card dark" aria-label="収録中のライブ状態" data-i18n-aria-label="liveLabel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="liveEyebrow">LIVE</p>
+            <h2 data-i18n="liveTitle"></h2>
+          </div>
+          <p data-i18n="liveDescription"></p>
+        </div>
+        <div class="live-grid" id="live-grid"></div>
+        <div class="alignment-block">
+          <strong data-i18n="alignmentTitle"></strong>
+          <canvas id="alignment-canvas" width="1200" height="56" aria-hidden="true"></canvas>
+          <p class="mono" id="alignment-text" data-i18n="alignmentWaiting"></p>
+          <p class="hint" data-i18n="alignmentNote"></p>
+        </div>
+      </section>
+
+      <!-- インパルス候補 -->
+      <section class="impulse-section card" aria-label="踏み込みインパルスの候補" data-i18n-aria-label="impulseLabel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="impulseEyebrow">IMPULSE CANDIDATE</p>
+            <h2 data-i18n="impulseTitle"></h2>
+          </div>
+          <p data-i18n="impulseDescription"></p>
+        </div>
+        <div class="impulse-cards" id="impulse-cards"></div>
+        <p class="empty-note" id="impulse-empty" data-i18n="impulseEmpty"></p>
+        <p class="caution-line"><i class="bi bi-eye" aria-hidden="true"></i> <span data-i18n="impulseCaution"></span></p>
+      </section>
+
+      <!-- 結果・欠損レポート -->
+      <section class="result-section" aria-labelledby="result-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="resultEyebrow">AFTER STOP AND DRAIN</p>
+            <h2 id="result-title" data-i18n="resultTitle"></h2>
+          </div>
+          <p data-i18n="resultDescription"></p>
+        </div>
+
+        <div class="verdict-bar result-empty" id="result-card">
+          <span class="verdict-badge" id="result-verdict" data-i18n="verdictWaiting"></span>
+          <p id="result-summary" data-i18n="resultSummaryWaiting"></p>
+        </div>
+
+        <div class="table-frame">
+          <table class="data-table metric-table">
+            <thead>
+              <tr>
+                <th scope="col" class="parameter-column" data-i18n="tableHeaderMetric">項目</th>
+                <th scope="col" class="value-column device-column" id="metric-head-0">INSOLE 1</th>
+                <th scope="col" class="value-column device-column" id="metric-head-1" hidden>INSOLE 2</th>
+                <th scope="col" class="meaning-column" data-i18n="tableHeaderMeaning">意味</th>
+              </tr>
+            </thead>
+            <tbody id="metric-table-body"></tbody>
+          </table>
+        </div>
+
+        <div class="exports">
+          <span class="exports-label" data-i18n="exportsLabel"></span>
+          <div class="actions wrap">
+            <button id="csv-button" class="button ghost" type="button" disabled data-i18n-html="csvHtml"></button>
+            <button id="markers-csv-button" class="button ghost" type="button" disabled data-i18n-html="markersCsvHtml"></button>
+            <button id="trial-json-button" class="button ghost" type="button" disabled data-i18n-html="trialJsonHtml"></button>
+            <button id="loss-json-button" class="button ghost" type="button" disabled data-i18n-html="lossJsonHtml"></button>
+          </div>
+        </div>
+
+        <div class="scope-note">
+          <i class="bi bi-info-circle" aria-hidden="true"></i>
+          <p data-i18n-html="scopeNote"></p>
+        </div>
+        <p class="chart-footnote" data-i18n="resultFootnote"></p>
+      </section>
+
+      <!-- 公開 API -->
+      <section class="how-section" aria-labelledby="how-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="howEyebrow">HOW IT WORKS</p>
+            <h2 id="how-title" data-i18n="howTitle"></h2>
+          </div>
+        </div>
+        <pre class="code-card"><code>buildInsoleToolkit(slot, "INSOLE 1", 0, {
+  profile: "realtime-full",           // connect in Realtime; switch to FIFO only while recording
+  fifo: {
+    onSamples(deviceId, samples) {    // FIFO batches arrive a few hundred ms late
+      batches.push({ hostRxMs: Date.now(), deviceTimeMaxMs: max(samples.t), serials });
+    },
+    onProgress(info) { lag = info.lag; },
+    onDataLoss(info) { log(info); },
+    onStopped(info) { dropped = info.dropped; drainRecovered = info.drainRecovered; }
+  }
+});
+insoles[0].setup();
+const session = getInsoleToolkitSession(0);
+
+// Start: the SDK switches the read mode, clears the device buffer and polls by serial.
+await session.startMeasurement({ profile: "fifo-recording", restoreProfile: true, metadata });
+
+// While recording: MARK / Space stores { host_time_ms, elapsed_ms, last_received_serial }.
+
+// Stop resolves after the drain (re-requesting outstanding serials).
+const result = await session.stopMeasurement();
+
+// recorder-core.js (pure functions): order samples, unwrap the device clock,
+// map device time → host time (min-latency over batches), detect the impulse
+// candidate, match markers to the nearest sample, and write CSV / JSON.
+const report = LabRecorderCore.analyzeDevice({ deviceId: 0, samples: result.raw.samples, batches, dropped });
+const csv = LabRecorderCore.buildTrialCsv({ metadata, devices: [report], markers, ... });</code></pre>
+        <p class="chart-footnote" data-i18n-html="howNote"></p>
+      </section>
+
+      <!-- ログ -->
+      <section class="log-section" aria-labelledby="log-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="logEyebrow">EVENT LOG</p>
+            <h2 id="log-title" data-i18n="logTitle"></h2>
+          </div>
+          <p data-i18n="logDescription"></p>
+        </div>
+        <div class="actions log-actions">
+          <button id="copy-log-button" class="button ghost" type="button" data-i18n-html="copyLogHtml"></button>
+          <button id="clear-log-button" class="button ghost" type="button" data-i18n-html="clearLogHtml"></button>
+        </div>
+        <div class="event-log mono" id="event-log" role="log" aria-live="polite"></div>
+        <p class="chart-footnote mono" id="env-line"></p>
+      </section>
+
+      <footer data-i18n="footerNote"></footer>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../../src/ORPHE-INSOLE.js"></script>
+  <script src="../../src/InsoleFifo.js"></script>
+  <script src="../../src/InsoleToolkit.js"></script>
+  <script src="./recorder-core.js?v=20260916-lab-recorder"></script>
+  <script src="./charts.js?v=20260916-lab-recorder"></script>
+  <script src="./i18n.js?v=20260916-lab-recorder"></script>
+  <script src="./app.js?v=20260916-lab-recorder"></script>
+</body>
+
+</html>
