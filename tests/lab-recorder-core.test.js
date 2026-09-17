@@ -586,6 +586,9 @@ function makeTrial(options = {}) {
     assert.ok(html.indexOf('charts.js') < html.indexOf('app.js?'), 'charts.js は app.js より前に読み込む');
     const app = read('app.js');
     assert.match(app, /Charts\.appendSamples\(/);
+    // sdk_version は SDK 定数 → package.json → ソースの @version の順で解決（Pages では package.json が 404）
+    assert.match(app, /OrpheInsole\.SDK_VERSION/);
+    assert.match(app, /@version\\s\+/);
     assert.match(app, /Charts\.fromEntries\(/);
     assert.match(app, /Charts\.gapShades\(/);
 }

@@ -197,23 +197,39 @@
     dom.impulseWindow.disabled = !enabled;
   }
 
-  // ── SDK version（package.json を同一オリジンから読む。読めなければ null） ─
+  // ── SDK version ──────────────────────────────────────────────────────
+  // 1) OrpheInsole.SDK_VERSION（SDK が公開する定数）
+  // 2) 同一オリジンの package.json（ローカル配信。GitHub Pages は Jekyll が root の .json を配信しない）
+  // 3) 読み込んだ SDK ソースの JSDoc `@version`（Pages / CDN でも取れる最後の手段）
   async function resolveSdkVersion() {
     state.sdkVersionDate = typeof root.orphe_js_version_date === "string"
       ? root.orphe_js_version_date.replace(/Last modified:\s*/i, "").trim()
       : null;
-    try {
-      const response = await root.fetch("../../package.json", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const pkg = await response.json();
-      state.sdkVersion = typeof pkg.version === "string" ? pkg.version : null;
-    } catch (error) {
-      void error;
-      state.sdkVersion = null;
-    }
+    const fromSdk = root.OrpheInsole && typeof root.OrpheInsole.SDK_VERSION === "string" ? root.OrpheInsole.SDK_VERSION : null;
+    state.sdkVersion = fromSdk || (await fetchSdkVersionFromPackage()) || (await fetchSdkVersionFromSource());
     if (state.sdkVersion) log("info", "logSdkVersion", { version: state.sdkVersion });
     else log("warn", "logSdkVersionUnknown");
     renderEnvLine();
+  }
+
+  async function fetchSdkVersionFromPackage() {
+    try {
+      const response = await root.fetch("../../package.json", { cache: "no-store" });
+      if (!response.ok) return null;
+      const pkg = await response.json();
+      return typeof pkg.version === "string" ? pkg.version : null;
+    } catch (error) { void error; return null; }
+  }
+
+  async function fetchSdkVersionFromSource() {
+    try {
+      const script = root.document.querySelector('script[src*="ORPHE-INSOLE"]');
+      if (!script) return null;
+      const response = await root.fetch(script.src, { cache: "force-cache" });
+      if (!response.ok) return null;
+      const match = /@version\s+(\d+\.\d+\.\d+)/.exec(await response.text());
+      return match ? match[1] : null;
+    } catch (error) { void error; return null; }
   }
 
   // ── Toolkit ─────────────────────────────────────────────────────────
