@@ -31,12 +31,14 @@
   const MAX_LOG_ENTRIES = 500;
   const STORAGE_KEY = "orphe-lab-recorder:v1";
   const DOWNLOAD_STAGGER_MS = 350;
+  const MAX_CALIBRATION_SECONDS = 15;
+  const CALIBRATION_FIRST_PACKET_TIMEOUT_MS = 4000;  // Realtime 復帰を待つ上限
   const WEAK_IMPULSE_RATIO = 2;        // ピーク / 中央値 がこれ未満なら「弱い候補」と注記（実測: 踏み込みなし 1.05×、あり 4.4〜6.3×）
 
   const METRIC_ROWS = [
     "m_duration", "m_samples", "m_first", "m_last", "m_expected", "m_received", "m_missing",
     "m_missing_rate", "m_ranges", "m_dropped", "m_max_lag", "m_recovered", "m_rate",
-    "m_clock_offset", "m_clock_spread", "m_complete"
+    "m_clock_method", "m_clock_offset", "m_clock_drift", "m_clock_uncertainty", "m_clock_fifo_check", "m_clock_calib_packets", "m_complete"
   ];
 
   const dom = {};
@@ -59,6 +61,7 @@
       firmwareVersion: null,
       inRun: false,
       live: createLive(),
+      calibration: { pre: [], post: [] }, // Realtime 通知の (hostMs, deviceMs) 対
       chartStore: Charts.createStore(),   // 収録中のライブ描画用
       reviewStore: null,                  // 停止後の試行全体
       reviewOverlays: null,
@@ -137,7 +140,7 @@
     const ids = [
       "toolkit0", "toolkit1", "source-badge", "source-title", "source-detail",
       "elapsed-text", "record-button", "save-next-button", "discard-button",
-      "metadata-form", "impulse-window",
+      "metadata-form", "impulse-window", "calibration-seconds",
       "trials-body", "trials-empty", "session-csv-button", "session-json-button", "dictionary-button", "clear-session-button",
       "marker-button", "marker-label", "marker-body", "marker-empty",
       "live-grid", "alignment-canvas", "alignment-text",
@@ -168,11 +171,18 @@
     return Core.clampImpulseWindowMs(Number(dom.impulseWindow.value) * 1000);
   }
 
+  function calibrationMs() {
+    const seconds = Number(dom.calibrationSeconds.value);
+    if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+    return Math.min(MAX_CALIBRATION_SECONDS, seconds) * 1000;
+  }
+
   function persistMetadata() {
     try {
       root.localStorage.setItem(STORAGE_KEY, JSON.stringify({
         metadata: readMetadataForm(),
-        impulseWindowSec: Math.round(impulseWindowMs() / 1000)
+        impulseWindowSec: Math.round(impulseWindowMs() / 1000),
+        calibrationSec: Math.round(calibrationMs() / 1000)
       }));
     } catch (error) { void error; }
   }
@@ -188,6 +198,9 @@
     if (Number.isFinite(Number(saved.impulseWindowSec))) {
       dom.impulseWindow.value = String(Math.round(Core.clampImpulseWindowMs(Number(saved.impulseWindowSec) * 1000) / 1000));
     }
+    if (Number.isFinite(Number(saved.calibrationSec))) {
+      dom.calibrationSeconds.value = String(Math.max(0, Math.min(MAX_CALIBRATION_SECONDS, Math.round(Number(saved.calibrationSec)))));
+    }
   }
 
   function setMetadataEnabled(enabled) {
@@ -195,6 +208,68 @@
       if (dom.metaInputs[field]) dom.metaInputs[field].disabled = !enabled;
     }
     dom.impulseWindow.disabled = !enabled;
+    dom.calibrationSeconds.disabled = !enabled;
+  }
+
+  // ── 端末時計の校正（収録前後の Realtime 通知） ─────────────────────
+  /**
+   * 接続中の各デバイスで Realtime 通知を durationMs だけ受け、(hostMs, deviceMs) 対を集める。
+   * hostMs は SDK が notify 受信時に打った Date.now()、deviceMs はパケット byte 3..7 の FW 時刻。
+   * 最初の通知を待つ上限を過ぎたデバイスは空のまま返す（FIFO 到着ベースへフォールバック）。
+   */
+  function collectCalibration(ids, phaseKey, durationMs) {
+    return new Promise((resolve) => {
+      const unsubscribes = [];
+      const firstAt = new Map();
+      const pairsById = new Map();
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        for (const unsubscribe of unsubscribes) { try { unsubscribe(); } catch (error) { void error; } }
+        root.clearInterval(ticker);
+        root.clearTimeout(hardStop);
+        for (const id of ids) {
+          const pairs = pairsById.get(id) || [];
+          device(id).calibration[phaseKey] = pairs;
+          const estimate = Core.estimateClockFromPairs(pairs);
+          if (estimate.available) {
+            log("info", "logCalibrationResult", {
+              device: deviceLabel(id), phase: t(phaseKey === "pre" ? "calibPre" : "calibPost"),
+              n: estimate.n,
+              jitter: estimate.jitterMs.toFixed(1),
+              interval: estimate.packetIntervalMs === null ? "?" : estimate.packetIntervalMs.toFixed(1)
+            });
+          } else {
+            log("warn", "logCalibrationNone", { device: deviceLabel(id), phase: t(phaseKey === "pre" ? "calibPre" : "calibPost") });
+          }
+        }
+        resolve();
+      };
+      for (const id of ids) {
+        const insole = Array.isArray(root.insoles) ? root.insoles[id] : null;
+        if (!insole || typeof insole.addSensorDataListener !== "function") continue;
+        const pairs = [];
+        pairsById.set(id, pairs);
+        unsubscribes.push(insole.addSensorDataListener((event) => {
+          const deviceMs = Core.deviceTimeOfDayFromPacket(event && event.data);
+          if (deviceMs === null || !Number.isFinite(event.receivedAt)) return;
+          if (!firstAt.has(id)) firstAt.set(id, event.receivedAt);
+          pairs.push({ hostMs: event.receivedAt, deviceMs });
+        }));
+      }
+      const startedAt = Date.now();
+      const ticker = root.setInterval(() => {
+        const now = Date.now();
+        const done = ids.every((id) => {
+          const first = firstAt.get(id);
+          if (first !== undefined) return now - first >= durationMs;
+          return now - startedAt >= CALIBRATION_FIRST_PACKET_TIMEOUT_MS;   // 通知が来ないデバイスは諦める
+        });
+        if (done) finish();
+      }, 50);
+      const hardStop = root.setTimeout(finish, durationMs + CALIBRATION_FIRST_PACKET_TIMEOUT_MS + 500);
+    });
   }
 
   // ── SDK version ──────────────────────────────────────────────────────
@@ -671,6 +746,13 @@
     persistMetadata();
     const metadata = readMetadataForm();
     resetRunState(ids);
+    const calibMs = calibrationMs();
+    if (calibMs > 0) {
+      setPhase("calibrating-pre");
+      log("info", "logCalibrating", { phase: t("calibPre"), seconds: calibMs / 1000 });
+      await collectCalibration(ids, "pre", calibMs);
+      if (connectedIds().length === 0) { setPhase("idle"); return; }
+    }
     setPhase("preparing");
     log("info", "logPreparing", { count: ids.length });
 
@@ -713,6 +795,7 @@
       sdkVersion: state.sdkVersion,
       sdkVersionDate: state.sdkVersionDate,
       impulseWindowMs: impulseWindowMs(),
+      calibrationMs: calibMs,
       devices: [],
       markers: state.markers,
       environment: environmentInfo()
@@ -740,7 +823,7 @@
     log("info", "logStopped");
 
     const results = await Promise.allSettled(ids.map((id) => device(id).session.stopMeasurement({ reason })));
-    const reports = [];
+    const resultIds = [];
     results.forEach((outcome, index) => {
       const id = ids[index];
       const entry = device(id);
@@ -754,9 +837,32 @@
         return;
       }
       entry.result = result;
-      entry.report = analyzeDeviceResult(id, result);
-      reports.push(entry.report);
+      resultIds.push(id);
     });
+
+    // 収録後の校正: stopMeasurement は Realtime プロファイル復帰まで待つので、直後の通知を使える
+    const calibMs = state.trial ? state.trial.calibrationMs : 0;
+    const calibIds = resultIds.filter((id) => device(id).connected);
+    if (calibMs > 0 && calibIds.length > 0) {
+      setPhase("calibrating-post");
+      log("info", "logCalibrating", { phase: t("calibPost"), seconds: calibMs / 1000 });
+      await collectCalibration(calibIds, "post", calibMs);
+    }
+
+    const reports = [];
+    for (const id of resultIds) {
+      const entry = device(id);
+      entry.report = analyzeDeviceResult(id, entry.result);
+      reports.push(entry.report);
+      const clock = entry.report.clock;
+      log(clock.method === "fifo-min-latency" ? "warn" : "info", "logClockSummary", {
+        device: deviceLabel(id),
+        method: clock.method,
+        drift: Number.isFinite(clock.driftPpm) ? clock.driftPpm.toFixed(1) : "—",
+        jitter: Number.isFinite(clock.uncertaintyMs) ? clock.uncertaintyMs.toFixed(1) : "—",
+        check: Number.isFinite(clock.fifoCheckMs) ? clock.fifoCheckMs.toFixed(0) : "—"
+      });
+    }
 
     if (reports.length === 0 || !state.trial) {
       state.trial = null;
@@ -816,6 +922,7 @@
       durationMs: result.durationMs,
       truncated: !!(result.raw && result.raw.truncated),
       impulseWindowMs: state.trial ? state.trial.impulseWindowMs : impulseWindowMs(),
+      calibration: (entry.calibration.pre.length > 0 || entry.calibration.post.length > 0) ? entry.calibration : null,
       trialStartHostMs: state.startedHostMs,
       tzOffsetMinutes: state.trial ? state.trial.tzOffsetMinutes : tzOffsetMinutes()
     });
@@ -833,6 +940,7 @@
       const entry = device(id);
       entry.inRun = false;
       entry.live = createLive();
+      entry.calibration = { pre: [], post: [] };
       entry.chartStore = Charts.createStore();
       entry.reviewStore = null;
       entry.reviewOverlays = null;
@@ -1003,7 +1111,7 @@
         cell.textContent = value;
         cell.classList.toggle("alert", !!alert);
       };
-      const busy = state.phase === "recording" || state.phase === "draining" || state.phase === "review";
+      const busy = state.phase === "recording" || state.phase === "draining" || state.phase === "review" || state.phase === "calibrating-post";
       set("liveSerial", live.latestSerial === null ? t("liveWaiting") : String(live.latestSerial));
       set("liveDeviceTime", live.latestDeviceTimeMs === null ? t("liveWaiting") : formatDeviceClock(live.latestDeviceTimeMs));
       set("liveSamples", live.samples > 0 ? String(live.samples) : t("liveWaiting"));
@@ -1125,9 +1233,17 @@
       setMetric(id, "m_recovered", `${report.drainRecovered} / ${report.catchupRecovered}`);
       setMetric(id, "m_rate", report.measuredRateHz === null ? t("valueEmpty") : `${report.measuredRateHz.toFixed(2)} Hz`,
         report.measuredRateHz !== null && Math.abs(report.measuredRateHz - Core.NOMINAL_IMU_ODR_HZ) > 2 ? "warn" : null);
-      setMetric(id, "m_clock_offset", report.clock.available ? `${report.clock.offsetMs.toFixed(1)} ms (n=${report.clock.batches})` : t("valueEmpty"));
-      setMetric(id, "m_clock_spread", Number.isFinite(report.clock.offsetSpreadMs) ? `${report.clock.offsetSpreadMs.toFixed(1)} ms` : t("valueEmpty"),
-        Number.isFinite(report.clock.offsetSpreadMs) && report.clock.offsetSpreadMs > 500 ? "warn" : null);
+      const clock = report.clock;
+      const calibrated = clock.method && clock.method.startsWith("realtime");
+      setMetric(id, "m_clock_method", clock.method || t("valueEmpty"), calibrated ? "ok" : "warn");
+      setMetric(id, "m_clock_offset", clock.available ? `${clock.offsetMs.toFixed(1)} ms` : t("valueEmpty"));
+      setMetric(id, "m_clock_drift", Number.isFinite(clock.driftPpm) ? `${clock.driftPpm.toFixed(1)} ppm` : t("valueEmpty"),
+        Number.isFinite(clock.driftPpm) && Math.abs(clock.driftPpm) > 500 ? "warn" : null);
+      setMetric(id, "m_clock_uncertainty", Number.isFinite(clock.uncertaintyMs) ? `${clock.uncertaintyMs.toFixed(1)} ms` : t("valueEmpty"),
+        calibrated ? (clock.uncertaintyMs > 20 ? "warn" : "ok") : "warn");
+      setMetric(id, "m_clock_fifo_check", Number.isFinite(clock.fifoCheckMs) ? `${clock.fifoCheckMs.toFixed(0)} ms` : t("valueEmpty"),
+        Number.isFinite(clock.fifoCheckMs) ? (clock.fifoCheckMs < 0 || clock.fifoCheckMs > 3000 ? "bad" : "ok") : null);
+      setMetric(id, "m_clock_calib_packets", `${clock.pre ? clock.pre.n : 0} / ${clock.post ? clock.post.n : 0}`);
       setMetric(id, "m_complete", t(report.complete ? "yes" : "no"), report.complete ? "ok" : "bad");
     }
 
@@ -1199,6 +1315,7 @@
     state.runDeviceIds = [];
     for (const id of DEVICE_IDS) {
       device(id).live = createLive();
+      device(id).calibration = { pre: [], post: [] };
       device(id).chartStore = Charts.createStore();
       device(id).reviewStore = null;
       device(id).reviewOverlays = null;
@@ -1277,13 +1394,15 @@
     preparing: ["preparing", "sourcePreparingTitle", "sourcePreparingDetail"],
     recording: ["recording", "sourceRecordingTitle", "sourceRecordingDetail"],
     draining: ["draining", "sourceDrainingTitle", "sourceDrainingDetail"],
+    "calibrating-pre": ["calibrating", "sourceCalibratingPreTitle", "sourceCalibratingPreDetail"],
+    "calibrating-post": ["calibrating", "sourceCalibratingPostTitle", "sourceCalibratingPostDetail"],
     review: ["review", "sourceReviewTitle", "sourceReviewDetail"],
     disconnected: ["waiting", "sourceDisconnectedTitle", "sourceDisconnectedDetail"]
   };
 
   const BADGE_TEXT = {
     waiting: "WAITING", ready: "READY", preparing: "PREPARING", recording: "RECORDING",
-    draining: "DRAINING", review: "REVIEW", error: "ERROR"
+    draining: "DRAINING", calibrating: "CALIBRATING", review: "REVIEW", error: "ERROR"
   };
 
   function setPhase(phase) {
@@ -1297,10 +1416,11 @@
 
   function applyButtonState() {
     const phase = state.phase;
-    const busy = phase === "preparing" || phase === "recording" || phase === "draining";
+    const calibrating = phase === "calibrating-pre" || phase === "calibrating-post";
+    const busy = phase === "preparing" || phase === "recording" || phase === "draining" || calibrating;
     dom.recordButton.disabled = phase === "recording"
       ? false
-      : phase === "preparing" || phase === "draining" || phase === "review" || connectedIds().length === 0;
+      : busy || phase === "review" || connectedIds().length === 0;
     dom.markerButton.disabled = phase !== "recording";
     dom.markerLabel.disabled = phase !== "recording" && phase !== "ready" && phase !== "idle";
     dom.saveNextButton.disabled = phase !== "review";

@@ -24,6 +24,7 @@
 | 6 | **欠損レポート** | `expected / received / missing / missing_rate / dropped / max_lag / missing_ranges / drain_recovered / catchup_recovered / measured_rate_hz / truncated / complete`。試行 JSON に内包し、単独 JSON でも保存可 |
 | 7 | **試行の連続実行** | 「保存して次へ」でサンプル CSV・マーカー CSV・試行 JSON を保存し、メタデータを引き継いで次の試行へ。セッション内の試行一覧（要約）を画面に持ち、`*_trials.csv` / セッション JSON で書き出し |
 | 8 | **左右2台のアライメント表示** | 収録開始からの serial の進みの差（packets ≈ ms 換算）と端末時刻差をライブ表示 |
+| 10 | **端末時計の自動校正**（収録前後） | 収録開始の直前と drain 完了直後に N 秒（既定 3 s、0 で無効）Realtime 通知を受け、`hostMs − deviceMs` の最小値から offset、前後の差から drift [ppm] を推定。全サンプル・マーカー・インパルス候補の `host_time_est` がこの写像で付く。FIFO 到着ベースとの整合チェックも出す |
 | 9 | **IMU / FSR 生データグラフ** | デバイスごとに ACC（x/y/z [G]）・GYRO（x/y/z [dps]）・PRESS（1〜6 [ADC]）の3面を Canvas で描画。収録中は FIFO バッチ到着ごとに直近 5 / 10 / 30 秒（または全体）を追記（再要求で後から届いた分も時刻順に差し込む）。停止後は試行全体に切り替わり、マーカー線・インパルス候補線（状態で色分け）・欠損区間の網掛けを重ねる。ドラッグでズーム、ダブルクリックで解除、ホバーで値を読める。多点は列ごとの min/max 包絡で間引きピークを保つ |
 
 ### やらないこと
@@ -43,7 +44,9 @@ FIFO モードでは **Step Analysis を同時に使えず、クォータニオ�
 |---|---|
 | `device_time_ms` | FW の時刻カウンタ（パケット基準の HH:MM:SS.mmm）＋ `packet_number × 1000/208` ms。日跨ぎで 0 に戻るので試行内で単調増加になるよう unwrap 済み。壁時計とは同期していない |
 | `host_rx_ms` | そのサンプルを含む FIFO バッチがホストに**到着した**時刻（epoch ms）。FIFO はプル型で数百 ms 遅れるため真の時刻の上界 |
-| `host_time_est` / `host_time_est_ms` | `device_time_ms + offset`。offset は「バッチ到着時刻 − バッチ内の最新端末時刻」の**最小値**（最小遅延法）。ヘッダ行 `device_N_clock_offset_ms` に記録 |
+| `host_time_est` / `host_time_est_ms` | `device_time_ms + offset + drift × (device_time_ms − device_ref)`。**収録の直前・直後に数秒ずつ Realtime 通知を受け、通知遅延の最小値から offset を、前後の差から drift を推定**（`clock_method = realtime-pre-post`）。パケットが 4 frame を溜める時間（隣接パケットの端末時刻差 × 3/4）は差し引く。校正を 0 s にすると FIFO 到着ベースの最小遅延法（`fifo-min-latency`、100 ms 級）に戻る。ヘッダ行 `device_N_clock_*` に全パラメータを記録 |
+| `device_N_clock_uncertainty_ms` | 校正通知の低遅延側 5% 点 − 最小。写像誤差の**ランダム成分**。BLE 接続間隔 1 つ分以下（7.5〜15 ms）の**系統的な偏り**は別に残る（両系を同じホスト時計に載せる用途では、モーキャプ側の受信遅延と同種の項） |
+| `device_N_clock_fifo_check_ms` | FIFO 到着ベースの offset − 校正 offset。回収遅延ぶん**正**になるのが正常。負や数秒なら校正が怪しい |
 | `elapsed_ms` | `host_time_est_ms − recording_start_host_ms`。マーカーの `elapsed_ms` と同じ時間軸 |
 | `device_N_clock_offset_spread_ms` | 新しいデータを運んだバッチ間の offset の最大−最小（再送だけのバッチは除外。実機で再送バッチが 5.7 s と出て誤解を招いたため）。回収ジッタの大きさで、`host_time_est` の誤差上界の目安。**clock drift は出力しない**（FIFO の追従遅れが支配的で、実機では回帰の傾きが 10^5 ppm 級になり意味を持たなかった） |
 

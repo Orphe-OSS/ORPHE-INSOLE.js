@@ -431,6 +431,12 @@ h1 span {
   50% { box-shadow: 0 0 0 9px rgba(240, 93, 63, 0.05); }
 }
 
+.source-badge.calibrating {
+  color: #0b2a3a;
+  background: #8ecae6;
+  box-shadow: 0 0 0 5px rgba(142, 202, 230, 0.18);
+}
+
 .source-badge.review {
   background: var(--ok);
   box-shadow: 0 0 0 5px rgba(10, 154, 132, 0.12);
