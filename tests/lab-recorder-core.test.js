@@ -270,8 +270,11 @@ function makeTrial(options = {}) {
     assert.ok(headerLines.some((line) => /^# recording_start_host: 2023-11-15T07:13:19\.500\+09:00$/.test(line)), headerLines.join('\n'));
     assert.ok(headerLines.some((line) => line.startsWith('# device_time_source:')));
     assert.ok(headerLines.some((line) => line.startsWith('# host_time_est_method:')));
-    assert.ok(headerLines.some((line) => /^# device_0_clock_offset_spread_ms: \d+\.\d{3}$/.test(line)), headerLines.join('\n'));
-    assert.equal(headerLines.some((line) => /drift/.test(line)), false);
+    assert.ok(headerLines.some((line) => line === '# device_0_clock_method: fifo-min-latency'), '校正なしは FIFO フォールバック');
+    assert.ok(headerLines.some((line) => /^# device_0_fifo_offset_spread_ms: \d+\.\d{3}$/.test(line)), headerLines.join('\n'));
+    assert.ok(headerLines.some((line) => line === '# device_0_clock_drift_ppm: '), 'フォールバックでは drift を出さない');
+    assert.ok(headerLines.some((line) => line === '# device_0_clock_pre_packets: 0'));
+    assert.ok(headerLines.some((line) => line.startsWith('# host_time_est_bias_note:')));
 
     const dataLines = lines.slice(headerIndex + 1);
     assert.equal(dataLines.length, 72 + 80, 'device0 72 行 + device1 80 行');
@@ -354,9 +357,10 @@ function makeTrial(options = {}) {
     assert.equal(json.metadata.participant_id, 'P01');
     assert.equal(json.metadata.notes, 'line1\nline2', 'JSON は改行を保持する');
     assert.equal(json.devices[0].device_id, 0);
-    assert.equal(json.devices[0].clock.method, 'min-latency');
-    assert.ok(Number.isFinite(json.devices[0].clock.offset_spread_ms));
-    assert.equal('drift_ppm' in json.devices[0].clock, false);
+    assert.equal(json.devices[0].clock.method, 'fifo-min-latency');
+    assert.ok(Number.isFinite(json.devices[0].clock.fifo.offset_spread_ms));
+    assert.equal(json.devices[0].clock.drift_ppm, null);
+    assert.equal(json.devices[0].clock.pre, null);
     assert.equal(json.devices[0].impulse_candidate.status, 'pending');
     assert.equal(json.markers.length, 2);
     assert.equal(json.loss_report.devices[0].missing, 1);
@@ -472,6 +476,109 @@ function makeTrial(options = {}) {
     assert.equal(/InsoleGait\.js/.test(html), false, 'Step Analysis は読み込まない（FIFO と併用不可）');
     // fifo-guide の資産は参照しない（fifo-guide は変更禁止・独立させる）
     assert.equal(/fifo-guide/.test(html), false);
+}
+
+// ── Realtime 校正: パケット時刻の読み取り・最小遅延・前後合成・drift 付き写像 ─────
+{
+    // SENSOR_VALUES パケット（104 byte）の byte 3..7 が h, m, s, ms(BE)
+    const dv = new DataView(new ArrayBuffer(104));
+    dv.setUint8(0, 56); dv.setUint16(1, 1234);
+    dv.setUint8(3, 13); dv.setUint8(4, 45); dv.setUint8(5, 12); dv.setUint16(6, 345);
+    assert.equal(Core.deviceTimeOfDayFromPacket(dv), ((13 * 3600 + 45 * 60 + 12) * 1000) + 345);
+    const bad = new DataView(new ArrayBuffer(104)); bad.setUint8(3, 25);
+    assert.equal(Core.deviceTimeOfDayFromPacket(bad), null, '時刻として不正なら null');
+    assert.equal(Core.deviceTimeOfDayFromPacket(new DataView(new ArrayBuffer(4))), null);
+    assert.equal(Core.deviceTimeOfDayFromPacket(null), null);
+
+    // 合成: 真の offset = base、パケットは 40 ms 間隔（100 Hz × 4 frame）、
+    // 遅延 = accumulation(30 ms) + BLE(8〜22 ms、最小 8)
+    const base = 1700000000000;
+    const makePairs = (deviceStart, count, driftMsTotal = 0) => {
+        const pairs = [];
+        for (let i = 0; i < count; i += 1) {
+            const deviceMs = deviceStart + i * 40;
+            const ble = 8 + ((i * 7) % 15);            // 8..22 ms、最小 8 を含む
+            const drift = driftMsTotal * (i / Math.max(1, count - 1));
+            pairs.push({ hostMs: base + deviceMs + 30 + ble + drift, deviceMs: deviceMs % Core.DAY_MS });
+        }
+        return pairs;
+    };
+    const pre = Core.estimateClockFromPairs(makePairs(36000000, 75));  // 3 s
+    assert.equal(pre.available, true);
+    assert.equal(pre.n, 75);
+    assert.equal(pre.packetIntervalMs, 40);
+    assert.equal(pre.accumulationMs, 30, 'accumulation = 隣接パケット間隔 × 3/4');
+    assert.equal(pre.latencyMinMs, base + 38);
+    assert.equal(pre.offsetMs, base + 8, 'min latency − accumulation。BLE 最小遅延（8 ms）は残る偏り');
+    assert.ok(pre.jitterMs >= 0 && pre.jitterMs < 15);
+    assert.equal(pre.deviceMidMs, 36000000 + 37 * 40);
+    assert.equal(Core.estimateClockFromPairs([]).available, false);
+    assert.equal(Core.estimateClockFromPairs([{ hostMs: 1, deviceMs: 1 }]).available, false, '1 点では推定しない');
+
+    // 前後合成: 60 s 後に offset が +3 ms ずれていれば drift = 50 ppm
+    const post = Core.estimateClockFromPairs(makePairs(36000000 + 60000, 75).map((p) => ({ ...p, hostMs: p.hostMs + 3 })));
+    assert.equal(post.offsetMs, base + 8 + 3);
+    const map = Core.combineClockCalibrations(pre, post, { deviceAnchorMs: 36000000 + 5000 });
+    assert.equal(map.available, true);
+    assert.equal(map.method, 'realtime-pre-post');
+    assert.equal(map.offsetMs, base + 8);
+    assert.equal(map.deviceRefMs, pre.deviceMidMs);
+    assert.ok(Math.abs(map.driftPpm - 50) < 0.5, `drift ${map.driftPpm} ppm`);
+    // 写像: ref から 60 s 後の端末時刻は drift ぶん +3 ms
+    const atRef = Core.deviceToHostMs(map, map.deviceRefMs);
+    assert.equal(atRef, map.deviceRefMs + base + 8);
+    assert.ok(Math.abs(Core.deviceToHostMs(map, map.deviceRefMs + 60000) - (map.deviceRefMs + 60000 + base + 8 + 3)) < 1e-6);
+    // 逆写像が往復する
+    const d = map.deviceRefMs + 12345.678;
+    assert.ok(Math.abs(Core.hostToDeviceMs(map, Core.deviceToHostMs(map, d)) - d) < 0.01, "epoch ms 規模の値なので float64 の丸め（〜1e-3 ms）は許容");
+    // 片側だけ
+    const preOnly = Core.combineClockCalibrations(pre, null);
+    assert.equal(preOnly.method, 'realtime-pre');
+    assert.equal(preOnly.driftPpm, null);
+    assert.equal(preOnly.offsetMs, base + 8);
+    const postOnly = Core.combineClockCalibrations(Core.estimateClockFromPairs([]), post);
+    assert.equal(postOnly.method, 'realtime-post');
+    assert.equal(Core.combineClockCalibrations(null, null).available, false);
+    // 日跨ぎ: pre が 23:59:58 台、post が翌日 00:01 台でも drift が跳ねない
+    const preLate = Core.estimateClockFromPairs(makePairs(86398000, 40));
+    const postNext = Core.estimateClockFromPairs(makePairs(86400000 + 60000, 40).map((p) => ({ ...p, hostMs: p.hostMs + 3 })));
+    assert.ok(postNext.deviceMidMs < 100000, 'post の端末時刻は 0 に戻っている');
+    const wrapMap = Core.combineClockCalibrations(preLate, postNext);
+    assert.ok(Math.abs(wrapMap.driftPpm - 3 / 62000 * 1e6) < 1, `日跨ぎ drift ${wrapMap.driftPpm}`);
+
+    // analyzeDevice: 校正があれば realtime 法を使い、FIFO 整合チェックが正になる
+    const samples = makeSeries(100, 20, 36000000 + 5000);
+    const batches = [{ hostRxMs: base + 36000000 + 5000 + 19 * Core.PACKET_INTERVAL_MS + 400, deviceTimeMaxMs: 36000000 + 5000 + 19 * Core.PACKET_INTERVAL_MS, serials: [119] }];
+    const report = Core.analyzeDevice({
+        deviceId: 0, side: 'left', samples, batches, dropped: 0, durationMs: 400, tzOffsetMinutes: TZ,
+        trialStartHostMs: base + 36000000 + 4000,
+        calibration: { pre: makePairs(36000000, 75), post: makePairs(36000000 + 60000, 75).map((p) => ({ ...p, hostMs: p.hostMs + 3 })) },
+    });
+    assert.equal(report.clock.method, 'realtime-pre-post');
+    assert.ok(Math.abs(report.clock.driftPpm - 50) < 0.5);
+    assert.ok(report.clock.fifoCheckMs > 300 && report.clock.fifoCheckMs < 500, `fifo check ${report.clock.fifoCheckMs}（FIFO 到着 offset − 校正 offset ≈ 400 − 8 − drift）`);
+    assert.equal(report.clock.fifo.available, true);
+    // 校正なし → フォールバック
+    const fallback = Core.analyzeDevice({ deviceId: 0, samples, batches, dropped: 0, durationMs: 400, tzOffsetMinutes: TZ, trialStartHostMs: base });
+    assert.equal(fallback.clock.method, 'fifo-min-latency');
+    assert.equal(fallback.clock.fifoCheckMs, null);
+    // 校正が空 → フォールバック
+    const emptyCal = Core.analyzeDevice({ deviceId: 0, samples, batches, dropped: 0, durationMs: 400, tzOffsetMinutes: TZ, trialStartHostMs: base, calibration: { pre: [], post: [] } });
+    assert.equal(emptyCal.clock.method, 'fifo-min-latency');
+    // CSV ヘッダと JSON に校正パラメータが出る
+    const calTrial = { metadata: {}, startedHostMs: base + 36000000 + 4000, stoppedHostMs: base + 36000000 + 4400, tzOffsetMinutes: TZ, sdkVersion: '1.3.4', devices: [report], markers: [] };
+    const lines = Core.buildCsvHeaderLines(calTrial);
+    assert.ok(lines.includes('# device_0_clock_method: realtime-pre-post'));
+    assert.ok(lines.some((l) => /^# device_0_clock_drift_ppm: 50\.\d\d$/.test(l)), lines.join('\n'));
+    assert.ok(lines.includes('# device_0_clock_pre_packets: 75'));
+    assert.ok(lines.some((l) => /^# device_0_clock_fifo_check_ms: \d+\.\d{3}$/.test(l)));
+    const calJson = Core.buildTrialJson(calTrial);
+    assert.equal(calJson.devices[0].clock.pre.packets, 75);
+    assert.equal(calJson.devices[0].clock.post.packets, 75);
+    assert.ok(Number.isFinite(calJson.devices[0].clock.fifo_check_ms));
+    // データ辞書に方法が書かれている
+    const dict = Core.buildDataDictionary({});
+    assert.ok(dict.includes('realtime-pre-post') && dict.includes('device_N_clock_fifo_check_ms'));
 }
 
 // ── charts.js: store / 数値処理（Canvas 非依存の部分） ─────────────────────

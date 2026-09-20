@@ -221,14 +221,159 @@
     };
   }
 
+  /**
+   * 端末時刻 → ホスト時刻。drift 付きの写像（realtime 前後校正）にも、定数 offset だけの
+   * 写像（FIFO バッチ法）にも同じ式で対応する: host = device + offset + drift × (device − deviceRef)
+   */
   function deviceToHostMs(clockMap, deviceTimeMs) {
     if (!clockMap || !clockMap.available || !isFiniteNumber(deviceTimeMs)) return null;
-    return deviceTimeMs + clockMap.offsetMs;
+    const drift = isFiniteNumber(clockMap.driftPpm) ? clockMap.driftPpm * 1e-6 : 0;
+    const ref = isFiniteNumber(clockMap.deviceRefMs) ? clockMap.deviceRefMs : deviceTimeMs;
+    return deviceTimeMs + clockMap.offsetMs + drift * (deviceTimeMs - ref);
   }
 
   function hostToDeviceMs(clockMap, hostMs) {
     if (!clockMap || !clockMap.available || !isFiniteNumber(hostMs)) return null;
-    return hostMs - clockMap.offsetMs;
+    const drift = isFiniteNumber(clockMap.driftPpm) ? clockMap.driftPpm * 1e-6 : 0;
+    const ref = isFiniteNumber(clockMap.deviceRefMs) ? clockMap.deviceRefMs : 0;
+    // host = d + offset + drift (d − ref) → d = (host − offset + drift ref) / (1 + drift)
+    return (hostMs - clockMap.offsetMs + drift * ref) / (1 + drift);
+  }
+
+  // ── Realtime 通知による端末時計の校正（収録の前後） ────────────────
+  /**
+   * SENSOR_VALUES 通知（header 50/55/56、104 byte）のパケット基準時刻（FW の時刻カウンタ、ms of day）。
+   * byte 3=hour, 4=minute, 5=second, 6..7=ms (BE)。FIFO の decodePacket と同じ配置。
+   * @param {DataView} dv
+   * @returns {number|null}
+   */
+  function deviceTimeOfDayFromPacket(dv) {
+    if (!dv || typeof dv.getUint8 !== "function" || dv.byteLength < 8) return null;
+    const h = dv.getUint8(3);
+    const m = dv.getUint8(4);
+    const s = dv.getUint8(5);
+    const ms = dv.getUint16(6);
+    if (h > 23 || m > 59 || s > 59 || ms > 999) return null;
+    return ((h * 3600 + m * 60 + s) * 1000) + ms;
+  }
+
+  /**
+   * 収録前後に Realtime 通知を数秒受けて得た (hostMs, deviceMs) 対から、端末時計 → ホスト時計の
+   * offset を推定する（最小遅延法）。
+   *
+   *   latency_i = hostMs_i − deviceMs_i（端末時刻はパケット内の最古フレーム基準）
+   *   offset    = min(latency_i) − accumulation
+   *
+   * accumulation はパケットが「最古フレームから最新フレームまで」溜める時間で、隣接パケットの
+   * 端末時刻差（中央値）× 3/4 として自己推定する（4 frame / packet）。BLE の最小遅延（接続間隔
+   * 1 つ分以下、数〜十数 ms）は残る偏りとして `uncertaintyMs` とは別に注記する。
+   *
+   * @param {Array<{hostMs:number, deviceMs:number}>} pairs 受信順
+   * @returns {{available:boolean, n:number, offsetMs:number|null, latencyMinMs:number|null,
+   *   latencyP05Ms:number|null, latencyP50Ms:number|null, jitterMs:number|null,
+   *   accumulationMs:number|null, packetIntervalMs:number|null,
+   *   hostMidMs:number|null, deviceMidMs:number|null, hostSpanMs:number, deviceSpanMs:number}}
+   */
+  function estimateClockFromPairs(pairs) {
+    const points = [];
+    let dayShift = 0;
+    let previous = null;
+    for (const pair of Array.isArray(pairs) ? pairs : []) {
+      if (!pair || !isFiniteNumber(pair.hostMs) || !isFiniteNumber(pair.deviceMs)) continue;
+      if (previous !== null && pair.deviceMs + dayShift < previous - DAY_MS / 2) dayShift += DAY_MS;
+      const deviceMs = pair.deviceMs + dayShift;
+      previous = deviceMs;
+      points.push({ hostMs: pair.hostMs, deviceMs });
+    }
+    const empty = {
+      available: false, n: points.length, offsetMs: null, latencyMinMs: null, latencyP05Ms: null,
+      latencyP50Ms: null, jitterMs: null, accumulationMs: null, packetIntervalMs: null,
+      hostMidMs: null, deviceMidMs: null, hostSpanMs: 0, deviceSpanMs: 0
+    };
+    if (points.length < 2) return empty;
+    const latencies = points.map((point) => point.hostMs - point.deviceMs).sort((a, b) => a - b);
+    const quantile = (q) => latencies[Math.min(latencies.length - 1, Math.max(0, Math.floor(q * (latencies.length - 1))))];
+    const steps = [];
+    for (let i = 1; i < points.length; i += 1) {
+      const step = points[i].deviceMs - points[i - 1].deviceMs;
+      if (step > 0) steps.push(step);
+    }
+    steps.sort((a, b) => a - b);
+    const packetIntervalMs = steps.length > 0 ? steps[Math.floor(steps.length / 2)] : null;
+    const accumulationMs = packetIntervalMs !== null ? packetIntervalMs * (FRAMES_PER_PACKET - 1) / FRAMES_PER_PACKET : 0;
+    const latencyMin = latencies[0];
+    const deviceMin = points[0].deviceMs;
+    const deviceMax = points[points.length - 1].deviceMs;
+    const hostMin = Math.min(...points.map((point) => point.hostMs));
+    const hostMax = Math.max(...points.map((point) => point.hostMs));
+    return {
+      available: true,
+      n: points.length,
+      offsetMs: latencyMin - accumulationMs,
+      latencyMinMs: latencyMin,
+      latencyP05Ms: quantile(0.05),
+      latencyP50Ms: quantile(0.5),
+      jitterMs: quantile(0.05) - latencyMin,
+      accumulationMs,
+      packetIntervalMs,
+      hostMidMs: (hostMin + hostMax) / 2,
+      deviceMidMs: (deviceMin + deviceMax) / 2,
+      hostSpanMs: hostMax - hostMin,
+      deviceSpanMs: deviceMax - deviceMin
+    };
+  }
+
+  /**
+   * 収録前 / 後の校正を合成して写像を作る。両方あれば drift（ppm）も推定する。
+   * @param {ReturnType<typeof estimateClockFromPairs>|null} pre
+   * @param {ReturnType<typeof estimateClockFromPairs>|null} post
+   * @param {{deviceAnchorMs?:number}} [options] 収録サンプルの端末時刻（日跨ぎの整合に使う）
+   */
+  function combineClockCalibrations(pre, post, options = {}) {
+    const usable = (cal) => cal && cal.available && isFiniteNumber(cal.offsetMs);
+    const hasPre = usable(pre);
+    const hasPost = usable(post);
+    if (!hasPre && !hasPost) {
+      return { available: false, method: "none", offsetMs: null, driftPpm: null, deviceRefMs: null, uncertaintyMs: null, pre: pre || null, post: post || null };
+    }
+    // 日跨ぎ: post の端末時刻が pre より半日以上小さければ翌日として扱う
+    let postDeviceMid = hasPost ? post.deviceMidMs : null;
+    let postOffset = hasPost ? post.offsetMs : null;
+    if (hasPre && hasPost && postDeviceMid < pre.deviceMidMs - DAY_MS / 2) {
+      postDeviceMid += DAY_MS;
+      postOffset -= DAY_MS;
+    }
+    let anchorShift = 0;
+    if (isFiniteNumber(options.deviceAnchorMs)) {
+      const ref = hasPre ? pre.deviceMidMs : postDeviceMid;
+      if (options.deviceAnchorMs < ref - DAY_MS / 2) anchorShift = -DAY_MS;      // サンプルが前日側に見える → 校正側を戻す
+      else if (options.deviceAnchorMs > ref + DAY_MS / 2) anchorShift = DAY_MS;
+    }
+    if (hasPre && hasPost) {
+      const dDevice = postDeviceMid - pre.deviceMidMs;
+      const driftPpm = dDevice > 1000 ? ((postOffset - pre.offsetMs) / dDevice) * 1e6 : null;
+      return {
+        available: true,
+        method: "realtime-pre-post",
+        offsetMs: pre.offsetMs - anchorShift,
+        driftPpm,
+        deviceRefMs: pre.deviceMidMs + anchorShift,
+        uncertaintyMs: Math.max(pre.jitterMs || 0, post.jitterMs || 0),
+        pre,
+        post
+      };
+    }
+    const only = hasPre ? pre : post;
+    return {
+      available: true,
+      method: hasPre ? "realtime-pre" : "realtime-post",
+      offsetMs: (hasPre ? pre.offsetMs : postOffset) - anchorShift,
+      driftPpm: null,
+      deviceRefMs: (hasPre ? pre.deviceMidMs : postDeviceMid) + anchorShift,
+      uncertaintyMs: only.jitterMs,
+      pre: pre || null,
+      post: post || null
+    };
   }
 
   // ── 最近傍サンプル ───────────────────────────────────────────────
@@ -416,7 +561,26 @@
    */
   function analyzeDevice(input) {
     const entries = orderSamples(input.samples);
-    const clock = estimateClockMap(input.batches);
+    const fifoClock = estimateClockMap(input.batches);
+    const anchor = entries.length > 0 && isFiniteNumber(entries[0].device_time_ms) ? entries[0].device_time_ms : null;
+    const calibration = input.calibration
+      ? combineClockCalibrations(
+        estimateClockFromPairs(input.calibration.pre),
+        estimateClockFromPairs(input.calibration.post),
+        { deviceAnchorMs: anchor }
+      )
+      : null;
+    // 写像: realtime 校正があればそれを使い、無ければ FIFO バッチの最小遅延法（100 ms 級）に落とす
+    const clock = calibration && calibration.available
+      ? { ...calibration, fifo: fifoClock }
+      : { ...fifoClock, method: fifoClock.available ? "fifo-min-latency" : "none", driftPpm: null, deviceRefMs: null, uncertaintyMs: fifoClock.offsetSpreadMs, fifo: fifoClock, pre: null, post: null };
+    // 整合チェック: FIFO 到着ベースの offset は必ず realtime 校正の offset 以上（回収遅延ぶん大きい）
+    if (clock.method !== "fifo-min-latency" && fifoClock.available && isFiniteNumber(clock.offsetMs)) {
+      const atMid = deviceToHostMs(clock, anchor !== null ? anchor : clock.deviceRefMs) - (anchor !== null ? anchor : clock.deviceRefMs);
+      clock.fifoCheckMs = fifoClock.offsetMs - atMid;
+    } else {
+      clock.fifoCheckMs = null;
+    }
     const continuity = serialContinuity(entries.map((entry) => entry.serial_number));
     const impulse = detectImpulse(entries, { windowMs: input.impulseWindowMs });
     const hostRxBySerial = new Map();
@@ -617,16 +781,25 @@
       `# host_timezone: ${formatTimezoneLabel(trial.tzOffsetMinutes, trial.timeZoneName)}`
     );
     for (const report of (trial.devices || []).slice().sort((a, b) => a.deviceId - b.deviceId)) {
+      const clock = report.clock;
       lines.push(
         `# device_${report.deviceId}_side: ${report.side || ""}`,
         `# device_${report.deviceId}_firmware_version: ${report.firmwareVersion || ""}`,
-        `# device_${report.deviceId}_clock_offset_ms: ${report.clock.available ? report.clock.offsetMs.toFixed(3) : ""}`,
-        `# device_${report.deviceId}_clock_offset_spread_ms: ${isFiniteNumber(report.clock.offsetSpreadMs) ? report.clock.offsetSpreadMs.toFixed(3) : ""}`
+        `# device_${report.deviceId}_clock_method: ${clock.method || "none"}`,
+        `# device_${report.deviceId}_clock_offset_ms: ${clock.available ? clock.offsetMs.toFixed(3) : ""}`,
+        `# device_${report.deviceId}_clock_device_ref_ms: ${isFiniteNumber(clock.deviceRefMs) ? clock.deviceRefMs.toFixed(3) : ""}`,
+        `# device_${report.deviceId}_clock_drift_ppm: ${isFiniteNumber(clock.driftPpm) ? clock.driftPpm.toFixed(2) : ""}`,
+        `# device_${report.deviceId}_clock_uncertainty_ms: ${isFiniteNumber(clock.uncertaintyMs) ? clock.uncertaintyMs.toFixed(3) : ""}`,
+        `# device_${report.deviceId}_clock_pre_packets: ${clock.pre ? clock.pre.n : 0}`,
+        `# device_${report.deviceId}_clock_post_packets: ${clock.post ? clock.post.n : 0}`,
+        `# device_${report.deviceId}_clock_fifo_check_ms: ${isFiniteNumber(clock.fifoCheckMs) ? clock.fifoCheckMs.toFixed(3) : ""}`,
+        `# device_${report.deviceId}_fifo_offset_spread_ms: ${clock.fifo && isFiniteNumber(clock.fifo.offsetSpreadMs) ? clock.fifo.offsetSpreadMs.toFixed(3) : ""}`
       );
     }
     lines.push(
       "# device_time_source: firmware time-of-day counter at packet base (HH:MM:SS.mmm), plus packet_number * 1000/208 ms; unwrapped across midnight",
-      "# host_time_est_method: device_time_ms + min over FIFO batches of (host_rx_ms - max device_time_ms in batch); host_rx_ms is the batch arrival time (FIFO pull adds latency)",
+      "# host_time_est_method: device_time_ms + clock_offset_ms + clock_drift_ppm*1e-6*(device_time_ms - clock_device_ref_ms); realtime-pre-post = offset from min-latency of realtime notifications received for a few seconds before and after the FIFO recording (drift from the two), fifo-min-latency = fallback from FIFO batch arrival times (100 ms class)",
+      "# host_time_est_bias_note: a residual constant bias up to one BLE connection interval (about 7.5-15 ms) remains in host_time_est; clock_uncertainty_ms is the jitter of the low-latency tail, not that bias",
       `# sampling_rate_hz_note: nominal IMU ODR ${NOMINAL_IMU_ODR_HZ} Hz (4 frames per serial packet); see loss report for the measured rate`,
       "# pressure_note: press_N_adc uses the official sensor numbering 1..6 (SDK press.values[N-1]); raw ADC counts, not calibrated force",
       "# missing_value: empty field",
@@ -747,6 +920,24 @@
     };
   }
 
+  function summarizeCalibration(cal) {
+    if (!cal) return null;
+    return {
+      available: cal.available,
+      packets: cal.n,
+      offset_ms: cal.offsetMs,
+      latency_min_ms: cal.latencyMinMs,
+      latency_p05_ms: cal.latencyP05Ms,
+      latency_p50_ms: cal.latencyP50Ms,
+      jitter_ms: cal.jitterMs,
+      accumulation_ms: cal.accumulationMs,
+      packet_interval_ms: cal.packetIntervalMs,
+      host_mid_ms: cal.hostMidMs,
+      device_mid_ms: cal.deviceMidMs,
+      host_span_ms: cal.hostSpanMs
+    };
+  }
+
   function buildTrialJson(trial) {
     const metadata = normalizeMetadata(trial.metadata);
     return {
@@ -763,7 +954,7 @@
         recording_stop_host_ms: trial.stoppedHostMs,
         host_timezone: formatTimezoneLabel(trial.tzOffsetMinutes, trial.timeZoneName),
         device_time_source: "firmware time-of-day counter (ms), unwrapped across midnight",
-        host_time_est_method: "min-latency: device_time_ms + min(host_rx_ms - max device_time_ms per FIFO batch)"
+        host_time_est_method: "device_time_ms + clock_offset_ms + drift; offset/drift from realtime-notification min-latency calibration before and after the recording (fallback: FIFO batch arrival min-latency)"
       },
       environment: trial.environment || null,
       devices: (trial.devices || []).slice().sort((a, b) => a.deviceId - b.deviceId).map((report) => ({
@@ -776,11 +967,18 @@
           method: report.clock.method,
           available: report.clock.available,
           offset_ms: report.clock.offsetMs,
-          offset_median_ms: report.clock.offsetMedianMs,
-          offset_max_ms: report.clock.offsetMaxMs,
-          offset_spread_ms: report.clock.offsetSpreadMs,
-          batches: report.clock.batches,
-          span_ms: report.clock.spanMs
+          device_ref_ms: report.clock.deviceRefMs,
+          drift_ppm: report.clock.driftPpm,
+          uncertainty_ms: report.clock.uncertaintyMs,
+          fifo_check_ms: report.clock.fifoCheckMs,
+          pre: summarizeCalibration(report.clock.pre),
+          post: summarizeCalibration(report.clock.post),
+          fifo: report.clock.fifo ? {
+            offset_ms: report.clock.fifo.offsetMs,
+            offset_spread_ms: report.clock.fifo.offsetSpreadMs,
+            batches: report.clock.fifo.batches,
+            span_ms: report.clock.fifo.spanMs
+          } : null
         },
         impulse_candidate: report.impulse,
         continuity: {
@@ -854,7 +1052,7 @@
     serial_number: ["—", "Firmware serial number of the FIFO packet the sample belongs to. uint16, wraps 65535 → 0. Each serial packet carries 4 frames.", "0–65535", "never empty"],
     packet_number: ["—", "Frame index inside the serial packet (oldest first).", "0–3", "never empty"],
     device_time_ms: ["ms", "Device clock: firmware time-of-day counter at the packet base plus `packet_number × 1000/208` ms, unwrapped across midnight so it increases monotonically within a trial. The firmware clock is not synchronised to wall time.", "≥ 0", "empty"],
-    host_time_est: ["ISO 8601", "Estimated host (PC) wall-clock time of the sample, with milliseconds and the host timezone offset. Computed as `device_time_ms + clock_offset_ms` where the offset is the minimum over FIFO batches of (batch arrival time − newest device time in the batch). This is an estimate: FIFO retrieval adds latency, so the true offset is at most the recorded value.", "e.g. `2026-09-16T13:45:12.345+09:00`", "empty"],
+    host_time_est: ["ISO 8601", "Estimated host (PC) wall-clock time of the sample, with milliseconds and the host timezone offset. `device_time_ms + clock_offset_ms + clock_drift_ppm × 1e-6 × (device_time_ms − clock_device_ref_ms)` (header lines). With `clock_method = realtime-pre-post` the offset comes from the minimum latency of realtime BLE notifications received for a few seconds before and after the FIFO recording, and the drift from the difference between the two; a constant bias of up to one BLE connection interval (about 7.5–15 ms) remains. With `fifo-min-latency` (fallback, no calibration) the accuracy is only 100 ms class.", "e.g. `2026-09-16T13:45:12.345+09:00`", "empty"],
     host_time_est_ms: ["ms (Unix epoch)", "Same instant as `host_time_est` as milliseconds since 1970-01-01T00:00Z.", "number", "empty"],
     host_rx_ms: ["ms (Unix epoch)", "Host time at which the FIFO batch containing this sample arrived. Upper bound of the true sample time; use it to judge the clock mapping, not as the sample time.", "number", "empty"],
     elapsed_ms: ["ms", "`host_time_est_ms − recording_start_host_ms` (header line). Same time base as marker `elapsed_ms`.", "number", "empty"],
@@ -922,8 +1120,12 @@
       "| `recording_start_host`, `recording_stop_host` | host wall-clock at start / stop button (ISO 8601 with offset) |",
       "| `host_timezone` | IANA zone name and UTC offset of the host |",
       "| `device_N_side`, `device_N_firmware_version` | per-device provenance |",
-      "| `device_N_clock_offset_ms` | host − device offset used for `host_time_est` (min-latency) |",
-      "| `device_N_clock_offset_spread_ms` | max − min of (host_rx − device_time) across the FIFO batches that advanced the newest device time (batches carrying only re-requested older packets are excluded): the retrieval jitter, an upper bound on the `host_time_est` mapping error. No clock-drift estimate is exported because FIFO retrieval lag dominates over a trial |",
+      "| `device_N_clock_method` | `realtime-pre-post` (calibrated before and after, drift estimated), `realtime-pre` / `realtime-post` (one side only, no drift), `fifo-min-latency` (fallback from FIFO batch arrivals, 100 ms class), `none` |",
+      "| `device_N_clock_offset_ms`, `device_N_clock_device_ref_ms`, `device_N_clock_drift_ppm` | parameters of `host_time_est = device_time_ms + offset + drift × 1e-6 × (device_time_ms − device_ref)` |",
+      "| `device_N_clock_uncertainty_ms` | jitter of the low-latency tail (5th percentile − minimum) of the calibration notifications; the random part of the mapping error. The systematic part (≤ one BLE connection interval) is not included |",
+      "| `device_N_clock_pre_packets`, `device_N_clock_post_packets` | number of realtime notifications used in each calibration window |",
+      "| `device_N_clock_fifo_check_ms` | FIFO-arrival-based offset minus the calibrated offset; must be positive (FIFO adds retrieval latency). A negative or huge value flags an inconsistent calibration |",
+      "| `device_N_fifo_offset_spread_ms` | retrieval jitter across FIFO batches that carried new data (diagnostic only) |",
       "| `device_time_source`, `host_time_est_method`, `sampling_rate_hz_note`, `pressure_note`, `missing_value`, `read_hint` | fixed explanatory notes |",
       "",
       "## `*_markers.csv` columns",
@@ -1003,6 +1205,9 @@
     estimateClockMap,
     deviceToHostMs,
     hostToDeviceMs,
+    deviceTimeOfDayFromPacket,
+    estimateClockFromPairs,
+    combineClockCalibrations,
     nearestEntryByDeviceTime,
     alignMarker,
     alignMarkers,
