@@ -257,3 +257,19 @@ insole.onError = (error) => {
 
 // @ts-expect-error connectionState は読み取り専用
 insole.connectionState = 'connected';
+
+// デバイス校正値は未対応・取得失敗時にnull。
+void insole.getPressureCalibration({ timeoutMs: 500 }).then(calibration => {
+    if (calibration) {
+        const coefficient: number = calibration[0].coeffs[0];
+        const func: 0 | 1 = calibration[0].func;
+        void coefficient;
+        void func;
+    }
+});
+insole.gotConvertedPress = press => {
+    const loadN: number = press.values[0];
+    const timestamp: number = press.timestamp;
+    void loadN;
+    void timestamp;
+};

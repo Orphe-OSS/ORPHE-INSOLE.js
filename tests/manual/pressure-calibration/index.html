@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ORPHE INSOLE 校正値取得テスト</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0b1420; color: #e9f0f6; }
+  body { max-width: 1200px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 24px; } h2 { font-size: 19px; }
+  p { line-height: 1.7; } .muted { color: #a9bbcf; }
+  section { padding: 20px; margin: 20px 0; border: 1px solid #33465b; border-radius: 12px; background: #111f30; }
+  button, input { padding: 10px 14px; margin: 4px 6px 4px 0; font: inherit; border-radius: 6px; border: 1px solid #627e99; }
+  button { cursor: pointer; background: #25425f; color: white; } button:disabled { opacity: .4; cursor: default; }
+  input { width: 90px; }
+  textarea { display: block; box-sizing: border-box; width: 100%; min-height: 150px; margin: 8px 0; padding: 10px; background: #0b1420; color: #e9f0f6; border: 1px solid #627e99; border-radius: 6px; }
+  input[data-field="adc"] { width: min(400px, 90%); }
+  details { margin-top: 16px; } .source { color: #ffce75; }
+  .status { font-weight: 700; } .pass { color: #75e2ac; } .warn { color: #ffce75; }
+  .scroll { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #33465b; white-space: nowrap; }
+  pre { overflow: auto; max-height: 260px; white-space: pre-wrap; font-size: 12px; }
+</style>
+<h1>校正値をインソールから取得する</h1>
+<p class="muted">充電中でも接続を試せます。「接続」で自動取得し、「再取得」で同じ端末からもう一度読みます。荷重をかける操作は不要です。無応答だけではファームウェア非対応と判断できません。</p>
+<p id="environment"></p>
+<label>再取得の期限 <input id="timeout" type="number" min="100" max="30000" step="100" value="5000"> ms</label>
+<button id="save">結果JSONを保存</button>
+<div id="devices"></div>
+<script src="../../../dist/orphe-insole.js"></script>
+<script src="app.js"></script>
+</html>
