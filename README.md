@@ -28,6 +28,48 @@ INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-sho
 [lab-recorder](examples/lab-recorder/)（実験的・公開未定）を利用できます。FIFO 収録に同期マーカー・踏み込みインパルス候補・
 試行メタデータ・来歴列（firmware_version / sdk_version / device_time / host_time_est）・欠損レポート・データ辞書を加えたページです。
 
+## 圧力校正値の自動取得と荷重への換算
+
+`await insole.begin()` は通知開始後に6センサー分の校正値を自動取得します。
+取得できた場合は `insole.pressure_calibration` にセンサー番号0〜5順で
+`{ sensor_index, func, coeffs }` の配列を保持します。非対応・取得失敗・部分取得では
+`null` になり、接続を継続します。取得待ちの上限は全体で2秒です。
+
+```javascript
+insole.setup();
+insole.gotPress = function (press) {
+  console.log('ADC生値:', press.values);
+};
+insole.gotConvertedPress = function (press) {
+  console.log('荷重[N]:', press.values);
+};
+await insole.begin({ streamingMode: 4 });
+console.log(insole.pressure_calibration);
+
+// begin()後に手動で再取得（失敗時はnull、例外・onErrorなし）
+await insole.getPressureCalibration({ timeoutMs: 2000 });
+console.log(insole.converted_press); // 最新の換算済みサンプル
+```
+
+`gotPress` / `press.values` はADC生値です。`gotConvertedPress` / `converted_press`
+は同じサンプルの時刻・シリアル番号を持つ荷重[N]です。校正値が `null` の場合や
+換算が非有限値になる場合は、Pythonクライアントのセンサー別既定係数を使います。
+負の換算結果は0にします。取得中は既定係数で換算し、6ch取得完了後に切り替えます。
+
+関数種別0は `C1 * exp(C2*x) + C3`、1は
+`C1*x^4 + C2*x^3 + C3*x^2 + C4*x + C5`（xはADC生値）です。
+通信仕様・校正式・既定係数は
+[insole_client](https://github.com/no-new-folk/insole_client/tree/e342620f9830c4d91ad5542b21212662b192ad58)
+に合わせています。
+
+校正値は各インスタンスのメモリ内に保持し、切断・reset・デバイス切替で破棄、
+再接続時に再取得します。手動取得は接続済みでSENSOR_VALUES通知が開始している場合に
+使用でき、それ以外は `null` を返します。モードは変更せず要求し、応答しないFWでは
+タイムアウト後に既定係数を使用します（参照クライアントの確認対象はmode 3/4）。
+`gotData` 上書き時も校正値は取得されますが、従来どおり通常のgot*は呼ばれません。
+この機能はRealtimeの圧力サンプルに適用します。FIFOのサンプルはADC生値で、
+既存のFIFO CSV出力は従来の固定係数によるN換算を維持します。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 
