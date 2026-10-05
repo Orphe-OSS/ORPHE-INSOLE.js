@@ -10,6 +10,7 @@
 | サンプル | 目的 | 必要機材 | 実機なし確認 | 主な実装パターン |
 |---|---|---|---|---|
 | [VISUALIZE](./VISUALIZE/) | 6chチャート+IMU可視化（推奨スターター） | INSOLE ×1 | ―（実機推奨） | rAF描画スロットリング |
+| [calibrated-pressure](./calibrated-pressure/) | 校正済みの圧力値（荷重[N]）6chグラフの最小サンプル | INSOLE ×1〜2 | ―（実機が必要） | `gotConvertedPress`、`pressure_calibration`、rAF描画スロットリング |
 | [fifo-guide](./fifo-guide/) | **FIFO収録の入門**（Realtimeとの違い・約30秒バッファ・欠損の見かた）＋2台同時の欠損比較 | INSOLE ×1〜2 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、デバイス別serial continuity、ja/en切替 |
 | [lab-recorder](./lab-recorder/) | **研究室向け収録機（実験的・公開未定）**: FIFO 収録に同期マーカー（MARK / Space）・踏み込みインパルス候補・試行メタデータ・来歴列（firmware_version / sdk_version / device_time / host_time_est）・欠損レポート・データ辞書・試行の連続実行・左右アライメント表示を加える | INSOLE ×1〜2 | ―（実機が目的） | `fifo-recording` プロファイル、startMeasurement/stopMeasurement、`recorder-core.js`（純関数: 端末時刻 unwrap・最小遅延クロック写像・最近傍突き合わせ・CSV/JSON 生成）、ja/en切替 |
 | [fifo-vs-realtime](./fifo-vs-realtime/) | 通常(push)/FIFO(pull)の実測比較 | INSOLE ×1〜2 | ―（実機推奨） | 欠損率、シリアル連続性マップ、droppedCount照合 |

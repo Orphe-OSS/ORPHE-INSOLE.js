@@ -70,6 +70,8 @@ console.log(insole.converted_press); // 最新の換算済みサンプル
 この機能はRealtimeの圧力サンプルに適用します。FIFOのサンプルはADC生値で、
 既存のFIFO CSV出力は従来の固定係数によるN換算を維持します。
 
+最小の利用例は [calibrated-pressure](examples/calibrated-pressure/) です（2台分の荷重[N]を6chグラフで表示）。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 

@@ -39,6 +39,7 @@ ORPHE-INSOLE.js/
 │   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
 │   ├── VISUALIZE/             # センサ可視化（推奨スターター）
+│   ├── calibrated-pressure/   # 校正済み圧力値（荷重[N]）の最小サンプル
 │   ├── fifo-guide/            # FIFO収録の入門（初心者向け・1〜2台・欠損可視化）
 │   ├── fifo-vs-realtime/      # 通常(push)/FIFO(pull)の実測比較
 │   ├── showcase/              # 製品紹介ショーケース（デモ再生つき）
@@ -723,6 +724,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | App Type | Reference | Key Patterns |
 |---|---|---|
 | 可視化 | examples/VISUALIZE | 6chチャート、描画スロットリング |
+| 荷重[N]表示（最小） | examples/calibrated-pressure | `gotConvertedPress`、`pressure_calibration` の取得元表示、描画スロットリング |
 | 製品ショーケース | examples/showcase | LIVE/DEMO切替、CSV再生、i18n |
 | 展示用一覧 | examples/exhibition | 16:9のディスプレイでセンサ値を一覧、ノースクロール、showcaseのvizモジュール再利用 |
 | ダッシュボード | examples/sensor-dashboard | 2台接続、L/R自動マッピング |
