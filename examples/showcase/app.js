@@ -525,8 +525,11 @@ function applyMountPositionWhenReady(insole, tries = 20) {
 const INSOLE15_NAME_PREFIX = 'Orphe_Insole';
 const G_ACCEL = 9.80665;
 const INSOLE15_PRESSURE_SCALE = 10; // INSOLE 1.5 は圧力値[mV]が小さいため、表示用に10倍する
-// INSOLE 1.5 の圧力チャネル並び替え（表示 p0..p5 = 元 p3,p4,p2,p5,p1,p0）
-const INSOLE15_PRESSURE_MAP = [3, 4, 2, 5, 1, 0];
+// INSOLE 1.5 の圧力チャネル並び替え（表示 p0..p5 に対応する元チャネル）。左右で基板上の
+// センサ配置が異なるため別テーブルを持ち、接続時に取得した foot（左右）で選ぶ。
+const INSOLE15_PRESSURE_MAP_LEFT = [3, 4, 2, 5, 1, 0];  // 表示 p0..p5 = 元 p3,p4,p2,p5,p1,p0
+const INSOLE15_PRESSURE_MAP_RIGHT = [2, 1, 3, 0, 4, 5]; // 表示 p0..p5 = 元 p2,p1,p3,p0,p4,p5（右足実機で確認）
+const insole15PressureMaps = [INSOLE15_PRESSURE_MAP_LEFT, INSOLE15_PRESSURE_MAP_LEFT];
 const insole15Clients = [null, null];
 const deviceKind = [null, null]; // 'product' | 'insole15' | null
 
@@ -554,14 +557,14 @@ function isInsole15Device(device) {
 }
 
 // INSOLE 1.5 を製品版と同じ単位・スケールに揃える（加速度 m/s^2 → G、圧力[mV]は
-// 小さいため表示用に10倍＋チャネル並び替え）。姿勢(quat/euler)はクライアントの推定値を
+// 小さいため表示用に10倍＋左右別のチャネル並び替え）。姿勢(quat/euler)はクライアントの推定値を
 // そのまま渡し、pitch/roll の表示補正は製品版と共通のスイッチで行う。
-function adaptInsole15Frame(f) {
+function adaptInsole15Frame(f, pressureMap = INSOLE15_PRESSURE_MAP_LEFT) {
     return {
         t: f.t,
         serial: f.serial,
         press: f.press
-            ? INSOLE15_PRESSURE_MAP.map((src) => (f.press[src] ?? 0) * INSOLE15_PRESSURE_SCALE)
+            ? pressureMap.map((src) => (f.press[src] ?? 0) * INSOLE15_PRESSURE_SCALE)
             : null,
         acc: f.acc ? { x: f.acc.x / G_ACCEL, y: f.acc.y / G_ACCEL, z: f.acc.z / G_ACCEL } : null,
         gyro: f.gyro,
@@ -598,10 +601,12 @@ async function connectInsole15(id, device) {
     try {
         await client.connect({ device, name: device.name, address: device.id, rssi: 0 });
         const cfg = await client.getConfigInfo();
-        applySide(id, cfg.foot === 'right' ? 'R' : cfg.foot === 'left' ? 'L' : (id === 0 ? 'L' : 'R'));
+        const side = cfg.foot === 'right' ? 'R' : cfg.foot === 'left' ? 'L' : (id === 0 ? 'L' : 'R');
+        applySide(id, side);
+        insole15PressureMaps[id] = side === 'R' ? INSOLE15_PRESSURE_MAP_RIGHT : INSOLE15_PRESSURE_MAP_LEFT;
         setInsole15HeaderBadges(id, cfg);
         client.startMonitor(
-            (frame) => dispatchFrame(id, adaptInsole15Frame(frame), true),
+            (frame) => dispatchFrame(id, adaptInsole15Frame(frame, insole15PressureMaps[id]), true),
             { onError: (e) => console.warn(`INSOLE${id} monitor:`, e) },
         );
         // 予期しない切断（電源断・圏外）でトグルが ON のまま残らないようにする
