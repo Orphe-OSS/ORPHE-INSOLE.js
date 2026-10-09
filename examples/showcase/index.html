@@ -151,6 +151,7 @@
               <li data-i18n="connectPrepItem1">ORPHE INSOLE は動きを検知すると自動的にアドバタイズします。</li>
               <li data-i18n="connectPrepItem2">反応しない場合は、軽く動かしてからブラウザのデバイス選択をやり直してください。</li>
               <li data-i18n="connectPrepItem3">圧力値を見る場合は、Realtime のモード3/4、または FIFO を選びます。</li>
+              <li data-i18n-html="connectPrepInsole15">INSOLE 1.5 も<strong>同じトグル・同じ手順</strong>で接続できます（選択ダイアログには <code>Orphe_Insole</code> として表示）。姿勢（クォータニオン）はIMUから推定して3D表示します。</li>
             </ul>
           </div>
         </div>
@@ -636,6 +637,9 @@ insole.gotEuler = function (euler) {
   <script src="../../src/InsoleToolkit.js"></script>
   <script src="../../src/InsoleFifo.js"></script>
   <script src="../../src/InsoleGait.js"></script>
+
+  <!-- INSOLE 1.5 クライアント: グローバル Insole15 を定義（lib/README.md） -->
+  <script src="./lib/insole-1.5.web.js"></script>
 
   <script src="./i18n.js"></script>
   <script src="./demo-data.js"></script>

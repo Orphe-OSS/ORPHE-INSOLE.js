@@ -182,11 +182,14 @@ examples/showcase/
 ├── assets/
 │   ├── orphe-insole-left.png / -right.png   # hula-motion-sonifier から流用
 │   └── models/orphe_shoeL3.stl / orphe_shoeR3.stl  # ORPHE-CORE.js から流用
+├── lib/              # INSOLE 1.5 用クライアント（ビルド済み insole-1.5.web.js を同梱。lib/README.md）
 ├── SPEC.md           # 本書
 └── README.md         # 起動方法
 ```
 
 データフロー: ライブ（`got*` コールバック）とデモ（再生プレイヤー）はどちらも同じ `dispatchFrame()` に1サンプル分のフレームを渡し、可視化モジュールはデータ源を区別しない。
+
+接続（統合トグル）: ヘッダの接続トグルは製品版・INSOLE 1.5 の両方を1つのデバイス選択ダイアログで受け付け、名前（`Orphe_Insole`）で INSOLE 1.5 を判別して `lib/` のクライアント（Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得）へ振り分ける（`app.js` の `installUnifiedToggle()`）。製品版は従来どおり Toolkit の `session.connect()` → `begin()` で接続する。INSOLE 1.5 は姿勢を送らないためクライアント側で Madgwick により quat/euler を推定し、加速度は m/s²→G、圧力[mV] は表示用に10倍＋チャネル並び替えをして同じ `dispatchFrame()` に流す。pitch/roll の表示補正は上記スイッチが両者共通で担う。
 
 ## 6. 非機能要件
 

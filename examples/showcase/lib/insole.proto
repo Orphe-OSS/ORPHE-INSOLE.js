@@ -1,0 +1,154 @@
+// orphe_insole bleRPC service definitions — the subset used by the showcase
+// client (sensor streaming by time window, device configuration read, and
+// gait-analysis measurement). Firmware maintenance commands are intentionally
+// not included here.
+//
+// Reliable, lossless data extraction by time window (pull model):
+//   1. set_time   — set the insole clock (epoch ms).
+//   2. The firmware continuously samples IMU + pressure at 200 Hz into a ~5 s
+//      on-memory ring buffer, each sample stamped with the insole clock.
+//   3. get_window — fetch the 100 ms window starting at a given time. The
+//      client walks time forward in 100 ms steps and retries a window on BLE
+//      failure (still in cache within ~5 s). Out-of-cache windows return a
+//      status (TOO_OLD / TOO_NEW), not data.
+//
+// Values are in physical units: accel m/s², gyro dps, pressure mV.
+
+syntax = "proto3";
+
+package insole;
+
+// SetTime - set the insole clock to an absolute epoch time in milliseconds.
+// All cached samples and get_window requests are timestamped against this
+// clock. The response echoes the insole time right after the clock is applied.
+message SetTimeRequest {
+  uint64 epoch_ms = 1;
+}
+
+message SetTimeResponse {
+  uint64 epoch_ms = 1;
+}
+
+// One IMU sample (accelerometer + gyroscope), physical units.
+//
+// Channels are named by their physical body axis, following the attitude
+// convention finalized in the ORPHE-INSOLE.js viewer. The raw LSM6DSO axes are
+// used as-is (no sign change or reordering), so the positive directions are:
+//   accel: +X = right, +Y = forward, +Z = up
+//   gyro : positive follows the right-hand-screw rule about each accel axis
+//          (+gyro_pitch about +X, +gyro_roll about +Y, +gyro_yaw about +Z)
+// Body-axis <-> pitch/roll/yaw mapping (positive sense in parentheses):
+//   sensor X <-> pitch axis  (lateral,      + = right)
+//   sensor Y <-> roll axis   (longitudinal, + = forward)
+//   sensor Z <-> yaw axis    (vertical,     + = up)
+// The field names just label which physical axis each channel is.
+message ImuSample {
+  float accel_lateral = 1;       // accel along lateral axis, +X = right (sensor X) [m/s^2]
+  float accel_longitudinal = 2;  // accel along longitudinal axis, +Y = forward (sensor Y) [m/s^2]
+  float accel_vertical = 3;      // accel along vertical axis, +Z = up (sensor Z) [m/s^2]
+  float gyro_pitch = 4;          // rate about pitch axis, + = right-hand-screw about +X (sensor X) [dps]
+  float gyro_roll = 5;           // rate about roll axis, + = right-hand-screw about +Y (sensor Y) [dps]
+  float gyro_yaw = 6;            // rate about yaw axis, + = right-hand-screw about +Z (sensor Z) [dps]
+}
+
+// One pressure sample (6 channels), physical units.
+message PressureSample {
+  repeated float mv = 1;  // 6 channels [mV]
+}
+
+enum WindowStatus {
+  WINDOW_STATUS_UNSPECIFIED = 0;
+  WINDOW_STATUS_OK = 1;            // full window returned
+  WINDOW_STATUS_TOO_OLD = 2;       // window start older than the cache (evicted)
+  WINDOW_STATUS_TOO_NEW = 3;       // window not fully captured yet
+  WINDOW_STATUS_TIME_NOT_SET = 4;  // set_time has not been called
+}
+
+// GetWindow - fetch a 100 ms window (20 IMU + 20 pressure samples at 200 Hz)
+// starting at start_ms (epoch ms). Returns samples only when status == OK.
+message GetWindowRequest {
+  uint64 start_ms = 1;
+}
+
+message GetWindowResponse {
+  WindowStatus status = 1;
+  uint64 start_ms = 2;                   // echoed request window start
+  uint64 oldest_ms = 3;                  // oldest sample currently cached
+  uint64 newest_ms = 4;                  // newest sample currently cached
+  repeated ImuSample imu = 5;            // ~20 samples (200 Hz over 100 ms)
+  repeated PressureSample pressure = 6;  // ~20 samples (200 Hz over 100 ms)
+}
+
+// Which foot the insole belongs to (reported by get_config).
+enum Foot {
+  FOOT_UNSPECIFIED = 0;
+  FOOT_LEFT = 1;
+  FOOT_RIGHT = 2;
+}
+
+// GetConfig - read the persisted device configuration.
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  uint32 device_id = 1;
+  Foot foot = 2;
+  string firmware_version = 3;       // running firmware version
+}
+
+// ---------------------------------------------------------------------------
+// Gait-analysis measurement.
+//
+//   1. start_measurement — reset the analyzer + open a session; the firmware
+//      folds every completed stride into running statistics while active.
+//   2. stop_measurement  — close the session and append one summary record
+//      (avg/min/max/variance per metric, raw float32) to the flash log.
+//   3. get_gait_live      — poll the latest completed-stride metrics + running
+//      session counters, for a real-time monitor.
+// ---------------------------------------------------------------------------
+
+message StartMeasurementRequest {
+  uint32 activity_id = 1;  // host-assigned id stamped into this session's summaries -> CSV "activityType" (0 if unset)
+}
+
+message StartMeasurementResponse {
+  bool ok = 1;
+  uint32 session_id = 2;   // id assigned to this measurement
+  uint32 activity_id = 3;  // echoes the activity_id applied to this session
+}
+
+message StopMeasurementRequest {}
+
+message StopMeasurementResponse {
+  bool ok = 1;
+  uint32 session_id = 2;
+  uint32 steps = 3;    // completed strides accumulated this session
+  bool recorded = 4;   // whether a summary record was stored
+}
+
+// One completed stride's instantaneous metrics (raw float, physical units).
+message GaitStride {
+  float stride_length = 1; // [m]
+  float stride_height = 2; // [m]
+  float speed = 3;         // [m/s]
+  float pronation = 4;     // [deg]
+  float strike_angle = 5;  // [deg]
+  float cadence = 6;       // [steps/s]
+  float landing_force = 7; // [kgf / body weight]
+  float contact_time = 8;  // [s]
+  int32 gait_type = 9;     // GaitType enum value
+  int32 foot_strike = 10;  // FootStrike enum value
+}
+
+// GetGaitLive - poll the current measurement's running counters and the most
+// recently completed stride, for a live monitor. stride_seq increments once per
+// completed stride so the client can tell when `last` is new.
+message GetGaitLiveRequest {}
+
+message GetGaitLiveResponse {
+  bool measuring = 1;
+  uint32 session_id = 2;
+  uint32 steps = 3;        // completed strides so far this session
+  float distance_m = 4;
+  uint32 stride_seq = 5;   // monotonic completed-stride counter
+  GaitStride last = 6;     // latest completed stride (valid when stride_seq > 0)
+}

@@ -6,13 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- `examples/showcase/`: the Gait Analysis panel rendered **two identical Step cards per foot**. `startGait()` clears `gaitActiveIds` and only registers the device ids after all of its `await`s resolve, while `syncAdvancedSessionState()` — added so the recording cards follow mode changes made from the Toolkit settings modal — runs from the ~30 fps render loop and assigns `gaitActiveIds` itself as soon as any session reports `gaitActive`. Because `InsoleToolkitSession._startGait()` sets `gaitActive` **before** awaiting `_verifyGaitLiveness()` (up to `verifyTimeoutMs` × retries, default 1500 ms each), the render loop reliably lands inside that window and the ids end up registered twice (`[0,1,0,1]`), duplicating every card, doubling the step count in the status line, and downloading each CSV twice. The same reset-await-push shape affected FIFO, where duplicate ids double-counted collected and dropped packets. Registration now goes through a single `addActiveDeviceId()` helper that ignores ids already present, and `syncAdvancedSessionState()` skips the FIFO and Step blocks while the corresponding `start*()` is in flight (`fifoStarting` / `gaitStarting`, cleared in `finally`) so the starting call alone decides the final state. Covered by `tests/showcase-gait-panel.test.js`.
-- `examples/showcase/`: the Gait Analysis detail values were unreadable. The card's table used the bare Bootstrap `.table` class, whose `--bs-table-color` defaults to `#212529`, against the `.fifo-card` background `#10171c` — a contrast ratio of about 1.2:1, so only the `.text-muted` parameter names stayed legible. The table now uses `table-dark` like every other table on the page.
-
 ### Added
 
+- showcase: ORPHE INSOLE 1.5 を製品版と**同じトグル・同じ手順**で接続できるようにした。1回のデバイス選択で種別（`INS…` / `Orphe_Insole…`）を自動判別し、製品版は従来の Toolkit 接続（`session.connect()`）、INSOLE 1.5 は同梱の専用クライアント `examples/showcase/lib/insole-1.5.web.js`（グローバル `Insole15`。Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得、IMU からの Madgwick 姿勢推定）へ振り分け、どちらも同じ `dispatchFrame()` で可視化する。INSOLE 1.5 は加速度 m/s²→G、圧力[mV] は表示用に10倍＋チャネル並び替え。pitch/roll の表示補正は既存の「pitch / roll を入れ替えて表示」スイッチを両者共通で使う。クライアントのソース（TypeScript）と再ビルド手順は `examples/showcase/lib/README.md`（ESLint 対象外。`.gitignore` の `proto/` は root 限定の `/proto/` に変更）。
 - 圧力校正値を `begin()` 時に自動取得し、`pressure_calibration` に6ch分を保持。`getPressureCalibration({ timeoutMs })` で再取得可能。非対応・失敗時はエラーを通知せずnullで継続する。
 - 校正式（指数関数・4次多項式）とPythonクライアントの6ch既定係数による荷重[N]を `converted_press` / `gotConvertedPress` で提供。既存の `press` / `gotPress` はADC生値を維持する。
 - `examples/calibrated-pressure/`: 校正済みの圧力値（荷重[N]）を2台分の6chグラフで表示する最小サンプル（index.html + sketch.js のみ）。
