@@ -38,6 +38,8 @@ Realtime Streaming Format（1/3/4）を切り替えられます。現行FWでは
 FWバッファから欠損なくデータを回収します（`read_sensor_data_by_tokoroten_loop` 相当）。収録開始で
 リアルタイム配信が一時停止し、回収したデータで各可視化がライブ更新されます。CSVは参照実装互換
 （`serial_number, timestamp, gyro[dps], acc[G], press1..6[N]`）。FIFOモードにクォータニオンは含まれません。
+**INSOLE 1.5 では FIFO 収録は不要です**: 通常のストリーミング自体がプル型（100 ms ウィンドウ単位の取得・BLE 取りこぼし時は再要求）で
+ロスレスなので、通常の「記録」の CSV がそのまま欠損のないデータになります（FIFO 収録は製品版専用。INSOLE 1.5 のみ接続中はカードのステータスにその旨が出ます）。
 この記録カードとギア内の設定は同じ Toolkit セッションを操作するため、どちらから切り替えても競合しません。
 記録カードからFIFOを開始するとStep Analysisを一時停止し、停止時のdrain後に直前のRealtime/Step設定を復元します。
 Step Analysisの開始・復元時は実packet到着まで確認し、無通知ならstreaming mode再適用と再購読を

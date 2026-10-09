@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- showcase: ORPHE INSOLE 1.5 を製品版と**同じトグル・同じ手順**で接続できるようにした。1回のデバイス選択で種別（`INS…` / `Orphe_Insole…`）を自動判別し、製品版は従来の Toolkit 接続（`session.connect()`）、INSOLE 1.5 は同梱の専用クライアント `examples/showcase/lib/insole-1.5.web.js`（グローバル `Insole15`。Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得、IMU からの Madgwick 姿勢推定）へ振り分け、どちらも同じ `dispatchFrame()` で可視化する。INSOLE 1.5 は加速度 m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（右足は基板上のセンサ配置が異なるため専用テーブル）。pitch/roll の表示補正は既存の「pitch / roll を入れ替えて表示」スイッチを両者共通で使う。クライアントのソース（TypeScript）と再ビルド手順は `examples/showcase/lib/README.md`（ESLint 対象外。`.gitignore` の `proto/` は root 限定の `/proto/` に変更）。
+- showcase: ORPHE INSOLE 1.5 を製品版と**同じトグル・同じ手順**で接続できるようにした。1回のデバイス選択で種別（`INS…` / `Orphe_Insole…`）を自動判別し、製品版は従来の Toolkit 接続（`session.connect()`）、INSOLE 1.5 は同梱の専用クライアント `examples/showcase/lib/insole-1.5.web.js`（グローバル `Insole15`。Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得、IMU からの Madgwick 姿勢推定）へ振り分け、どちらも同じ `dispatchFrame()` で可視化する。INSOLE 1.5 は加速度 m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（右足は基板上のセンサ配置が異なるため専用テーブル）。pitch/roll の表示補正は既存の「pitch / roll を入れ替えて表示」スイッチを両者共通で使う。クライアントのソース（TypeScript）と再ビルド手順は `examples/showcase/lib/README.md`（ESLint 対象外。`.gitignore` の `proto/` は root 限定の `/proto/` に変更）。INSOLE 1.5 は通常のストリーミングがプル型でロスレスなため FIFO 収録が不要である旨を「ロスレス収録（FIFO）」カードと README に記載し、INSOLE 1.5 のみ接続中はカードのステータスにも表示する。
 - 圧力校正値を `begin()` 時に自動取得し、`pressure_calibration` に6ch分を保持。`getPressureCalibration({ timeoutMs })` で再取得可能。非対応・失敗時はエラーを通知せずnullで継続する。
 - 校正式（指数関数・4次多項式）とPythonクライアントの6ch既定係数による荷重[N]を `converted_press` / `gotConvertedPress` で提供。既存の `press` / `gotPress` はADC生値を維持する。
 - `examples/calibrated-pressure/`: 校正済みの圧力値（荷重[N]）を2台分の6chグラフで表示する最小サンプル（index.html + sketch.js のみ）。
