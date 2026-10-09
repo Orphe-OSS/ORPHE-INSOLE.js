@@ -38,12 +38,18 @@ Realtime Streaming Format（1/3/4）を切り替えられます。現行FWでは
 FWバッファから欠損なくデータを回収します（`read_sensor_data_by_tokoroten_loop` 相当）。収録開始で
 リアルタイム配信が一時停止し、回収したデータで各可視化がライブ更新されます。CSVは参照実装互換
 （`serial_number, timestamp, gyro[dps], acc[G], press1..6[N]`）。FIFOモードにクォータニオンは含まれません。
+**INSOLE 1.5 では FIFO 収録は不要です**: 通常のストリーミング自体がプル型（100 ms ウィンドウ単位の取得・BLE 取りこぼし時は再要求）で
+ロスレスなので、通常の「記録」の CSV がそのまま欠損のないデータになります（FIFO 収録は製品版専用。INSOLE 1.5 のみ接続中はカードのステータスにその旨が出ます）。
 この記録カードとギア内の設定は同じ Toolkit セッションを操作するため、どちらから切り替えても競合しません。
 記録カードからFIFOを開始するとStep Analysisを一時停止し、停止時のdrain後に直前のRealtime/Step設定を復元します。
 Step Analysisの開始・復元時は実packet到着まで確認し、無通知ならstreaming mode再適用と再購読を
 自動で最大2回行います。開始できない場合はカードに`GAIT_NO_NOTIFICATIONS`（BLE notifyなし）または
 `GAIT_INVALID_PACKETS`（transport到着・decode不成立）が表示されます。FIFO後の復元に失敗しても
 収録済みFIFO結果は保持され、意図しないFIFO再開を避けてRealtime Rawへ退避します。
+
+## INSOLE 1.5 の接続
+
+製品版と同じヘッダの接続トグルから、1回のデバイス選択で製品版／INSOLE 1.5 を自動判別して接続します（INSOLE 1.5 は選択ダイアログに `Orphe_Insole` として表示）。INSOLE 1.5 は `lib/insole-1.5.web.js`（Web Bluetooth + 暗号化 bleRPC クライアント、グローバル `Insole15`）で通信し、姿勢を送らないため IMU から Madgwick で quat/euler を推定します。加速度は m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（左右で基板上のセンサ配置が異なるため、接続時に取得した foot で選択）をして、製品版と同じ `dispatchFrame()` パイプラインで可視化します。pitch/roll の表示補正は「pitch / roll を入れ替えて表示」スイッチが製品版・INSOLE 1.5共通で効きます。歩容解析も同じ「計測開始」ボタンで動きます（FW の計測セッション `start_measurement` を開始し `get_gait_live` を約 250 ms ごとにポーリング。完了ストライドごとに `OrpheInsoleGait` と同じ row 形式に変換して表示・CSV 保存。ストライド方向・X/Y 成分・カロリーは FW から取得できないため空欄）。クライアントのソース（TypeScript）と再ビルド手順は [`lib/README.md`](./lib/README.md) を参照してください。
 
 ## デモ用歩行データの差し替え
 
@@ -72,4 +78,5 @@ Step Analysisの開始・復元時は実packet到着まで確認し、無通知�
 | `assets/models/*.stl` | 靴3Dモデル（ORPHE-CORE.js から流用） |
 | `assets/*.png` | 足型画像（hula-motion-sonifier から流用） |
 | `assets/thumbs/*.svg` | 「次のステップ」用サムネイル |
+| `lib/` | INSOLE 1.5 用ブラウザクライアント。ビルド済みの `lib/insole-1.5.web.js`（グローバル `Insole15`）を `index.html` が読み込む。ソースと再ビルド手順は `lib/README.md` |
 | `SPEC.md` | 企画書 / 仕様書 |
