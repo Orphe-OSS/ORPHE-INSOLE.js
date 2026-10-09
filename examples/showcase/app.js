@@ -1368,7 +1368,10 @@ window.onload = function () {
                 fifoToggle.disabled = !connected;
                 if (fifoDownload.disabled) {
                     setFifoStatusLoss(false);
-                    fifoStatus.textContent = connected ? i18nText('fifoStatusReady') : i18nText('fifoStatusIdle');
+                    // INSOLE 1.5 のみ接続中: 通常ストリーミングがロスレスなので FIFO 不要の旨を出す
+                    const insole15Only = !connected && deviceKind.includes('insole15');
+                    fifoStatus.textContent = connected ? i18nText('fifoStatusReady')
+                        : insole15Only ? i18nText('fifoStatusInsole15') : i18nText('fifoStatusIdle');
                 }
             }
 

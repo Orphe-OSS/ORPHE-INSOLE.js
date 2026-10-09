@@ -407,6 +407,9 @@ insole.gotEuler = function (euler) {
               取りこぼしたパケットは自動で再要求されます。収録中はリアルタイム表示が一時停止し、収録データで可視化されます。
               <strong>FIFOモードにクォータニオンは含まれません</strong>（ジャイロ・加速度・6ch圧力のみ）。
             </p>
+            <p class="small text-muted mb-2" data-i18n-html="fifoInsole15Note">
+              <strong>INSOLE 1.5 では FIFO 収録は不要です。</strong>INSOLE 1.5 は通常のストリーミング自体がプル型（100 ms ウィンドウ単位で取得し、BLE で取りこぼした分は再要求）で<strong>ロスレス</strong>なので、通常の「記録」の CSV がそのまま欠損のないデータになります（推定クォータニオンも含まれます）。この FIFO 収録は製品版インソール専用です。
+            </p>
             <div class="d-flex gap-2 align-items-center flex-wrap">
               <button id="fifo_toggle" class="btn btn-primary" disabled><i class="bi bi-play-fill"></i> <span data-i18n="fifoStart">収録開始</span></button>
               <button id="fifo_download" class="btn btn-outline-light" disabled><i class="bi bi-download"></i> <span data-i18n="fifoDownload">CSV保存</span></button>
