@@ -1,0 +1,378 @@
+// orphe_insole bleRPC service definitions.
+//
+// Reliable, lossless data extraction by time window (pull model):
+//   1. set_time   — set the insole clock (epoch ms).
+//   2. The firmware continuously samples IMU + pressure at 200 Hz into a ~5 s
+//      on-memory ring buffer, each sample stamped with the insole clock.
+//   3. get_window — fetch the 100 ms window starting at a given time. The
+//      client walks time forward in 100 ms steps and retries a window on BLE
+//      failure (still in cache within ~5 s). Out-of-cache windows return a
+//      status (TOO_OLD / TOO_NEW), not data.
+//
+// Values are in physical units: accel m/s², gyro dps, pressure mV.
+
+syntax = "proto3";
+
+package insole;
+
+// Echo - connectivity / encrypted-handshake check.
+message EchoRequest {
+  string message = 1;
+}
+
+message EchoResponse {
+  string message = 1;
+}
+
+// SetTime - set the insole clock to an absolute epoch time in milliseconds.
+// All cached samples and get_window requests are timestamped against this
+// clock. The response echoes the insole time right after the clock is applied.
+message SetTimeRequest {
+  uint64 epoch_ms = 1;
+}
+
+message SetTimeResponse {
+  uint64 epoch_ms = 1;
+}
+
+// One IMU sample (accelerometer + gyroscope), physical units.
+//
+// Channels are named by their physical body axis, following the attitude
+// convention finalized in the ORPHE-INSOLE.js viewer. The raw LSM6DSO axes are
+// used as-is (no sign change or reordering), so the positive directions are:
+//   accel: +X = right, +Y = forward, +Z = up
+//   gyro : positive follows the right-hand-screw rule about each accel axis
+//          (+gyro_pitch about +X, +gyro_roll about +Y, +gyro_yaw about +Z)
+// Body-axis <-> pitch/roll/yaw mapping (positive sense in parentheses):
+//   sensor X <-> pitch axis  (lateral,      + = right)
+//   sensor Y <-> roll axis   (longitudinal, + = forward)
+//   sensor Z <-> yaw axis    (vertical,     + = up)
+// The field names just label which physical axis each channel is.
+message ImuSample {
+  float accel_lateral = 1;       // accel along lateral axis, +X = right (sensor X) [m/s^2]
+  float accel_longitudinal = 2;  // accel along longitudinal axis, +Y = forward (sensor Y) [m/s^2]
+  float accel_vertical = 3;      // accel along vertical axis, +Z = up (sensor Z) [m/s^2]
+  float gyro_pitch = 4;          // rate about pitch axis, + = right-hand-screw about +X (sensor X) [dps]
+  float gyro_roll = 5;           // rate about roll axis, + = right-hand-screw about +Y (sensor Y) [dps]
+  float gyro_yaw = 6;            // rate about yaw axis, + = right-hand-screw about +Z (sensor Z) [dps]
+}
+
+// One pressure sample (6 channels), physical units.
+message PressureSample {
+  repeated float mv = 1;  // 6 channels [mV]
+}
+
+enum WindowStatus {
+  WINDOW_STATUS_UNSPECIFIED = 0;
+  WINDOW_STATUS_OK = 1;            // full window returned
+  WINDOW_STATUS_TOO_OLD = 2;       // window start older than the cache (evicted)
+  WINDOW_STATUS_TOO_NEW = 3;       // window not fully captured yet
+  WINDOW_STATUS_TIME_NOT_SET = 4;  // set_time has not been called
+}
+
+// GetWindow - fetch a 100 ms window (20 IMU + 20 pressure samples at 200 Hz)
+// starting at start_ms (epoch ms). Returns samples only when status == OK.
+message GetWindowRequest {
+  uint64 start_ms = 1;
+}
+
+message GetWindowResponse {
+  WindowStatus status = 1;
+  uint64 start_ms = 2;                   // echoed request window start
+  uint64 oldest_ms = 3;                  // oldest sample currently cached
+  uint64 newest_ms = 4;                  // newest sample currently cached
+  repeated ImuSample imu = 5;            // ~20 samples (200 Hz over 100 ms)
+  repeated PressureSample pressure = 6;  // ~20 samples (200 Hz over 100 ms)
+}
+
+// Which foot the insole belongs to.
+enum Foot {
+  FOOT_UNSPECIFIED = 0;
+  FOOT_LEFT = 1;
+  FOOT_RIGHT = 2;
+}
+
+// SetDeviceId - set the 32-bit device ID (8 hex digits). Persisted to the
+// external flash (LittleFS). The response echoes the stored value.
+message SetDeviceIdRequest {
+  uint32 device_id = 1;
+}
+
+message SetDeviceIdResponse {
+  uint32 device_id = 1;
+}
+
+// SetFoot - set which foot the insole is. Persisted to the external flash.
+message SetFootRequest {
+  Foot foot = 1;
+}
+
+message SetFootResponse {
+  Foot foot = 1;
+}
+
+// GetConfig - read the persisted device configuration.
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  uint32 device_id = 1;
+  Foot foot = 2;
+  string firmware_version = 3;       // running firmware version (OTA verification)
+  uint32 log_time_unit_sec = 4;      // chunk-close time granularity [s], 0 = disabled
+  uint32 log_distance_unit_code = 5; // chunk-close distance: 0=disabled/1=10m/2=100m/3=1km
+}
+
+// SetLogUnit - configure the chunk-summary granularity (how often a chunk record
+// closes), following the Orphe Core3 log-unit model. Persisted. When both are
+// disabled (0) the chunk closes every GAIT_CHUNK_STRIDES strides (default).
+// Units: time in SECONDS (0 = disabled); distance as a CODE (0=disabled,
+// 1=10 m, 2=100 m, 3=1 km). If both are enabled the chunk closes on whichever
+// cap is hit first.
+message SetLogUnitRequest {
+  uint32 time_unit_sec = 1;       // 0 = disabled, else close a chunk every N seconds
+  uint32 distance_unit_code = 2;  // 0=disabled, 1=10 m, 2=100 m, 3=1 km
+}
+
+message SetLogUnitResponse {
+  bool ok = 1;
+  uint32 time_unit_sec = 2;
+  uint32 distance_unit_code = 3;
+}
+
+// ---------------------------------------------------------------------------
+// OTA firmware update (over bleRPC, MCUboot dual-slot swap).
+//
+//   1. ota_begin(total_size) — prepare the secondary slot for an image of
+//      total_size bytes (erases / initializes the DFU target).
+//   2. ota_write(offset, data) — append a chunk at the given byte offset. The
+//      offset lets the client safely retry a chunk after a dropped response
+//      without double-writing (the firmware ignores already-written offsets).
+//   3. ota_apply() — finalize, mark the new image for test-swap, and reboot.
+//      MCUboot swaps the new image in; if it boots successfully it confirms
+//      itself, otherwise MCUboot rolls back to the previous image.
+// ---------------------------------------------------------------------------
+message OtaBeginRequest {
+  uint32 total_size = 1;  // total image size in bytes
+}
+
+message OtaBeginResponse {
+  bool ok = 1;
+  uint32 max_chunk = 2;  // maximum bytes per ota_write data chunk
+}
+
+message OtaWriteRequest {
+  uint32 offset = 1;  // byte offset of this chunk within the image
+  bytes data = 2;     // chunk payload
+}
+
+message OtaWriteResponse {
+  bool ok = 1;
+  uint32 received = 2;  // total bytes written so far (the next expected offset)
+}
+
+message OtaApplyRequest {}
+
+message OtaApplyResponse {
+  bool ok = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Gait-analysis measurement + logs.
+//
+//   1. start_measurement — reset the analyzer + open a session; the firmware
+//      folds every completed stride into running statistics while active.
+//   2. stop_measurement  — close the session and append one summary record
+//      (avg/min/max/variance per metric, raw float32) to the flash log.
+//   3. list_logs          — enumerate stored summary records (metadata).
+//   4. read_log(index)    — fetch one summary record as a decoded GaitSummary
+//      message (raw float32 physical units; the firmware decodes its on-flash
+//      record so the client just formats it).
+//   5. erase_logs         — wipe all stored records.
+//   6. get_gait_live      — poll the latest completed-stride metrics + running
+//      session counters, for a real-time monitor.
+// ---------------------------------------------------------------------------
+
+message StartMeasurementRequest {
+  uint32 activity_id = 1;  // host-assigned id stamped into this session's summaries -> CSV "activityType" (0 if unset)
+}
+
+message StartMeasurementResponse {
+  bool ok = 1;
+  uint32 session_id = 2;   // id assigned to this measurement
+  uint32 activity_id = 3;  // echoes the activity_id applied to this session
+}
+
+message StopMeasurementRequest {}
+
+message StopMeasurementResponse {
+  bool ok = 1;
+  uint32 session_id = 2;
+  uint32 steps = 3;    // completed strides accumulated this session
+  bool recorded = 4;   // whether a summary record was stored
+}
+
+// Metadata of one stored summary record (no stat blocks).
+message LogMeta {
+  uint32 session_id = 1;
+  uint64 start_ms = 2;
+  uint32 elapsed_ms = 3;
+  uint32 steps = 4;
+}
+
+message ListLogsRequest {}
+
+message ListLogsResponse {
+  uint32 total = 1;           // number of stored records
+  repeated LogMeta logs = 2;  // up to a firmware cap
+}
+
+// Descriptive statistics of one gait metric over a session (raw float, physical
+// units). Field order is average/variance/min/max to match the CSV layout.
+message GaitStat {
+  float average = 1;
+  float variance = 2;
+  float minimum = 3;
+  float maximum = 4;
+}
+
+// One decoded gait-analysis summary record (raw float32, no scaling).
+message GaitSummary {
+  uint32 session_id = 1;
+  uint64 start_ms = 2;    // insole epoch ms at measurement start (0 if unset)
+  uint32 elapsed_ms = 3;
+  uint32 steps = 4;       // completed strides in the session
+  float distance_m = 5;   // sum of stride lengths [m]
+  Foot foot = 6;
+  GaitStat stride = 7;         // [m]
+  GaitStat stride_height = 8;  // max vertical height [m]
+  GaitStat speed = 9;          // [m/s]
+  GaitStat pronation = 10;     // [deg] (raw sign; client flips for presentation)
+  GaitStat strike_angle = 11;  // foot strike angle [deg]
+  GaitStat cadence = 12;       // [steps/s]
+  GaitStat landing_force = 13; // [kgf / body weight]
+  GaitStat contact_time = 14;  // stance phase duration [s]
+  // Host-set at start_measurement, stamped into the session's summaries -> CSV
+  // "activityType". (summary_unit was removed: it had no behaviour.)
+  uint32 activity_id = 15;   // host-assigned per-measurement id (0 if unset)
+}
+
+message ReadLogRequest {
+  uint32 index = 1;  // 0-based, oldest first
+}
+
+message ReadLogResponse {
+  bool ok = 1;
+  uint32 total = 2;          // total stored records
+  GaitSummary summary = 3;   // decoded record (valid when ok)
+}
+
+message EraseLogsRequest {}
+
+message EraseLogsResponse {
+  bool ok = 1;
+}
+
+// One completed stride's instantaneous metrics (raw float, physical units).
+message GaitStride {
+  float stride_length = 1; // [m]
+  float stride_height = 2; // [m]
+  float speed = 3;         // [m/s]
+  float pronation = 4;     // [deg]
+  float strike_angle = 5;  // [deg]
+  float cadence = 6;       // [steps/s]
+  float landing_force = 7; // [kgf / body weight]
+  float contact_time = 8;  // [s]
+  int32 gait_type = 9;     // GaitType enum value
+  int32 foot_strike = 10;  // FootStrike enum value
+}
+
+// GetGaitLive - poll the current measurement's running counters and the most
+// recently completed stride, for a live monitor. stride_seq increments once per
+// completed stride so the client can tell when `last` is new.
+message GetGaitLiveRequest {}
+
+message GetGaitLiveResponse {
+  bool measuring = 1;
+  uint32 session_id = 2;
+  uint32 steps = 3;        // completed strides so far this session
+  float distance_m = 4;
+  uint32 stride_seq = 5;   // monotonic completed-stride counter
+  GaitStride last = 6;     // latest completed stride (valid when stride_seq > 0)
+}
+
+// ---------------------------------------------------------------------------
+// Chunk log (windowed summaries, N strides each) + event log (gait-cycle event
+// timeline). Same pull pattern as read_log: read by index, 0..total-1.
+// ---------------------------------------------------------------------------
+
+// read_chunk(index) — one windowed summary. Reuses GaitSummary (its start_ms/
+// elapsed_ms/steps describe the chunk window rather than the whole session).
+message ReadChunkRequest {
+  uint32 index = 1;  // 0-based, oldest first
+}
+
+message ReadChunkResponse {
+  bool ok = 1;
+  uint32 total = 2;         // total stored chunk records
+  GaitSummary summary = 3;  // decoded chunk (valid when ok)
+}
+
+// One gait-cycle event on the timeline.
+message GaitEvent {
+  uint32 session_id = 1;
+  uint32 t_rel_ms = 2;     // ms since measurement start
+  uint32 seq = 3;          // event index within the session
+  uint32 type = 4;         // 1 HeelRise, 2 InitialContact, 3 FootFlat, 4 Stride
+  uint32 foot_strike = 5;  // FootStrike enum (Stride events)
+  float value = 6;         // stride length [m] for Stride events, else 0
+}
+
+// read_event(index) — one event from the timeline.
+message ReadEventRequest {
+  uint32 index = 1;  // 0-based, oldest first
+}
+
+message ReadEventResponse {
+  bool ok = 1;
+  uint32 total = 2;    // total stored event records
+  GaitEvent event = 3; // decoded event (valid when ok)
+}
+
+// ---------------------------------------------------------------------------
+// Fault log — reboot-surviving diagnostics read after the fact, because the
+// gait crash only reproduces worn + walking, where a wired RTT/J-Link probe is
+// physically impossible. get_fault_log returns the last captured fatal error
+// (reason/PC/thread), the last caught soft error (C++ exception what()), and
+// live resource-pressure gauges for the current boot.
+// ---------------------------------------------------------------------------
+message GetFaultLogRequest {}
+
+message GetFaultLogResponse {
+  bool valid = 1;               // a record has been written since first cold boot
+  uint32 boot_count = 2;        // ++ each boot; a jump between reads proves a reboot
+  uint32 fault_count = 3;       // hard fatal errors captured
+  uint32 soft_count = 4;        // soft errors (caught C++ exceptions) recorded
+
+  // Last hard fatal error (fatal_reason is a Zephyr K_ERR_* code):
+  uint32 fatal_reason = 5;
+  uint32 fatal_pc = 6;
+  uint32 fatal_lr = 7;
+  uint32 fatal_uptime_ms = 8;
+  string fatal_thread = 9;
+  string fatal_detail = 10;
+
+  // Last soft error (C++ exception caught in the gait path before it crashed):
+  uint32 soft_reason = 11;      // FAULT_SOFT_* code
+  uint32 soft_extra = 12;       // context at the throw (stride seq)
+  uint32 soft_uptime_ms = 13;
+  string soft_thread = 14;
+  string soft_detail = 15;      // exception what()
+
+  // Live diagnostics for the current boot (not persisted across reboot):
+  uint32 sampler_stack_free = 16;  // min unused bytes on the sampler stack
+  uint32 gait_update_max_us = 17;  // worst update() cost this measurement
+  uint32 gait_flush_max_ms = 18;   // worst flush-to-flash stall this measurement
+
+  uint32 reset_cause = 19;    // hwinfo RESET_* flags for the last boot's reset
+  uint32 samples_dropped = 20;  // IMU samples dropped this measurement (gait queue overflow)
+}

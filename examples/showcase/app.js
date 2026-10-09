@@ -3,6 +3,7 @@
  *
  * 役割:
  *  - InsoleToolkit による接続（左右最大2台）と got* コールバックの配線
+ *  - INSOLE 1.5 も同じトグルから接続（lib/insole-1.5.web.js、installUnifiedToggle）
  *  - ライブ受信とデモ再生（demo-data.js）を同じ dispatchFrame() に集約
  *  - mount_position による L/R 自動判定とパネルの並び替え
  *  - CSV記録（収録した実データはデモ再生のソースとして読み込み可能）
@@ -511,6 +512,182 @@ function applyMountPositionWhenReady(insole, tries = 20) {
 }
 
 //--------------------------------------------------
+// INSOLE 1.5 対応
+//   製品版インソールと「同じ手順」（ヘッダのトグル1つ）で接続できるよう、
+//   ツールキットのトグルが呼ぶグローバル toggleInsoleModule を差し替える。
+//   1回のデバイス選択で種別を自動判定し、製品版は既存の接続処理（Toolkit の
+//   session.connect() → begin()）へ、INSOLE 1.5 は専用クライアント（lib/ の Insole15）へ
+//   振り分け、どちらも同じ dispatchFrame へ流す。
+//   姿勢の pitch/roll 補正は製品版・INSOLE 1.5 とも共通の「pitch / roll を入れ替えて表示」
+//   スイッチ（AttitudeViz.setSwapPitchRoll）が担うので、ここでは座標変換を掛けない。
+//   lib/insole-1.5.web.js が読み込まれていないページでは何もしない（従来のトグルのまま）。
+//--------------------------------------------------
+const INSOLE15_NAME_PREFIX = 'Orphe_Insole';
+const G_ACCEL = 9.80665;
+const INSOLE15_PRESSURE_SCALE = 10; // INSOLE 1.5 は圧力値[mV]が小さいため、表示用に10倍する
+// INSOLE 1.5 の圧力チャネル並び替え（表示 p0..p5 = 元 p3,p4,p2,p5,p1,p0）
+const INSOLE15_PRESSURE_MAP = [3, 4, 2, 5, 1, 0];
+const insole15Clients = [null, null];
+const deviceKind = [null, null]; // 'product' | 'insole15' | null
+
+function insole15ClientAvailable() {
+    return typeof Insole15 !== 'undefined' && !!Insole15 && typeof Insole15.InsoleClient === 'function';
+}
+
+/** 製品版 SDK の requestDevice() と同じ optionalServices（接続後に必要な service へアクセスするため） */
+function productOptionalServices() {
+    const s = insoles[0];
+    return [s.ORPHE_INFORMATION, s.ORPHE_OTHER_SERVICE, 'device_information'].filter(Boolean);
+}
+
+/** 製品版・INSOLE 1.5 の両方を1つのダイアログに出す（同じ手順で接続するため） */
+async function pickAnyInsole() {
+    return navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: 'INS' }, { namePrefix: INSOLE15_NAME_PREFIX }],
+        optionalServices: [Insole15.SERVICE_UUID, ...productOptionalServices()],
+        optionalManufacturerData: [0x0000],
+    });
+}
+
+function isInsole15Device(device) {
+    return (device.name || '').startsWith(INSOLE15_NAME_PREFIX);
+}
+
+// INSOLE 1.5 を製品版と同じ単位・スケールに揃える（加速度 m/s^2 → G、圧力[mV]は
+// 小さいため表示用に10倍＋チャネル並び替え）。姿勢(quat/euler)はクライアントの推定値を
+// そのまま渡し、pitch/roll の表示補正は製品版と共通のスイッチで行う。
+function adaptInsole15Frame(f) {
+    return {
+        t: f.t,
+        serial: f.serial,
+        press: f.press
+            ? INSOLE15_PRESSURE_MAP.map((src) => (f.press[src] ?? 0) * INSOLE15_PRESSURE_SCALE)
+            : null,
+        acc: f.acc ? { x: f.acc.x / G_ACCEL, y: f.acc.y / G_ACCEL, z: f.acc.z / G_ACCEL } : null,
+        gyro: f.gyro,
+        quat: f.quat ?? null,
+        euler: f.euler ?? null,
+    };
+}
+
+function setInsole15HeaderBadges(id, cfg) {
+    const f = document.querySelector(`#freq${id}`);
+    if (f) f.innerHTML = '200 Hz';
+    const lr = document.querySelector(`#lr_badge${id}`);
+    if (lr) {
+        const side = cfg.foot === 'right' ? 'R' : cfg.foot === 'left' ? 'L' : '-';
+        lr.innerText = side;
+        lr.className = 'badge ' + (side === 'R' ? 'bg-primary' : side === 'L' ? 'bg-success' : 'bg-secondary');
+    }
+    const fw = document.querySelector(`#fw_badge${id}`);
+    const fwWrap = document.querySelector(`#icon_fw${id}`);
+    if (fw && fwWrap) {
+        fw.innerText = cfg.firmwareVersion ? `FW ${cfg.firmwareVersion}` : '';
+        fwWrap.style.display = cfg.firmwareVersion ? '' : 'none';
+    }
+}
+
+function setToolkitUiVisible(id, visible) {
+    const ui = document.querySelector(`#ui${id}`);
+    if (ui) ui.style.visibility = visible ? 'visible' : 'hidden';
+}
+
+async function connectInsole15(id, device) {
+    const client = new Insole15.InsoleClient();
+    insole15Clients[id] = client;
+    try {
+        await client.connect({ device, name: device.name, address: device.id, rssi: 0 });
+        const cfg = await client.getConfigInfo();
+        applySide(id, cfg.foot === 'right' ? 'R' : cfg.foot === 'left' ? 'L' : (id === 0 ? 'L' : 'R'));
+        setInsole15HeaderBadges(id, cfg);
+        client.startMonitor(
+            (frame) => dispatchFrame(id, adaptInsole15Frame(frame), true),
+            { onError: (e) => console.warn(`INSOLE${id} monitor:`, e) },
+        );
+        // 予期しない切断（電源断・圏外）でトグルが ON のまま残らないようにする
+        device.addEventListener('gattserverdisconnected', () => {
+            if (insole15Clients[id] !== client) return;
+            disconnectInsole15(id);
+            deviceKind[id] = null;
+            setToolkitUiVisible(id, false);
+            const sw = document.querySelector(`#switch_ble${id}`);
+            if (sw) sw.checked = false;
+        });
+        return true;
+    } catch (e) {
+        console.error(`INSOLE 1.5 #${id} connect failed:`, e);
+        try { client.disconnect(); } catch { /* ignore */ }
+        insole15Clients[id] = null;
+        return false;
+    }
+}
+
+function disconnectInsole15(id) {
+    const client = insole15Clients[id];
+    if (client) {
+        try { client.stopMonitor(); client.disconnect(); } catch { /* ignore */ }
+    }
+    insole15Clients[id] = null;
+}
+
+function installUnifiedToggle() {
+    if (!insole15ClientAvailable() || typeof window.toggleInsoleModule !== 'function') return;
+    const orig = window.toggleInsoleModule;
+    window.toggleInsoleModule = async function (dom, options = {}) {
+        const id = parseInt(dom.value, 10);
+        if (!dom.checked) {
+            if (deviceKind[id] === 'insole15') {
+                disconnectInsole15(id);
+                setToolkitUiVisible(id, false);
+            } else {
+                await orig(dom, options);
+            }
+            deviceKind[id] = null;
+            return;
+        }
+        let device;
+        dom.disabled = true;
+        try {
+            device = await pickAnyInsole();
+        } catch {
+            dom.checked = false; // キャンセル/エラー時はトグルを戻す
+            dom.disabled = false;
+            return;
+        }
+        if (isInsole15Device(device)) {
+            const ok = await connectInsole15(id, device);
+            dom.disabled = false;
+            if (!ok) { dom.checked = false; return; }
+            deviceKind[id] = 'insole15';
+            setToolkitUiVisible(id, true);
+            return;
+        }
+        dom.disabled = false;
+        // 製品版: 選択済みデバイスを事前設定 → begin() の scan() は chooser をスキップして接続する
+        // （SDK の requestDevice() が選択後に行う初期化と同じ）
+        const insole = insoles[id];
+        const other = insoles[1 - id];
+        if (other && other.bluetoothDevice && other.bluetoothDevice.id === device.id) {
+            console.warn(`INSOLE${id}: "${device.name || device.id}" is already assigned to INSOLE${1 - id}`);
+            dom.checked = false;
+            return;
+        }
+        insole.bluetoothDevice = device;
+        insole.lastStatus = null;
+        insole.firmware_version = null;
+        insole._usingRememberedBluetoothDevice = false;
+        insole._rememberedBluetoothDeviceUnavailable = false;
+        try {
+            device.addEventListener('gattserverdisconnected', insole._onDisconnectHandler);
+        } catch { /* ignore */ }
+        if (typeof insole.onScan === 'function') insole.onScan(device.name);
+        deviceKind[id] = 'product';
+        await orig(dom, options);
+        if (!dom.checked) deviceKind[id] = null; // 接続失敗時は Toolkit 側がトグルを戻す
+    };
+}
+
+//--------------------------------------------------
 // 初期化
 //--------------------------------------------------
 window.onload = function () {
@@ -612,6 +789,9 @@ window.onload = function () {
             applyMountPositionWhenReady(this);
         };
     }
+
+    // 製品版・INSOLE 1.5 の両対応トグルを有効化（buildInsoleToolkit の後に差し替える）
+    installUnifiedToggle();
 
     // 初期のL/Rバッジ・並び（デモは device0=左足 / device1=右足）
     applySide(0, 'L');
@@ -1143,6 +1323,7 @@ window.onload = function () {
             for (let id = 0; id < 2; id++) {
                 const devLive = (performance.now() - lastLiveAtDev[id]) < LIVE_TIMEOUT_MS;
                 if (!devLive) continue;
+                if (deviceKind[id] === 'insole15') continue; // INSOLE 1.5 はモード概念なし（press/quat とも常時あり）
                 if (insoles[id].streaming_mode === 1) anyMode1 = true;
                 if (insoles[id].streaming_mode === 3) anyMode3 = true;
             }
