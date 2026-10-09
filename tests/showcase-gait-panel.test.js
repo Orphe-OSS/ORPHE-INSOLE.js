@@ -74,6 +74,28 @@ const addActiveDeviceId = new Function(`${helper[0]}\nreturn addActiveDeviceId;`
     assert.deepEqual(addActiveDeviceId([0], 1), [0, 1], '別IDは追加する');
 }
 
+// ── 3b. INSOLE 1.5 の分岐も gaitStarting ガードの中にあること ─────────────
+// INSOLE 1.5 の startGaitMonitor() は start_measurement が返った時点で active になり、
+// その後 start() が resolve するまでに追従処理が走りうる（Toolkit と同じ窓）。
+// 2台（1.5×2 / 製品版＋1.5）で Step カードが二重に出ないよう、分岐はガードの内側に置く。
+{
+    const body = app.match(/async function startGait\(\)[\s\S]*?\n {4}\}\n/);
+    assert.ok(body, 'startGait() が見つからない');
+    const src = body[0];
+    const guardOn = src.indexOf('gaitStarting = true');
+    const branch = src.indexOf('isInsole15GaitSlot(id)');
+    const guardOff = src.indexOf('finally {');
+    assert.ok(branch > 0, 'startGait() に INSOLE 1.5 の分岐（isInsole15GaitSlot）が無い');
+    assert.ok(guardOn > 0 && guardOn < branch && branch < guardOff,
+        'INSOLE 1.5 の開始分岐が gaitStarting = true 〜 finally の外にある');
+
+    // 追従処理も INSOLE 1.5 のスロットを対象にする（製品版の session.gaitActive だけを見ない）
+    const sync = app.match(/function syncGaitSessionState\(connectedIds\) \{[\s\S]*?\n {4}\}\n/);
+    assert.ok(sync, 'syncGaitSessionState() が見つからない');
+    assert.match(sync[0], /isInsole15GaitSlot\(id\)/,
+        'syncGaitSessionState() が INSOLE 1.5 のスロット（isInsole15GaitSlot）を見ていない');
+}
+
 // ── 4. 開始中の割り込みシナリオ（描画ループ 5ms × 開始処理 40ms） ─────────────
 // 「リセット → await → 登録」の間に追従処理が走っても対象IDが重複しないこと。
 // 修正前の形（ガード無し＋直接 push）では重複することも同時に固定して、

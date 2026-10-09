@@ -439,6 +439,9 @@ insole.gotEuler = function (euler) {
               専用の characteristic を 50Hz で subscribe するだけで、1歩ごとに集約された値が届きます（<code>read_gait_analysis</code> 相当）。
               歩いて（その場足踏みでも可）ください。
             </p>
+            <p class="small text-muted mb-2" data-i18n-html="gaitInsole15Note">
+              <strong>INSOLE 1.5 でも同じ「計測開始」で計測できます。</strong>FW の計測セッション（<code>start_measurement</code>）を開始し、<code>get_gait_live</code> を約 250 ms ごとにポーリングして、完了ストライドごとに製品版と同じ形式で表示・CSV 保存します（センサのストリーミングと同時に動作）。ストライド方向・ストライドの X/Y 成分・カロリーは INSOLE 1.5 の FW からは取得できないため空欄になります。計測停止時に FW がセッションの要約をフラッシュのログへ記録します。
+            </p>
             <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
               <button id="gait_toggle" class="btn btn-primary" disabled><i class="bi bi-play-fill"></i> <span data-i18n="gaitStart">計測開始</span></button>
               <button id="gait_download" class="btn btn-outline-light" disabled><i class="bi bi-download"></i> <span data-i18n="gaitDownload">CSV保存</span></button>
