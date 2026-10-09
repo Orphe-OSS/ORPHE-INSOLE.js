@@ -132,6 +132,32 @@ export interface InsoleClientOptions {
   pinIdentity?: boolean;
 }
 
+/**
+ * One completed stride from the firmware gait analyzer (GaitAnalysisCore), as
+ * polled from get_gait_live. Physical units, raw values (no presentation sign
+ * flip): `pronation` is the analyzer's pronation Euler Y in degrees — the same
+ * quantity the product insole publishes as pronation_y — and `strikeAngle` is
+ * the foot angle at strike. `gaitType` / `footStrike` are the analyzer enums
+ * (GaitType 0 none / 1 walk / 2 run / 3 stance; FootStrike 0 none / 1 heel /
+ * 2 midfoot / 3 forefoot).
+ */
+export interface InsoleGaitStride {
+  strideSeq: number; // monotonic completed-stride counter (1 = first stride of the session)
+  sessionId: number;
+  steps: number; // completed strides so far this session
+  distanceM: number; // sum of stride lengths [m]
+  strideLength: number; // [m]
+  strideHeight: number; // max vertical height [m]
+  speed: number; // [m/s]
+  pronation: number; // [deg] raw sign
+  strikeAngle: number; // [deg]
+  cadence: number; // [steps/s]
+  landingForce: number; // [kgf / body weight]
+  contactTime: number; // stance phase [s]
+  gaitType: number; // GaitType enum value
+  footStrike: number; // FootStrike enum value
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -144,6 +170,19 @@ export class InsoleClient extends BlerpcClient {
   private _monitoring = false;
   // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
   private _q: [number, number, number, number] = [1, 0, 0, 0];
+  private _gaitMonitoring = false;
+  private _gaitSessionId = 0;
+  // bleRPC request/response is not re-entrant (one shared notify assembler per
+  // link), so every RPC — the 100 ms window loop, gait polling, config reads —
+  // is queued on one promise chain. A failed call never blocks the next one.
+  private _rpcChain: Promise<unknown> = Promise.resolve();
+
+  protected override call(cmdName: string, requestData: Uint8Array): Promise<Uint8Array> {
+    const run = () => super.call(cmdName, requestData);
+    const p = this._rpcChain.then(run, run);
+    this._rpcChain = p.catch(() => undefined);
+    return p;
+  }
 
   constructor(options: InsoleClientOptions = {}) {
     super(
@@ -274,8 +313,99 @@ export class InsoleClient extends BlerpcClient {
     this._monitoring = false;
   }
 
+  /** True while a gait monitor (firmware measurement session + polling) is running. */
+  get isGaitMonitoring(): boolean {
+    return this._gaitMonitoring;
+  }
+
+  /** Session id of the running gait measurement (0 when none). */
+  get gaitSessionId(): number {
+    return this._gaitSessionId;
+  }
+
+  /**
+   * Gait monitor: open a firmware measurement session (start_measurement) and
+   * poll get_gait_live every `pollMs` (default 250 ms), emitting each newly
+   * completed stride via `onStride` (stride_seq tells new from repeated). Runs
+   * until stopGaitMonitor(). Mirrors `insole_cli` `gait-monitor`. Can run
+   * alongside startMonitor(): the firmware feeds its analyzer from the same
+   * sample pipeline that serves get_window, and all RPCs are serialized here.
+   * Only the latest completed stride is reported per poll, so strides that
+   * complete faster than the poll interval are counted (`steps`) but their
+   * metrics are not delivered.
+   * @returns the firmware session id
+   */
+  async startGaitMonitor(
+    onStride: (stride: InsoleGaitStride) => void,
+    opts: { pollMs?: number; activityId?: number; onError?: (e: unknown) => void } = {},
+  ): Promise<number> {
+    if (this._gaitMonitoring) return this._gaitSessionId;
+    // The session's start time / log dates come from the insole clock; the
+    // sensor monitor already sets it, so only do it here when that is not running.
+    if (!this._monitoring) await this.setTime({ epochMs: Date.now() });
+    const r = await this.startMeasurement({ activityId: opts.activityId ?? 0 });
+    if (!r.ok) throw new Error('start_measurement failed');
+    this._gaitMonitoring = true;
+    this._gaitSessionId = r.sessionId ?? 0;
+    const pollMs = opts.pollMs ?? 250;
+    let lastSeq = 0;
+    void (async () => {
+      while (this._gaitMonitoring) {
+        try {
+          const live = await this.getGaitLive();
+          const seq = live.strideSeq ?? 0;
+          const last = live.last;
+          if (seq > lastSeq && last) {
+            lastSeq = seq;
+            onStride({
+              strideSeq: seq,
+              sessionId: live.sessionId ?? 0,
+              steps: live.steps ?? 0,
+              distanceM: live.distanceM ?? 0,
+              strideLength: last.strideLength ?? 0,
+              strideHeight: last.strideHeight ?? 0,
+              speed: last.speed ?? 0,
+              pronation: last.pronation ?? 0,
+              strikeAngle: last.strikeAngle ?? 0,
+              cadence: last.cadence ?? 0,
+              landingForce: last.landingForce ?? 0,
+              contactTime: last.contactTime ?? 0,
+              gaitType: last.gaitType ?? 0,
+              footStrike: last.footStrike ?? 0,
+            });
+          }
+        } catch (e) {
+          opts.onError?.(e); // transient BLE/RPC error — keep polling
+        }
+        await sleep(pollMs);
+      }
+    })();
+    return this._gaitSessionId;
+  }
+
+  /**
+   * Stop the gait monitor: end the polling loop and close the firmware
+   * measurement session (stop_measurement; the firmware then records the
+   * session summary to its flash log). Resolves to the firmware response, or
+   * null when no monitor was running or the stop command failed (e.g. link
+   * already gone).
+   */
+  async stopGaitMonitor(): Promise<insole.StopMeasurementResponse | null> {
+    if (!this._gaitMonitoring) return null;
+    this._gaitMonitoring = false;
+    try {
+      return await this.stopMeasurement();
+    } catch {
+      return null;
+    } finally {
+      this._gaitSessionId = 0;
+    }
+  }
+
   disconnect(): void {
     this._monitoring = false;
+    this._gaitMonitoring = false; // link is going down: no stop_measurement attempt
+    this._gaitSessionId = 0;
     super.disconnect();
   }
 }

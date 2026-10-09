@@ -15717,6 +15717,18 @@ var Insole15 = (() => {
       this._monitoring = false;
       // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
       this._q = [1, 0, 0, 0];
+      this._gaitMonitoring = false;
+      this._gaitSessionId = 0;
+      // bleRPC request/response is not re-entrant (one shared notify assembler per
+      // link), so every RPC — the 100 ms window loop, gait polling, config reads —
+      // is queued on one promise chain. A failed call never blocks the next one.
+      this._rpcChain = Promise.resolve();
+    }
+    call(cmdName, requestData) {
+      const run = () => super.call(cmdName, requestData);
+      const p = this._rpcChain.then(run, run);
+      this._rpcChain = p.catch(() => void 0);
+      return p;
     }
     /** Read the persisted device configuration into a friendly shape. */
     async getConfigInfo() {
@@ -15822,8 +15834,90 @@ var Insole15 = (() => {
     stopMonitor() {
       this._monitoring = false;
     }
+    /** True while a gait monitor (firmware measurement session + polling) is running. */
+    get isGaitMonitoring() {
+      return this._gaitMonitoring;
+    }
+    /** Session id of the running gait measurement (0 when none). */
+    get gaitSessionId() {
+      return this._gaitSessionId;
+    }
+    /**
+     * Gait monitor: open a firmware measurement session (start_measurement) and
+     * poll get_gait_live every `pollMs` (default 250 ms), emitting each newly
+     * completed stride via `onStride` (stride_seq tells new from repeated). Runs
+     * until stopGaitMonitor(). Mirrors `insole_cli` `gait-monitor`. Can run
+     * alongside startMonitor(): the firmware feeds its analyzer from the same
+     * sample pipeline that serves get_window, and all RPCs are serialized here.
+     * Only the latest completed stride is reported per poll, so strides that
+     * complete faster than the poll interval are counted (`steps`) but their
+     * metrics are not delivered.
+     * @returns the firmware session id
+     */
+    async startGaitMonitor(onStride, opts = {}) {
+      if (this._gaitMonitoring) return this._gaitSessionId;
+      if (!this._monitoring) await this.setTime({ epochMs: Date.now() });
+      const r = await this.startMeasurement({ activityId: opts.activityId ?? 0 });
+      if (!r.ok) throw new Error("start_measurement failed");
+      this._gaitMonitoring = true;
+      this._gaitSessionId = r.sessionId ?? 0;
+      const pollMs = opts.pollMs ?? 250;
+      let lastSeq = 0;
+      void (async () => {
+        while (this._gaitMonitoring) {
+          try {
+            const live = await this.getGaitLive();
+            const seq = live.strideSeq ?? 0;
+            const last = live.last;
+            if (seq > lastSeq && last) {
+              lastSeq = seq;
+              onStride({
+                strideSeq: seq,
+                sessionId: live.sessionId ?? 0,
+                steps: live.steps ?? 0,
+                distanceM: live.distanceM ?? 0,
+                strideLength: last.strideLength ?? 0,
+                strideHeight: last.strideHeight ?? 0,
+                speed: last.speed ?? 0,
+                pronation: last.pronation ?? 0,
+                strikeAngle: last.strikeAngle ?? 0,
+                cadence: last.cadence ?? 0,
+                landingForce: last.landingForce ?? 0,
+                contactTime: last.contactTime ?? 0,
+                gaitType: last.gaitType ?? 0,
+                footStrike: last.footStrike ?? 0
+              });
+            }
+          } catch (e) {
+            opts.onError?.(e);
+          }
+          await sleep(pollMs);
+        }
+      })();
+      return this._gaitSessionId;
+    }
+    /**
+     * Stop the gait monitor: end the polling loop and close the firmware
+     * measurement session (stop_measurement; the firmware then records the
+     * session summary to its flash log). Resolves to the firmware response, or
+     * null when no monitor was running or the stop command failed (e.g. link
+     * already gone).
+     */
+    async stopGaitMonitor() {
+      if (!this._gaitMonitoring) return null;
+      this._gaitMonitoring = false;
+      try {
+        return await this.stopMeasurement();
+      } catch {
+        return null;
+      } finally {
+        this._gaitSessionId = 0;
+      }
+    }
     disconnect() {
       this._monitoring = false;
+      this._gaitMonitoring = false;
+      this._gaitSessionId = 0;
       super.disconnect();
     }
   };
