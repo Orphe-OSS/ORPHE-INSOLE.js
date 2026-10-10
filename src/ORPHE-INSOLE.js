@@ -1,5 +1,5 @@
 var orphe_js_version_date = `
-Last modified: 2026/07/15 00:00:00
+Last modified: 2026/09/06 00:00:00
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
@@ -9,7 +9,7 @@ v1.1.0 接続安定化（デバイス記憶・高速再接続・自動再接続�
 v0.9.0 ベータ版
 @module OrpheInsole
 @author Tetsuaki BABA
-@version 1.2.1
+@version 1.3.4
 
 @description
 ## センサ座標系と圧力センサ配置 / Sensor frame and pressure sensor placement
@@ -33,8 +33,11 @@ press.values[i] corresponds to sensor i+1.
 @see https://github.com/Orphe-OSS/ORPHE-INSOLE.js
 */
 
-// 外部スクリプトを読み込む関数
-function loadScript(src) {
+// 同梱ライブラリ用の <script> 挿入。同一ファイル名が既に読み込まれていれば何もしない。
+// 同一 origin の相対 URL しか扱わないので crossorigin は付けない（file:// で開いたときに
+// オペーク origin の CORS 失敗でスクリプトが実行されない事故を避ける）。
+// グローバル名は ORPHE-CORE.js の loadScript と衝突しないよう INSOLE 固有にする。
+function _orpheInsoleLoadScript(src) {
   if (typeof document === 'undefined') return;
   const fileName = src.split('/').pop();
   if (fileName) {
@@ -47,14 +50,30 @@ function loadScript(src) {
   const script = document.createElement('script');
   script.src = src;
   script.type = 'text/javascript';
-  script.crossOrigin = 'anonymous';
   document.head.appendChild(script);
 }
 
-// 外部スクリプトの読み込み
+// 同梱ライブラリ（src/vendor/）の自動読み込み
+//
+// gotEuler の四元数→オイラー角変換に Quaternion.js（src/vendor/quaternion.js、MIT）を使う。
+//  - dist/orphe-insole(.min).js には scripts/build-dist.js が quaternion.js を同梱しているので、
+//    グローバル Quaternion が既に定義されておりここでは何もしない。
+//  - src/ORPHE-INSOLE.js を直接読み込むページ（examples 等）では、このスクリプト自身の URL を基準に
+//    vendor/quaternion.js を相対パスでロードする（../../src/ORPHE-INSOLE.js → ../../src/vendor/quaternion.js）。
+//  - 同一ページで ORPHE-CORE.js が先に quaternion.js を読み込んでいれば（Quaternion 定義済み）何もしない。
+//  - type="module" やインライン評価などで自身の URL が取れない場合は何もしない（gotEuler は呼ばれないが他は動作する）。
+// 以前は ORPHE-CORE.js リポジトリの jsDelivr URL（@main → @v1.4.x）から quaternion.js / float16.min.js を
+// ロードしていたが、別リポジトリのコードを実行時に取り込む構造を無くすため v1.3.4 で廃止した
+// （float16 は INSOLE 未使用。半精度は src/InsoleGait.js の f16be でデコードする）。
+var _orpheInsoleScriptBase = (function () {
+  if (typeof document === 'undefined' || !document.currentScript || !document.currentScript.src) return null;
+  return String(document.currentScript.src).replace(/[?#].*$/, '').replace(/[^/]*$/, '');
+})();
+
 function _orpheInsoleAutoLoadOptionalLibs() {
-  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/float16.min.js');
-  loadScript('https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-CORE.js@main/js/quaternion.js');
+  if (typeof Quaternion !== 'undefined') return;
+  if (!_orpheInsoleScriptBase) return;
+  _orpheInsoleLoadScript(_orpheInsoleScriptBase + 'vendor/quaternion.js');
 }
 if (typeof document !== 'undefined') {
   if (document.readyState === 'loading') {
@@ -371,6 +390,26 @@ function parseInsoleSensorValues(data, options = {}) {
   return { header, serial_number, timestamp: t_start, samples };
 }
 
+// insole_client e342620 の bin_to_float_pressure_n と同じ6ch既定係数。
+// 配列の順序はセンサー番号0..5、各行は4次から定数項まで。
+const DEFAULT_PRESSURE_COEFFICIENTS = [
+  [6.31278e-11, -2.33093e-7, 3.27825e-4, -1.63373e-1, 2.25012e1],
+  [6.65168e-11, -2.10741e-7, 2.31937e-4, -7.10366e-2, 6.97927],
+  [1.07646e-10, -3.85112e-7, 5.02384e-4, -2.37328e-1, 3.18015e1],
+  [5.91156e-11, -1.81045e-7, 1.86644e-4, -4.46178e-2, 3.10811],
+  [5.32573e-11, -1.68515e-7, 1.79518e-4, -4.66859e-2, 3.71484],
+  [4.44324e-11, -1.09728e-7, 8.90389e-5, 3.82816e-3, -4.46580],
+];
+
+function pressureInNewtons(x, calibration, index) {
+  const evaluate = (func, c) => func === 0
+    ? c[0] * Math.exp(c[1] * x) + c[2]
+    : (((c[0] * x + c[1]) * x + c[2]) * x + c[3]) * x + c[4];
+  let y = calibration ? evaluate(calibration.func, calibration.coeffs) : NaN;
+  if (!Number.isFinite(y)) y = evaluate(1, DEFAULT_PRESSURE_COEFFICIENTS[index]);
+  return Math.max(0, Number.isFinite(y) ? y : 0);
+}
+
 /**
  * ORPHE INSOLE Module Javascript class
 * @class
@@ -408,6 +447,10 @@ class OrpheInsole {
    */
   constructor(id = 0) {
 
+    /** デバイスから取得した6ch校正値。未取得・非対応・失敗時はnull。 */
+    this.pressure_calibration = null;
+    this.converted_press = { values: [0, 0, 0, 0, 0, 0] };
+    this._pressureCalibrationRequest = null;
     this.defaultGotData = this.gotData;
     this.timestamp = new OrpheTimestamp();
 
@@ -807,6 +850,7 @@ class OrpheInsole {
       await this.syncCoreTime(3, options);
 
       await this.startNotify('SENSOR_VALUES', options);
+      await this.getPressureCalibration();
 
       // 接続成功: デバイスを記憶し、自動再接続用の切断検知を仕込む
       if (this.bluetoothDevice) {
@@ -904,6 +948,7 @@ class OrpheInsole {
   // GATT切断/clear後に古い startNotifications Promise が解決しても、
   // 新接続の handler map を上書きしないよう全notify操作を無効化する。
   _invalidateNotifyOperations() {
+    this._clearPressureCalibration();
     const uuids = new Set([
       ...Object.keys(this._notifyOperationTokens),
       ...Object.keys(this.dataChangedEventHandlerMap),
@@ -1742,6 +1787,10 @@ class OrpheInsole {
    * @param {string} uuid
    */
   onRead(data, uuid) {
+    if (uuid === 'SENSOR_VALUES' && data.byteLength > 0 && data.getUint8(0) === 0x39) {
+      if (this.isGotDataOverridden()) this.gotData(data, uuid);
+      return;
+    }
     // FIFO (lossless) collection intercepts SENSOR_VALUES notifications here so
     // its request/response protocol can consume command replies and data packets
     // directly, bypassing the realtime got* dispatch. See src/InsoleFifo.js.
@@ -1811,6 +1860,10 @@ class OrpheInsole {
         }
         if (sample.press) {
           this.press = sample.press;
+          this.converted_press = {
+            ...sample.press,
+            values: sample.press.values.map((x, i) => pressureInNewtons(x, this.pressure_calibration?.[i], i))
+          };
           this.history_sensor_values.press.push(this.press);
         }
         if (sample.converted_gyro) {
@@ -1844,6 +1897,7 @@ class OrpheInsole {
           this.gotConvertedAcc(this.converted_acc);
           this.gotConvertedGyro(this.converted_gyro);
           this.gotPress(this.press);
+          this.gotConvertedPress(this.converted_press);
         }
         else if (parsed.header == 56) {
           this.gotQuat(this.quat);
@@ -1853,6 +1907,7 @@ class OrpheInsole {
           this.gotConvertedAcc(this.converted_acc);
           this.gotConvertedGyro(this.converted_gyro);
           this.gotPress(this.press);
+          this.gotConvertedPress(this.converted_press);
         }
       }
 
@@ -1903,6 +1958,86 @@ class OrpheInsole {
         reject(error);
       });
     });
+  }
+
+  /**
+   * 接続中のデバイスから圧力校正値を取得し、6ch分を一括保持します。
+   * begin()後に使用してください。通知が未開始の場合もnullを返します。
+   * 非対応・不正応答・通信失敗・タイムアウトはnull（onErrorは発火しません）。
+   * @param {{timeoutMs?: number}} [options] 取得全体の期限。既定2000ms。
+   * @returns {Promise<Array<{sensor_index: number, func: number, coeffs: number[]}>|null>}
+   */
+  getPressureCalibration(options = {}) {
+    if (this._pressureCalibrationRequest) return this._pressureCalibrationRequest.promise;
+    this.pressure_calibration = null;
+    const device = this.bluetoothDevice;
+    const sensor = this._notifyCharacteristics.SENSOR_VALUES;
+    const info = this._characteristics.DEVICE_INFORMATION;
+    if (!device?.gatt?.connected || !sensor || !info) return Promise.resolve(null);
+
+    const requestedTimeout = Number(options?.timeoutMs);
+    const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : 2000;
+    const request = { active: true, expected: -1, rows: [], accept: null };
+    let resolveResult;
+    request.promise = new Promise(resolve => { resolveResult = resolve; });
+    const handler = event => {
+      const data = event.target.value;
+      if (!request.active || this.bluetoothDevice !== device || !device.gatt.connected ||
+          !data.byteLength || data.getUint8(0) !== 0x39) return;
+      if (data.byteLength < 43) { request.finish(null); return; }
+      const index = data.getUint8(1);
+      const func = data.getUint8(2);
+      const coeffs = Array.from({ length: 5 }, (_, i) => data.getFloat64(3 + i * 8, false));
+      if (index > 5 || (func !== 0 && func !== 1) || !coeffs.every(Number.isFinite)) {
+        request.finish(null);
+        return;
+      }
+      // 完了したchの重複・順序外通知は採用しない。
+      if (index !== request.expected || !request.accept) return;
+      request.rows[index] = { sensor_index: index, func, coeffs };
+      const accept = request.accept;
+      request.accept = null;
+      accept();
+    };
+    request.finish = result => {
+      if (!request.active) return;
+      request.active = false;
+      clearTimeout(request.timer);
+      try { sensor.removeEventListener('characteristicvaluechanged', handler); } catch { /* 切断済みでも終了する */ }
+      if (this._pressureCalibrationRequest === request) {
+        this.pressure_calibration = result;
+        this._pressureCalibrationRequest = null;
+      }
+      // 応答待機中の内部タスクも終了させる。
+      if (request.accept) request.accept();
+      request.accept = null;
+      resolveResult(result);
+    };
+    this._pressureCalibrationRequest = request;
+    request.timer = setTimeout(() => request.finish(null), timeoutMs);
+    // public read/write経由のonErrorやデバイス選択を発生させない専用経路。
+    Promise.resolve().then(async () => {
+      if (!request.active) return;
+      sensor.addEventListener('characteristicvaluechanged', handler);
+      for (let index = 0; index < 6 && request.active; index++) {
+        request.expected = index;
+        const response = new Promise(resolve => { request.accept = resolve; });
+        await info.writeValue(Uint8Array.of(0x10, 0x00, index));
+        if (!request.active) return;
+        await response;
+      }
+      if (request.active) request.finish(request.rows);
+    }).catch(() => request.finish(null));
+    return request.promise;
+  }
+
+  _clearPressureCalibration() {
+    this._pressureCalibrationRequest?.finish(null);
+    this.pressure_calibration = null;
+  }
+
+  /** 校正式で換算した6chの荷重[N]を通知します。 */
+  gotConvertedPress(press) {
   }
 
   /**
@@ -2191,6 +2326,9 @@ class OrpheInsole {
 }
 
 OrpheInsole.STREAMING_MODES = ORPHE_INSOLE_STREAMING_MODES;
+// package.json の version と同じ値を保つ（tests/insole-version-sync.test.js が検証）。
+// 記録データに SDK 版を残す用途（例: gait-report の CSV）で、デコード規則の差異を後から追えるようにする。
+OrpheInsole.SDK_VERSION = '1.3.4';
 
 // ── グローバル公開とエイリアス ─────────────────────────────────
 // 推奨クラス名は OrpheInsole。

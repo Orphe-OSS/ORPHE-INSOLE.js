@@ -17,7 +17,9 @@
   <!-- 0. 固定ヘッダ: 接続UI（2台）+ LIVE/DEMOバッジ + ナビ -->
   <header class="showcase-header bg-dark border-bottom border-secondary">
     <div class="container d-flex flex-wrap align-items-center gap-3 py-2">
-      <span class="fw-bold">ORPHE INSOLE <span class="text-muted">Showcase</span></span>
+      <a class="fw-bold header-home-link" href="../../index.html"
+        title="ORPHE-INSOLE.js トップページ（examples一覧）へ戻る" data-i18n-title="headerHomeTitle">ORPHE INSOLE <span
+          class="text-muted">Showcase</span></a>
       <div id="toolkit0"></div>
       <div id="toolkit1"></div>
       <span id="live_badge" class="badge bg-secondary" title="実機未接続の間は記録済み/合成の歩行データを再生しています"
@@ -25,7 +27,7 @@
       <span id="bt_unsupported" class="badge bg-warning text-dark d-none"
         title="Chrome / Edge / Opera でアクセスしてください" data-i18n-title="btUnsupportedTitle"
         data-i18n="btUnsupported">Web Bluetooth 非対応ブラウザ</span>
-      <nav class="ms-auto small d-none d-lg-flex gap-3" aria-label="ページ内ナビゲーション" data-i18n-aria-label="navLabel">
+      <nav class="ms-auto small d-none d-lg-flex gap-2" aria-label="ページ内ナビゲーション" data-i18n-aria-label="navLabel">
         <a href="#spec" data-i18n="navSpec">スペック</a>
         <a href="#connect" data-i18n="navConnect">つなぐ</a>
         <a href="#pressure" data-i18n="navPressure">圧力</a>
@@ -33,6 +35,7 @@
         <a href="#attitude" data-i18n="navAttitude">姿勢3D</a>
         <a href="#record" data-i18n="navRecord">記録</a>
         <a href="#buy" class="text-warning" data-i18n="navBuy">購入</a>
+        <a href="#next" data-i18n="navNext">Examples</a>
       </nav>
       <div class="language-switch" aria-label="言語" data-i18n-aria-label="languageLabel">
         <button type="button" data-lang-button="en" aria-pressed="false">EN</button>
@@ -240,6 +243,15 @@
           </p>
         </div>
       </div>
+      <div class="related-examples mt-2">
+        <span class="related-label"><i class="bi bi-signpost"></i> <span data-i18n="relatedLabel">関連 examples</span></span>
+        <a class="related-link" href="../udon/index.html">
+          <strong>Udon</strong> <span data-i18n="relatedUdonDesc">圧力で遊ぶ足踏みゲーム（キャリブレーション不要）</span>
+        </a>
+        <a class="related-link" href="../balance-tuner/index.html">
+          <strong>Balance Tuner</strong> <span data-i18n="relatedBalanceTunerDesc">荷重バランスの可聴化</span>
+        </a>
+      </div>
     </section>
 
     <!-- 5. IMU -->
@@ -274,6 +286,15 @@ insole.gotConvertedGyro = function (gyro) {
   // {x, y, z} 単位: deg/s
 };</code></pre>
         <button class="btn btn-sm btn-outline-light copy-btn" type="button" data-i18n="copyButton">copy</button>
+      </div>
+      <div class="related-examples mt-3">
+        <span class="related-label"><i class="bi bi-signpost"></i> <span data-i18n="relatedLabel">関連 examples</span></span>
+        <a class="related-link" href="../music-shoe/index.html">
+          <strong>Music Shoe</strong> <span data-i18n="relatedMusicShoeDesc">IMUジェスチャで演奏する楽器</span>
+        </a>
+        <a class="related-link" href="../hula-motion-sonifier/index.html">
+          <strong>Hula Motion Sonifier</strong> <span data-i18n="relatedSonifierDesc">動作の可聴化（Web Audio）</span>
+        </a>
       </div>
     </section>
 
@@ -339,6 +360,12 @@ insole.gotEuler = function (euler) {
           <div class="small mono text-muted" id="stato_readout">x - / y -</div>
         </div>
         <canvas id="statokinesigram_canvas" width="900" height="420" class="mt-3" aria-label="Estimated load center trace"></canvas>
+        <div class="related-examples mt-3">
+          <span class="related-label"><i class="bi bi-signpost"></i> <span data-i18n="relatedLabel">関連 examples</span></span>
+          <a class="related-link" href="../balance-sway/index.html">
+            <strong>Balance Sway</strong> <span data-i18n="relatedBalanceSwayDesc">重心動揺（CoP軌跡）の本格的な可視化・記録</span>
+          </a>
+        </div>
       </div>
     </section>
 
@@ -388,6 +415,12 @@ insole.gotEuler = function (euler) {
               </div>
               <span id="fifo_status" class="small text-muted" data-i18n="fifoStatusIdle">実機を接続すると使用できます</span>
             </div>
+            <div class="related-examples mt-2">
+              <span class="related-label"><i class="bi bi-signpost"></i> <span data-i18n="relatedLabel">関連 examples</span></span>
+              <a class="related-link" href="../fifo-guide/index.html">
+                <strong>FIFO Guide</strong> <span data-i18n="relatedFifoGuideDesc">FIFO収録の入門ガイド（欠損の可視化つき）</span>
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -408,60 +441,21 @@ insole.gotEuler = function (euler) {
               <span id="gait_status" class="small text-muted" data-i18n="gaitStatusIdle">実機を接続すると使用できます</span>
             </div>
             <div id="gait_display" class="row g-2"></div>
+            <div class="related-examples mt-2">
+              <span class="related-label"><i class="bi bi-signpost"></i> <span data-i18n="relatedLabel">関連 examples</span></span>
+              <a class="related-link" href="../step-analysis/index.html">
+                <strong>Step Analysis</strong> <span data-i18n="relatedStepAnalysisDesc">歩容パラメーターの詳細可視化</span>
+              </a>
+              <a class="related-link" href="../gait-report/index.html">
+                <strong>Gait Report</strong> <span data-i18n="relatedGaitReportDesc">歩行計測レポートの自動生成</span>
+              </a>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 8. 次のステップ -->
-    <section id="next" class="py-4 border-top border-secondary">
-      <h2 class="section-title"><i class="bi bi-signpost-2"></i> <span data-i18n="nextTitle">次のステップ</span></h2>
-      <p class="section-desc" data-i18n="nextDesc">用途に合わせて他のexampleアプリも試してみてください。すべてこのリポジトリに同梱されています。</p>
-      <div class="row g-3 mt-1">
-        <div class="col-sm-6 col-lg-3">
-          <a class="next-card" href="../VISUALIZE/index.html">
-            <img class="next-thumb" src="./assets/thumbs/visualize.svg" alt="VISUALIZE">
-            <div class="next-body">
-              <strong>VISUALIZE</strong>
-              <p class="small mb-0" data-i18n="nextVisualizeBody">全データのリアルタイムチャート可視化（2台対応）</p>
-            </div>
-          </a>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <a class="next-card" href="../sensor-dashboard/index.html">
-            <img class="next-thumb" src="./assets/thumbs/dashboard.svg" alt="Sensor Dashboard">
-            <div class="next-body">
-              <strong>Sensor Dashboard</strong>
-              <p class="small mb-0" data-i18n="nextDashboardBody">2台同時の数値ダッシュボード・L/R自動マッピング</p>
-            </div>
-          </a>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <a class="next-card" href="../hula-motion-sonifier/index.html">
-            <img class="next-thumb" src="./assets/thumbs/sonifier.svg" alt="Hula Motion Sonifier">
-            <div class="next-body">
-              <strong>Hula Motion Sonifier</strong>
-              <p class="small mb-0" data-i18n="nextSonifierBody">Web Audio による動作の可聴化</p>
-            </div>
-          </a>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <a class="next-card" href="../terminal/index.html">
-            <img class="next-thumb" src="./assets/thumbs/terminal.svg" alt="Terminal">
-            <div class="next-body">
-              <strong>Terminal</strong>
-              <p class="small mb-0" data-i18n="nextTerminalBody">生データ・BLEプロトコルのデバッグ</p>
-            </div>
-          </a>
-        </div>
-      </div>
-      <p class="small text-muted mt-3">
-        <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js" target="_blank" rel="noopener">GitHub: ORPHE-INSOLE.js</a> /
-        <a href="../../docs/" target="_blank" rel="noopener" data-i18n="apiDocs">API ドキュメント</a>
-      </p>
-    </section>
-
-    <!-- 9. プログラムを自作する -->
+    <!-- 8. プログラムを自作する -->
     <section id="program" class="py-4 border-top border-secondary">
       <h2 class="section-title"><i class="bi bi-code-slash"></i> <span data-i18n="programTitle">プログラムを自作する</span></h2>
       <p class="section-desc" data-i18n-html="programDesc">
@@ -506,7 +500,7 @@ insole.gotEuler = function (euler) {
       </div>
     </section>
 
-    <!-- 10. 購入・お問い合わせ -->
+    <!-- 9. 購入・お問い合わせ -->
     <section id="contact" class="py-5 border-top border-secondary text-center">
       <h2 class="section-title justify-content-center"><i class="bi bi-chat-dots"></i> <span data-i18n="contactTitle">購入・お問い合わせ</span></h2>
       <p class="mx-auto mt-3" style="max-width: 40rem;" data-i18n-html="contactDesc">
@@ -527,7 +521,97 @@ insole.gotEuler = function (euler) {
       </div>
     </section>
 
-    <hr>
+    <!-- 10. 次のステップ（他の examples） -->
+    <section id="next" class="py-4 border-top border-secondary">
+      <h2 class="section-title"><i class="bi bi-signpost-2"></i> <span data-i18n="nextTitle">次のステップ（Examples）</span></h2>
+      <p class="section-desc" data-i18n="nextDesc">用途に合わせて他のexampleアプリも試してみてください。すべてこのリポジトリに同梱されています。</p>
+      <div class="row g-3 mt-1">
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../VISUALIZE/index.html">
+            <img class="next-thumb" src="./assets/thumbs/visualize.svg" alt="VISUALIZE">
+            <div class="next-body">
+              <strong>VISUALIZE</strong>
+              <p class="small mb-0" data-i18n="nextVisualizeBody">全データのリアルタイムチャート可視化（2台対応）</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../sensor-dashboard/index.html">
+            <img class="next-thumb" src="./assets/thumbs/dashboard.svg" alt="Sensor Dashboard">
+            <div class="next-body">
+              <strong>Sensor Dashboard</strong>
+              <p class="small mb-0" data-i18n="nextDashboardBody">2台同時の数値ダッシュボード・L/R自動マッピング</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../step-analysis/index.html">
+            <img class="next-thumb" src="./assets/thumbs/step-analysis.svg" alt="Step Analysis">
+            <div class="next-body">
+              <strong>Step Analysis</strong>
+              <p class="small mb-0" data-i18n="nextStepAnalysisBody">FWが計算する歩容パラメーターの詳細可視化</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../gait-report/index.html">
+            <img class="next-thumb" src="./assets/thumbs/gait-report.svg" alt="Gait Report">
+            <div class="next-body">
+              <strong>Gait Report</strong>
+              <p class="small mb-0" data-i18n="nextGaitReportBody">歩行計測レポートの自動生成</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../fifo-guide/index.html">
+            <img class="next-thumb" src="./assets/thumbs/fifo-guide.svg" alt="FIFO Guide">
+            <div class="next-body">
+              <strong>FIFO Guide</strong>
+              <p class="small mb-0" data-i18n="nextFifoGuideBody">欠損のないロスレス収録の入門ガイド</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../balance-sway/index.html">
+            <img class="next-thumb" src="./assets/thumbs/balance-sway.svg" alt="Balance Sway">
+            <div class="next-body">
+              <strong>Balance Sway</strong>
+              <p class="small mb-0" data-i18n="nextBalanceSwayBody">重心動揺（CoP軌跡）の可視化・記録</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../hula-motion-sonifier/index.html">
+            <img class="next-thumb" src="./assets/thumbs/sonifier.svg" alt="Hula Motion Sonifier">
+            <div class="next-body">
+              <strong>Hula Motion Sonifier</strong>
+              <p class="small mb-0" data-i18n="nextSonifierBody">Web Audio による動作の可聴化</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <a class="next-card" href="../terminal/index.html">
+            <img class="next-thumb" src="./assets/thumbs/terminal.svg" alt="Terminal">
+            <div class="next-body">
+              <strong>Terminal</strong>
+              <p class="small mb-0" data-i18n="nextTerminalBody">生データ・BLEプロトコルのデバッグ</p>
+            </div>
+          </a>
+        </div>
+      </div>
+      <p class="small text-muted mt-3">
+        <a href="../../index.html#examples" data-i18n="nextAllExamples">すべての examples を見る（index）</a> /
+        <a href="https://github.com/Orphe-OSS/ORPHE-INSOLE.js" target="_blank" rel="noopener">GitHub: ORPHE-INSOLE.js</a> /
+        <a href="../../docs/" target="_blank" rel="noopener" data-i18n="apiDocs">API ドキュメント</a>
+      </p>
+    </section>
+
+    <div class="text-center py-4 border-top border-secondary">
+      <a class="btn btn-outline-light" href="../../index.html">
+        <i class="bi bi-house"></i> <span data-i18n="backToIndex">index（examples一覧）に戻る</span>
+      </a>
+    </div>
+
     <footer class="text-center small pb-4">
       <p class="text-muted mb-2" style="font-size: 12px;">
         本ページおよびデモは医療機器ではなく、疾病の診断・治療・予防を目的としていません。<br>

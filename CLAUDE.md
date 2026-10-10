@@ -29,7 +29,9 @@ ORPHE-INSOLE.js/
 │   ├── InsoleSimulator.js     # 実機なし開発用シミュレータ（OrpheInsoleSimulator）
 │   ├── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
 │   ├── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
-│   └── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
+│   ├── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
+│   └── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
+│   └── vendor/quaternion.js   # 同梱 Quaternion.js（MIT）。dist に同梱、src 直読みでは相対ロード（src/vendor/README.md）
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
 │   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
@@ -37,6 +39,7 @@ ORPHE-INSOLE.js/
 │   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
 │   ├── VISUALIZE/             # センサ可視化（推奨スターター）
+│   ├── calibrated-pressure/   # 校正済み圧力値（荷重[N]）の最小サンプル
 │   ├── fifo-guide/            # FIFO収録の入門（初心者向け・1〜2台・欠損可視化）
 │   ├── fifo-vs-realtime/      # 通常(push)/FIFO(pull)の実測比較
 │   ├── showcase/              # 製品紹介ショーケース（デモ再生つき）
@@ -696,6 +699,14 @@ npm run generate-docs  # JSDoc
 ```
 
 ソースを編集したら必ず `npm test` と `npm run build` を実行してください。CDN利用者は `dist/orphe-insole.min.js` を読み込んでいます。
+`dist/orphe-insole.js` は `src/ORPHE-INSOLE.js` のコピーではなく、`scripts/build-dist.js` が
+同梱ライブラリ（`src/vendor/quaternion.js`）を先頭に連結して生成します（`npm run check:dist` で差分検査）。
+SDK は他リポジトリのコードを実行時にロードしません（`gotEuler` の Quaternion.js は同梱）。
+
+ランディングページ（`index.html`）は日本語ページ（`/`）兼ソースで、英語ページ `en/index.html` は
+`scripts/build-landing.js`（`npm run build` に含まれる）が生成します。**文言は `index.html` 内の `translations`
+辞書を編集**し（マークアップ側の文字列は辞書で上書きされる）、`en/index.html` は直接編集しないこと。
+生成物の差分は CI（`npm run check:site`）と `tests/landing-i18n.test.js` が検査します。
 
 ### リリース手順（バージョンを上げるとき）
 
@@ -704,7 +715,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 （`@latest` への退行・更新漏れは CI で落ちる）。
 
 1. `package.json` の `version` を上げる
-2. `npm test` → insole-version-sync が落ちた箇所（README.md / index.html の `@vX.Y.Z`）を新バージョンに更新
+2. `npm test` → insole-version-sync が落ちた箇所（README.md / index.html の `@vX.Y.Z`、`src/ORPHE-INSOLE.js` の `OrpheInsole.SDK_VERSION`）を新バージョンに更新し、`npm run build` で dist を再生成
 3. CHANGELOG.md の `[Unreleased]` を `[X.Y.Z] - 日付` に確定し、新しい空の `[Unreleased]` を作る
 4. PR マージ後: `git tag vX.Y.Z` + GitHub Release を作成（jsDelivr の固定URLが有効になる）
 
@@ -713,6 +724,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | App Type | Reference | Key Patterns |
 |---|---|---|
 | 可視化 | examples/VISUALIZE | 6chチャート、描画スロットリング |
+| 荷重[N]表示（最小） | examples/calibrated-pressure | `gotConvertedPress`、`pressure_calibration` の取得元表示、描画スロットリング |
 | 製品ショーケース | examples/showcase | LIVE/DEMO切替、CSV再生、i18n |
 | 展示用一覧 | examples/exhibition | 16:9のディスプレイでセンサ値を一覧、ノースクロール、showcaseのvizモジュール再利用 |
 | ダッシュボード | examples/sensor-dashboard | 2台接続、L/R自動マッピング |
@@ -725,6 +737,7 @@ README / index.html のコード例は CDN を**バージョン固定**（`@vX.Y
 | 実機検証 | examples/device-test | リリース前チェックリスト、通知中read/write |
 | FIFO入門（初心者向け） | examples/fifo-guide | `fifo-recording` プロファイル + startMeasurement/stopMeasurement、drain待ちUI、約30秒バッファの明示、serial continuity（Canvas集約 + 欠損range）、dropped と missing の区別、CSV照合、1〜2台同時収録のデバイス別比較 |
 | 通信モード比較 | examples/fifo-vs-realtime | 通常(push)/FIFO(pull)の仕組み解説、2台同時の実測比較（欠損率・シリアル連続性マップ・droppedCount照合）、CSV保存 |
+| INSOLE+CORE同時計測 | examples/insole-core-combo | CoreCompanionToolkit（CORE 1台の同居接続。chooserフィルタ回避・104byteパケットシム内蔵）、収録中のみFIFOへ切替、PC時計基準の同期CSV・計測窓トリム |
 | プロトコルデバッグ | examples/terminal | gotData生データ |
 
 新規 example のレイアウト・デザイン・i18n は `examples/step-analysis/` と `examples/fifo-guide/` が雛形です

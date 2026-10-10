@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Calibrated pressure example</title>
+  <desc id="desc">Six pressure channels converted from raw ADC values to load in newtons, drawn as line charts.</desc>
+  <rect width="640" height="400" fill="#edf1f4"/>
+  <rect x="0" y="0" width="640" height="70" fill="#ffffff"/>
+  <text x="28" y="28" fill="#66717a" font-family="Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2">TOOLKIT EXAMPLE / CONVERTED PRESS</text>
+  <text x="28" y="54" fill="#17212a" font-family="Arial, sans-serif" font-size="24" font-weight="700">Calibrated Pressure [N]</text>
+
+  <!-- ADC -> N -->
+  <rect x="28" y="86" width="584" height="46" rx="10" fill="#ffffff" stroke="#d8e0e5"/>
+  <text x="48" y="114" fill="#66717a" font-family="Arial, sans-serif" font-size="14" font-weight="700">ADC raw</text>
+  <path d="M130 109 H250" stroke="#2763e7" stroke-width="3"/>
+  <path d="M250 102 L262 109 L250 116 Z" fill="#2763e7"/>
+  <text x="150" y="102" fill="#2763e7" font-family="Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1">CALIBRATION</text>
+  <text x="276" y="114" fill="#17212a" font-family="Arial, sans-serif" font-size="14" font-weight="700">Load [N] × 6ch</text>
+  <text x="440" y="114" fill="#0a9a84" font-family="Arial, sans-serif" font-size="11" font-weight="700">device or default</text>
+
+  <!-- two charts -->
+  <rect x="28" y="146" width="284" height="226" rx="10" fill="#0b141b"/>
+  <rect x="328" y="146" width="284" height="226" rx="10" fill="#0b141b"/>
+  <text x="44" y="168" fill="#9aa7b1" font-family="Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="1">INSOLE 01 · Pressure [N]</text>
+  <text x="344" y="168" fill="#9aa7b1" font-family="Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="1">INSOLE 02 · Pressure [N]</text>
+  <g fill="none" stroke-width="2">
+    <path d="M44 350 C80 350 90 250 120 250 S160 350 190 350 S230 260 260 260 S290 350 296 350" stroke="#45e6e6"/>
+    <path d="M44 352 C80 352 95 280 125 280 S165 352 195 352 S235 290 265 290 S290 352 296 352" stroke="#ff6040"/>
+    <path d="M44 354 C70 354 75 210 100 210 S140 354 170 354 S215 225 240 225 S285 354 296 354" stroke="#ffcd56"/>
+    <path d="M344 350 C370 350 385 240 410 240 S455 350 485 350 S525 255 555 255 S590 350 596 350" stroke="#45e6e6"/>
+    <path d="M344 352 C375 352 390 275 418 275 S460 352 490 352 S530 285 560 285 S590 352 596 352" stroke="#ff6040"/>
+    <path d="M344 354 C365 354 372 205 398 205 S440 354 468 354 S510 220 538 220 S590 354 596 354" stroke="#ffcd56"/>
+  </g>
+</svg>

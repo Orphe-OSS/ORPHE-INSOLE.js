@@ -35,6 +35,13 @@ export interface InsoleSampleBase {
     packet_number: number;
 }
 
+/** デバイスに保存された1センサー分の圧力校正係数。 */
+export interface InsolePressureCalibration {
+    sensor_index: number;
+    func: 0 | 1;
+    coeffs: [number, number, number, number, number];
+}
+
 export interface InsolePressSample extends InsoleSampleBase {
     values: number[];
 }
@@ -235,6 +242,8 @@ export class OrpheInsole {
     static parseSensorValues(data: DataView, options?: ParseInsoleSensorValuesOptions): InsoleSensorPacket | null;
     static getStreamingModeInfo(mode: number): InsoleStreamingModeInfo | null;
     static readonly STREAMING_MODES: typeof ORPHE_INSOLE_STREAMING_MODES;
+    /** この SDK のバージョン（package.json の version と同じ、例 "1.3.4"）。記録データの来歴に残す用途。 */
+    static readonly SDK_VERSION: string;
 
     readonly ORPHE_INFORMATION: string;
     readonly ORPHE_DEVICE_INFORMATION: string;
@@ -326,6 +335,11 @@ export class OrpheInsole {
     setDateTime(set_date: Date, options?: InsoleBeginOptions): Promise<void>;
     getDateTime(options?: InsoleBeginOptions): Promise<{ date: Date; raw: DataView; round_trip_time: number }>;
     getDeviceInformation(options?: InsoleBeginOptions): Promise<InsoleDeviceInformation>;
+    /** begin()後に再取得する。6ch揃わない場合はnull、例外は投げない。 */
+    getPressureCalibration(options?: { timeoutMs?: number }): Promise<InsolePressureCalibration[] | null>;
+    pressure_calibration: InsolePressureCalibration[] | null;
+    /** 校正値、またはPythonクライアントの既定係数で換算した荷重[N]。 */
+    converted_press: InsolePressSample | { values: number[] };
     setDeviceInformation(obj: object): void;
     /**
      * ファームウェアバージョンを取得する。標準BLE DIS(0x180A) → advertisement 由来の
@@ -346,6 +360,8 @@ export class OrpheInsole {
     gotData: (data: DataView, uuid?: InsoleSetupName) => void;
     gotStatus: (status: InsoleStatus) => void;
     gotPress: (press: InsolePressSample) => void;
+    /** 荷重[N]。gotPressのADC生値と同じサンプル時刻。 */
+    gotConvertedPress: (press: InsolePressSample) => void;
     gotQuat: (quat: InsoleQuatSample) => void;
     gotGyro: (gyro: InsoleVector3Sample) => void;
     gotAcc: (acc: InsoleVector3Sample) => void;

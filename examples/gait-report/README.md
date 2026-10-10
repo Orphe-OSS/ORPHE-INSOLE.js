@@ -11,6 +11,11 @@ ORPHE INSOLE の **Step Analysis**（`OrpheInsoleGait` / Toolkit `realtime-full-
 - **左右比較**: ストライド長・立脚時間・遊脚時間・プロネーション角・着地衝撃の左右平均±SDと左右差（%）
 - **接地の分類内訳**: foot strike（ヒール/ミッドフット/フォアフット）と pronation type の歩数内訳を左右別に表示
 - 「印刷」でレポートカードだけをA4に印刷できます
+- 「CSV保存」で記録した歩を1歩1行の CSV として保存できます（後述）
+- **効果音**: 記録開始（2音）・1歩ごと（左＝低い音、右＝高い音）・レポート完成（3音）で鳴ります。
+  「効果音 ON/OFF」ボタンで切り替え、設定はブラウザ（localStorage）に保存されます。`sound.js`（Web Audio、音声ファイル不要）
+- **CG（Reference gait animation）**: 計測中は直近の歩に追従し、左右20歩が確定した後は
+  **そのレポートと同じ平均値を再現し続けます**（以降の歩は反映せず、「記録開始」「クリア」で解除）
 
 ## このexampleがやらないこと（設計方針）
 
@@ -31,8 +36,29 @@ ORPHE INSOLE の **Step Analysis**（`OrpheInsoleGait` / Toolkit `realtime-full-
 - 2台接続時は左右そろって20歩ずつ集まるまで計測が続きます。
 - 左右は `device_information.mount_position` の bit0 から判定します（デバイス番号からの推測はしません）。
 
-実機がない場合は、ページを開くと自動で**合成歩行データのデモ**が再生され、
-約20秒でレポートが完成するところまで確認できます（`?demo=0` で無効化）。
+### CSV 保存
+
+「CSV保存」は、記録中・確定後を問わず **その時点で記録されている歩** を1歩1行で書き出します
+（1歩でも記録されると有効になります）。ファイル名は記録開始時刻から `gait-report_YYYYMMDD-HHMMSS.csv`。
+
+| 列 | 内容 |
+|---|---|
+| `side` | `left` / `right`（mount_position から判定した足） |
+| `device_id` | Toolkit のデバイス番号（0 / 1）。デモ再生の行は空 |
+| `fw_version` | そのデバイスの FW バージョン（`getFirmwareVersion()`: DIS 0x180A → advertisement の順）。FW 版で pitch/roll の入れ替わりや Step Analysis 非対応などの既知差があるため必ず残す。取得できない FW/環境とデモ再生の行は空 |
+| `sdk_version` | row を生成した ORPHE-INSOLE.js の版（`OrpheInsole.SDK_VERSION`、package.json の version と同じ）。gyro 換算や `-1` sentinel の扱いなどデコード規則の差異を後から追うため |
+| `recorded_at` | ブラウザが row を受信した時刻。**ISO 8601 の UTC（末尾 `Z`、例 `2026-09-16T10:45:37.118Z`）**。ローカル時刻は使わない |
+| `source` | `live`（実機）/ `demo`（合成データ） |
+| `step_number` 〜 `calorie` | [`src/InsoleGait.js`](../../src/InsoleGait.js) の CSV と同じ21列・同じ順（`OrpheInsoleGait.CSV_HEADER`） |
+
+- 左右の行は受信時刻の昇順にマージされます（左右2台の時系列を1本で追えます）。
+- 数値は SDK の CSV と同じ書式（整数はそのまま、小数は4桁）。FW の未確定値（`-1`）や欠損（空欄）は
+  **そのまま**出力し、レポート側の除外規則は適用しません（生データとして扱うため）。
+- フットクリアランス（遊脚中の足の最大/最小高さ）は Step Analysis の通知に含まれないため列にありません。
+  `stride_z_m` は **前の接地点から次の接地点までの高低差**（階段などで変化）で、クリアランスではありません。
+
+実機がない場合は、「デモ再生」ボタン（または `?demo=1`）で**合成歩行データのデモ**を再生でき、
+約20秒でレポートが完成するところまで確認できます。
 
 ### `?verify=0` — FW疎通デバッグモード
 
@@ -70,7 +96,7 @@ insoles[0].setup();   // 必須（buildInsoleToolkit は setup() を呼びませ
 |---|---|
 | [`src/InsoleGait.js`](../../src/InsoleGait.js) | Step Analysis characteristic の購読と1歩ごとの row 集約 |
 | [`src/InsoleToolkit.js`](../../src/InsoleToolkit.js) | 接続UI、`realtime-full-step` プロファイル、通知livenessの検証 |
-| [`./report.js`](./report.js) | 集計ロジック（平均±SD・CV・左右差・分布・確定判定）。純関数のみで Node からテスト可能 |
+| [`./report.js`](./report.js) | 集計ロジック（平均±SD・CV・左右差・分布・確定判定）と CSV 生成（`buildRowsCsv`）。純関数のみで Node からテスト可能 |
 | [`./i18n.js`](./i18n.js) | ja / en の表示文言（step-analysis と同じ仕組み） |
 
 集計の仕様:
@@ -79,6 +105,25 @@ insoles[0].setup();   // 必須（buildInsoleToolkit は setup() を呼びませ
 - SD は不偏標準偏差（n−1）。n=1 のときは `—` を表示します。
 - 左右差(%) = `(左平均 − 右平均) ÷ 両側平均 × 100`（正 = 左が大きい）。
 - CV(%) = 歩行周期の `SD ÷ 平均 × 100`。左右別に算出します。
+
+### 参考レンジの根拠
+
+`report.js` の `REFERENCE_RANGES`（歩行速度 1.2–1.6 m/s、ケイデンス 100–120 steps/min、ストライド長 1.2–1.5 m、
+歩行周期 1.0–1.2 s、立脚期割合 58–65 %、周期 CV 2.5 % 未満）は、**健常成人が平地を快適速度で
+連続歩行したとき**の代表値を丸めた目安です。
+
+- Perry J, Burnfield JM. *Gait Analysis: Normal and Pathological Function*, 2nd ed. (2010) — 自由歩行の代表値:
+  速度 約1.37 m/s（82 m/min）、ケイデンス 113 steps/min、ストライド長 1.41 m、歩行周期 1.06 s、立脚期 約62 %
+- Bohannon RW. Comfortable and maximum walking speed of adults aged 20–79 years. *Age Ageing* 1997;26:15–19 —
+  快適歩行速度の年代別平均は 1.27–1.46 m/s
+
+注意点:
+
+- 年齢・身長・靴・床面で変わるため、レンジ外＝異常ではありません（ページ上でも判定には使いません）。
+- このレポートは **記録した20歩をすべて**集計します。室内の短い距離で歩き出し・折り返し・停止が含まれると、
+  平均速度・ストライド長は連続歩行より低く、周期の CV は高く出ます。参考レンジと比べるときは、
+  10 m 以上の直線を一定の速さで歩いた区間で記録してください。
+- 数値は FW（Step Analysis）が算出したものです。SDK 側でスケールは変えていません。
 
 ## 起動
 
@@ -98,6 +143,7 @@ Firefox / Safari は Web Bluetooth 非対応です。
 
 ```bash
 node tests/gait-report-stats.test.js
+node tests/gait-report-csv.test.js
 node --check examples/gait-report/app.js
 ```
 

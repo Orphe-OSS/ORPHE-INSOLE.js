@@ -46,4 +46,4 @@ npm run build       # dist/ を生成（src 編集後は必須）
 npm run generate-docs  # この docs/ 配下の JSDoc を再生成
 ```
 
-改善プロジェクトの計画は [IMPROVEMENT_PLAN.md](../IMPROVEMENT_PLAN.md) / [CODEX_WORKPLAN.md](../CODEX_WORKPLAN.md) を参照してください。
+改善プロジェクトの計画は [IMPROVEMENT_PLAN.md](https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/IMPROVEMENT_PLAN.md) / [CODEX_WORKPLAN.md](https://github.com/Orphe-OSS/ORPHE-INSOLE.js/blob/main/CODEX_WORKPLAN.md) を参照してください。

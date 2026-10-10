@@ -25,6 +25,11 @@
       demoStopHtml: '<i class="bi bi-stop-fill"></i> デモ停止',
       clearHtml: '<i class="bi bi-arrow-counterclockwise"></i> クリア',
       printHtml: '<i class="bi bi-printer"></i> 印刷',
+      csvHtml: '<i class="bi bi-download"></i> CSV保存',
+      csvTitle: "記録した歩を1歩1行のCSVで保存します（記録開始後に有効）",
+      soundOnHtml: '<i class="bi bi-volume-up-fill"></i> 効果音 ON',
+      soundOffHtml: '<i class="bi bi-volume-mute"></i> 効果音 OFF',
+      soundTitle: "記録開始・1歩ごと・レポート完成時に効果音を鳴らします（設定はこのブラウザに保存）",
       settingsGuide: '<strong>Gait Report を使いたいときは、Toolkit UI の歯車を開き、次のように設定してください。</strong><p><span>Data Outputs: <b>Raw Sensor Data</b> と <b>Step Analysis</b> をON</span><span>Raw Data Acquisition: <b>Realtime</b></span><span>Realtime Streaming Format: <b>4: gyro + acc + press + quat (100Hz)</b></span><span class="settings-guide-default">このデモプログラムでは初期設定で上記の設定となっています</span></p>',
       progressLabel: "計測の進捗",
       progressIdle: "「記録開始」を押して歩き始めてください。",
@@ -89,7 +94,7 @@
       textSevereUnder: "強いアンダー",
       reportFootnote: "参考レンジは健常成人・快適歩行の一般的な目安であり、良し悪しの判定ではありません。数値は ORPHE INSOLE の Step Analysis（FW算出）に基づきます。",
       lastUpdateHtml: '<i class="bi bi-broadcast"></i> Step Analysis 最終更新',
-      scopeNote: "<strong>このexampleは判定・採点をしません。</strong> 正常範囲は年齢・身長・歩行速度・計測条件で変わるため、平均±SD・左右差・分布の提示にとどめます。FWが未確定値（-1等）を返した歩は該当パラメータを欠損として集計から除外します。歩隔・単脚支持率など Step Analysis に含まれない量は扱いません。",
+      scopeNote: "<strong>このexampleは判定・採点をしません。</strong> 正常範囲は年齢・身長・歩行速度・計測条件で変わるため、平均±SD・左右差・分布の提示にとどめます。FWが未確定値（-1等）を返した歩は該当パラメータを欠損として集計から除外します。歩隔・単脚支持率など Step Analysis に含まれない量は計測値として扱いません。",
       chartFootnote: "レポートは1歩（1 gait cycle = 同側の接地から次の同側接地まで）単位で更新されます。ケイデンスは 120 ÷ 歩行周期 で算出した steps/min 換算です。Realtime + Step はライブ表示向けであり、無欠損記録を保証するモードではありません。",
       howTitle: "このexampleが使う Toolkit の設定プログラム",
       footerNote: "このページは研究・開発用のexampleです。医療機器ではなく、診断・治療・予防を目的としません。",
@@ -132,6 +137,11 @@
       demoStopHtml: '<i class="bi bi-stop-fill"></i> Stop demo',
       clearHtml: '<i class="bi bi-arrow-counterclockwise"></i> Clear',
       printHtml: '<i class="bi bi-printer"></i> Print',
+      csvHtml: '<i class="bi bi-download"></i> Download CSV',
+      csvTitle: "Save the recorded steps as CSV, one row per step (enabled once recording has started)",
+      soundOnHtml: '<i class="bi bi-volume-up-fill"></i> Sound on',
+      soundOffHtml: '<i class="bi bi-volume-mute"></i> Sound off',
+      soundTitle: "Play a sound when recording starts, on every recorded step and when the report is complete (saved in this browser)",
       settingsGuide: '<strong>To use the Gait Report, open the gear icon in the Toolkit UI and use these settings.</strong><p><span>Data Outputs: turn on <b>Raw Sensor Data</b> and <b>Step Analysis</b></span><span>Raw Data Acquisition: <b>Realtime</b></span><span>Realtime Streaming Format: <b>4: gyro + acc + press + quat (100Hz)</b></span><span class="settings-guide-default">This demo program uses these settings by default.</span></p>',
       progressLabel: "Recording progress",
       progressIdle: "Press Start recording, then start walking.",
@@ -196,7 +206,7 @@
       textSevereUnder: "Severe under",
       reportFootnote: "Reference ranges are general guides for healthy adults at comfortable walking speed; they are not pass/fail judgments. Values come from ORPHE INSOLE Step Analysis (computed by the firmware).",
       lastUpdateHtml: '<i class="bi bi-broadcast"></i> Last Step Analysis update',
-      scopeNote: "<strong>This example does not judge or score.</strong> Normal ranges vary with age, height, speed, and measurement conditions, so it only presents mean ± SD, asymmetry, and distributions. Steps where the firmware returns undetermined values (such as -1) are excluded from the affected parameter. Quantities not included in Step Analysis, such as step width and single-support ratio, are not handled.",
+      scopeNote: "<strong>This example does not judge or score.</strong> Normal ranges vary with age, height, speed, and measurement conditions, so it only presents mean ± SD, asymmetry, and distributions. Steps where the firmware returns undetermined values (such as -1) are excluded from the affected parameter. Quantities not included in Step Analysis, such as step width and single-support ratio, are not treated as measurements.",
       chartFootnote: "The report updates once per step (one gait cycle: from one foot contact to the next contact of the same foot). Cadence is converted to steps/min as 120 ÷ gait cycle. Realtime + Step is intended for live visualization and does not guarantee lossless recording.",
       howTitle: "Toolkit setup used by this example",
       footerNote: "This example is for research and development. It is not a medical device and is not intended for diagnosis, treatment, or prevention.",
@@ -273,6 +283,9 @@
     });
     root.document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
       element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+    });
+    root.document.querySelectorAll("[data-i18n-title]").forEach((element) => {
+      element.setAttribute("title", t(element.dataset.i18nTitle));
     });
     root.document.querySelectorAll("[data-lang-button]").forEach((button) => {
       const active = button.dataset.langButton === currentLanguage;

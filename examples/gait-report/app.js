@@ -3,6 +3,7 @@
 
   const Stats = root.GaitReportStats;
   const I18n = root.GaitReportI18n;
+  const Sound = root.GaitReportSound || null;   // optional: sound.js が無いページでも動く
 
   if (!Stats) {
     throw new Error("gait-report: report.js must be loaded before app.js");
@@ -64,6 +65,19 @@
     return Stats.formatNumber(value, decimals);
   }
 
+  function cue(name, detail) {
+    if (!Sound || typeof Sound.play !== "function") return;
+    try {
+      Sound.play(name, detail);
+    } catch {
+      // 効果音の失敗で計測を止めない
+    }
+  }
+
+  function soundEnabled() {
+    return Boolean(Sound && typeof Sound.isEnabled === "function" && Sound.isEnabled());
+  }
+
   function cacheDom() {
     const byId = (id) => document.getElementById(id);
     state.dom = {
@@ -74,6 +88,8 @@
       demoToggle: byId("demo-toggle"),
       clearButton: byId("clear-button"),
       printButton: byId("print-button"),
+      csvButton: byId("csv-button"),
+      soundToggle: byId("sound-toggle"),
       progressStrip: document.querySelector(".progress-strip"),
       progressStatus: byId("progress-status"),
       progLeftBar: byId("prog-left-bar"),
@@ -130,8 +146,31 @@
     return DEVICE_IDS.filter((deviceId) => state.connected[deviceId]);
   }
 
+  function insoleAt(deviceId) {
+    return Array.isArray(root.insoles) && deviceId >= 0 ? root.insoles[deviceId] || null : null;
+  }
+
+  // SDK が getFirmwareVersion() で解決した版（insole.firmware_version にキャッシュされる）を読む。
+  function deviceFirmwareVersion(deviceId) {
+    const insole = insoleAt(deviceId);
+    return insole && insole.firmware_version ? String(insole.firmware_version) : null;
+  }
+
+  // 接続のたびに FW 版の取得を促す（Toolkit の Step 有効化でも読まれるが、CSV の列に確実に載せるため）。
+  function refreshFirmwareVersion(deviceId) {
+    const insole = insoleAt(deviceId);
+    if (!insole || typeof insole.getFirmwareVersion !== "function") return;
+    let pending;
+    try {
+      pending = insole.getFirmwareVersion();
+    } catch {
+      return;
+    }
+    if (pending && typeof pending.catch === "function") pending.catch(() => null);
+  }
+
   function resolveDeviceSide(deviceId) {
-    const insole = Array.isArray(root.insoles) ? root.insoles[deviceId] : null;
+    const insole = insoleAt(deviceId);
     const mount = insole && insole.device_information
       ? insole.device_information.mount_position
       : null;
@@ -172,6 +211,13 @@
     });
   }
 
+  // Optional, page-local observer channel; no SDK callback replacement or recorder coupling.
+  function notifyCG(type, detail = {}) {
+    if (typeof root.dispatchEvent === "function" && typeof root.CustomEvent === "function") {
+      root.dispatchEvent(new root.CustomEvent("gait-report:cg-" + type, { detail }));
+    }
+  }
+
   // -------------------------------------------------------------- recording
 
   function expectedSides() {
@@ -186,6 +232,7 @@
   }
 
   function startRecording() {
+    notifyCG("reset");
     state.rows = { left: [], right: [] };
     state.recording = true;
     state.complete = false;
@@ -193,6 +240,7 @@
     state.completedAt = null;
     state.idleReceiving = false;
     state.sessionSource = state.demo.running ? "demo" : "live";
+    cue("start");
     renderAll();
   }
 
@@ -201,10 +249,17 @@
     state.complete = true;
     state.completedAt = Date.now();
     if (state.demo.running) stopDemo({ preserveSource: true });
+    // CG は確定したレポートの平均を保持し続ける（以降の歩は反映しない）。recorder の行はコピーで渡す。
+    notifyCG("complete", {
+      source: state.sessionSource,
+      rows: { left: state.rows.left.slice(), right: state.rows.right.slice() }
+    });
+    cue("complete");
     renderAll();
   }
 
   function clearData() {
+    notifyCG("reset");
     state.rows = { left: [], right: [] };
     state.recording = false;
     state.complete = false;
@@ -213,6 +268,32 @@
     state.idleReceiving = false;
     state.sessionSource = null;
     renderAll();
+  }
+
+  function recordedStepCount() {
+    return state.rows.left.length + state.rows.right.length;
+  }
+
+  // 記録した歩をそのまま CSV にする（確定前でも、そこまでの歩を書き出す）。
+  function downloadCsv() {
+    if (recordedStepCount() === 0) return;
+    const csv = Stats.buildRowsCsv(state.rows, {
+      source: state.sessionSource,
+      firmwareVersions: DEVICE_IDS.map(deviceFirmwareVersion),
+      sdkVersion: root.OrpheInsole && root.OrpheInsole.SDK_VERSION ? root.OrpheInsole.SDK_VERSION : null
+    });
+    const blob = new root.Blob([csv], { type: "text/csv" });
+    const url = root.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = Stats.csvFilename(state.startedAt || Date.now());
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    root.setTimeout(() => {
+      root.URL.revokeObjectURL(url);
+      if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+    }, 1000);
   }
 
   function pulseReport(side) {
@@ -227,6 +308,8 @@
     const side = options.side || resolveDeviceSide(deviceId);
     if (options.source !== "demo") noteLiveData(deviceId);
 
+    // Notify even before Record and after the 20-cycle report is complete.
+    notifyCG("step", { side, source: options.source === "demo" ? "demo" : "live", row: { ...incomingRow } });
     state.lastStepAt = Date.now();
     state.dom.lastStepTime.textContent =
       new Date(state.lastStepAt).toLocaleTimeString(locale(), { hour12: false });
@@ -244,9 +327,11 @@
       ...incomingRow,
       _side: side,
       _device_id: deviceId,
+      _fw_version: deviceFirmwareVersion(deviceId),
       _received_at: state.lastStepAt
     });
     pulseReport(side);
+    cue("step", { side });
 
     const expected = expectedSides();
     const done = expected.length > 0
@@ -353,6 +438,7 @@
     }
     state.connected[deviceId] = true;
     resolveDeviceSide(deviceId);
+    refreshFirmwareVersion(deviceId);
     if (
       options.forceSource
       || demoWasRunning
@@ -399,6 +485,7 @@
           if (snapshot.connected) {
             activateLiveConnection(deviceId, { forceSource: true });
           } else {
+            notifyCG("disconnect", { side: state.deviceSides[deviceId] });
             state.connected[deviceId] = false;
             resolveDeviceSide(deviceId);
             updateConnectionSource();
@@ -426,6 +513,7 @@
       activateLiveConnection(this.id, { forceSource: true });
     };
     insole.onDisconnect = function onDisconnect() {
+      notifyCG("disconnect", { side: state.deviceSides[this.id] });
       if (!state.demo.running) {
         setSourceCopy("waiting", "reconnectTitle", "reconnectWait", {
           titleParams: { device: this.id + 1 }
@@ -490,6 +578,27 @@
     const demoButton = state.dom.demoToggle;
     demoButton.innerHTML = state.demo.running ? t("demoStopHtml") : t("demoPlayHtml");
     demoButton.classList.toggle("active", state.demo.running);
+
+    state.dom.csvButton.disabled = recordedStepCount() === 0;
+
+    const soundButton = state.dom.soundToggle;
+    if (soundButton) {
+      if (!Sound) {
+        soundButton.hidden = true;
+      } else {
+        const on = soundEnabled();
+        soundButton.innerHTML = t(on ? "soundOnHtml" : "soundOffHtml");
+        soundButton.classList.toggle("active", on);
+        if (typeof soundButton.setAttribute === "function") soundButton.setAttribute("aria-pressed", String(on));
+      }
+    }
+  }
+
+  function toggleSound() {
+    if (!Sound) return;
+    Sound.setEnabled(!soundEnabled());
+    if (soundEnabled()) cue("start");   // ON にした瞬間に鳴らして音量を確認できるようにする
+    renderButtons();
   }
 
   function renderProgress() {
@@ -698,6 +807,8 @@
     state.dom.demoToggle.addEventListener("click", toggleDemo);
     state.dom.clearButton.addEventListener("click", clearData);
     state.dom.printButton.addEventListener("click", () => root.print());
+    state.dom.csvButton.addEventListener("click", downloadCsv);
+    if (state.dom.soundToggle) state.dom.soundToggle.addEventListener("click", toggleSound);
 
     // i18n.js の初期 setLanguage は DOMContentLoaded の先頭で発火するため、
     // languagechange の購読は cacheDom() 後（=描画できる状態）に登録する。
@@ -707,7 +818,7 @@
     updateConnectionSource();
     renderAll();
 
-    if (PAGE_PARAMS.get("demo") !== "0" && connectedDeviceIds().length === 0) {
+    if (PAGE_PARAMS.get("demo") === "1" && connectedDeviceIds().length === 0) {
       startDemo();
     }
   }
@@ -721,6 +832,8 @@
     handleStepRow,
     startRecording,
     clearData,
+    downloadCsv,
+    toggleSound,
     startDemo,
     stopDemo,
     demoRow,

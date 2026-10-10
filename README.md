@@ -24,6 +24,54 @@ INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-sho
 通常モード（リアルタイム通知）と FIFO（ロスレス収録）だけを比較する旧サンプルは
 [fifo-vs-realtime](https://orphe-oss.github.io/ORPHE-INSOLE.js/examples/fifo-vs-realtime) に残しています。
 
+研究室で被験者・試行を替えながら収録し、モーションキャプチャや振動計と時間軸を揃えたい場合は
+[lab-recorder](examples/lab-recorder/)（実験的・公開未定）を利用できます。FIFO 収録に同期マーカー・踏み込みインパルス候補・
+試行メタデータ・来歴列（firmware_version / sdk_version / device_time / host_time_est）・欠損レポート・データ辞書を加えたページです。
+
+## 圧力校正値の自動取得と荷重への換算
+
+`await insole.begin()` は通知開始後に6センサー分の校正値を自動取得します。
+取得できた場合は `insole.pressure_calibration` にセンサー番号0〜5順で
+`{ sensor_index, func, coeffs }` の配列を保持します。非対応・取得失敗・部分取得では
+`null` になり、接続を継続します。取得待ちの上限は全体で2秒です。
+
+```javascript
+insole.setup();
+insole.gotPress = function (press) {
+  console.log('ADC生値:', press.values);
+};
+insole.gotConvertedPress = function (press) {
+  console.log('荷重[N]:', press.values);
+};
+await insole.begin({ streamingMode: 4 });
+console.log(insole.pressure_calibration);
+
+// begin()後に手動で再取得（失敗時はnull、例外・onErrorなし）
+await insole.getPressureCalibration({ timeoutMs: 2000 });
+console.log(insole.converted_press); // 最新の換算済みサンプル
+```
+
+`gotPress` / `press.values` はADC生値です。`gotConvertedPress` / `converted_press`
+は同じサンプルの時刻・シリアル番号を持つ荷重[N]です。校正値が `null` の場合や
+換算が非有限値になる場合は、Pythonクライアントのセンサー別既定係数を使います。
+負の換算結果は0にします。取得中は既定係数で換算し、6ch取得完了後に切り替えます。
+
+関数種別0は `C1 * exp(C2*x) + C3`、1は
+`C1*x^4 + C2*x^3 + C3*x^2 + C4*x + C5`（xはADC生値）です。
+通信仕様・校正式・既定係数は
+[insole_client](https://github.com/no-new-folk/insole_client/tree/e342620f9830c4d91ad5542b21212662b192ad58)
+に合わせています。
+
+校正値は各インスタンスのメモリ内に保持し、切断・reset・デバイス切替で破棄、
+再接続時に再取得します。手動取得は接続済みでSENSOR_VALUES通知が開始している場合に
+使用でき、それ以外は `null` を返します。モードは変更せず要求し、応答しないFWでは
+タイムアウト後に既定係数を使用します（参照クライアントの確認対象はmode 3/4）。
+`gotData` 上書き時も校正値は取得されますが、従来どおり通常のgot*は呼ばれません。
+この機能はRealtimeの圧力サンプルに適用します。FIFOのサンプルはADC生値で、
+既存のFIFO CSV出力は従来の固定係数によるN換算を維持します。
+
+最小の利用例は [calibrated-pressure](examples/calibrated-pressure/) です（2台分の荷重[N]を6chグラフで表示）。
+
 ## Getting Started
 動作を確認できたら、以下のコードを利用して、ORPHE INSOLEの値を取得してみましょう。
 
@@ -38,7 +86,7 @@ INSOLEを手に持って演奏するジェスチャ楽器のデモは [music-sho
       <h1>Hello, ORPHE-INSOLE.js!</h1>
       <button onclick="insole.begin();">connect</button>
       <p id="sensor-data"></p>
-      <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.3.2/dist/orphe-insole.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.3.4/dist/orphe-insole.min.js"></script>
       <script>
       var insole = new OrpheInsole(0);
       window.onload = function () {
@@ -57,7 +105,7 @@ https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
 
 ### CDN
 ```
-<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.3.2/dist/orphe-insole.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.3.4/dist/orphe-insole.min.js"></script>
 ```
 `OrpheInsole` は `Orphe` と同じクラスを指す別名です。既存コードの `new Orphe(0)` は引き続き利用できます。
 
@@ -65,7 +113,7 @@ https://github.com/user-attachments/assets/209143e5-e53b-49f0-a1e5-10821334fa3a
 実機なしの開発やデモでは `OrpheInsoleSimulator` を使えます。`OrpheInsole` と同じ主なコールバックで、歩行・静止・重心揺れの合成データまたはCSV由来のフレーム配列を再生します。
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.3.2/src/InsoleSimulator.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Orphe-OSS/ORPHE-INSOLE.js@v1.3.4/src/InsoleSimulator.js"></script>
 <script>
 const insole = new OrpheInsoleSimulator(0);
 insole.setup();
@@ -160,7 +208,11 @@ Following the current ORPHE-CORE.js policy, ORPHE-INSOLE.js v1.0.0 and later is 
 
 If you use ORPHE-INSOLE.js to build a paid app, paid service, commercial SDK integration, commissioned product, or business service, please contact ORPHE for a separate commercial agreement.
 
+Within the free-use scope above, you may modify this library and redistribute it, with or without modification, provided that [LICENSE.md](./LICENSE.md) (the usage policy and the copyright notice) is included unchanged.
+
 This usage policy follows the ORPHE-CORE.js v1.4.0 and later policy for this repository.
+
+The formal text of this policy is [LICENSE.md](./LICENSE.md) (`SPDX-License-Identifier: LicenseRef-ORPHE-Usage-Policy`).
 
 ## 利用方針と商用利用について
 
@@ -176,7 +228,11 @@ ORPHE-INSOLE.js は、ORPHE INSOLEを使う人のためのJavaScriptライブラ
 
 ORPHE-INSOLE.jsを使って、有料アプリ、有料サービス、商用SDK連携、受託開発、事業として提供するサービスを作る場合は、別途ORPHEとの商用契約が必要です。
 
+上記の無償利用の範囲内であれば、本ライブラリを改変し、また改変の有無を問わず再配布することができます。再配布の際は [LICENSE.md](./LICENSE.md)（利用方針と著作権表示）をそのまま同梱してください。
+
 この利用方針は、ORPHE-CORE.js v1.4.0以降の利用方針をこのリポジトリで踏襲するものです。
+
+正式な条文は [LICENSE.md](./LICENSE.md)（`SPDX-License-Identifier: LicenseRef-ORPHE-Usage-Policy`）を参照してください。
 
 ## 開発者向け情報
 ### 環境構築
@@ -235,5 +291,5 @@ insole.begin({ streamingMode: 3 }); // gyro, acc, pressure at 200Hz
  * quaternion.js, https://github.com/infusion/Quaternion.js
 
 ## Copyright and licensing
- * Copyright (C) 2025, Tetsuaki BABA and ORPHE.inc.
+ * Copyright (C) 2025, Tetsuaki BABA and ORPHE Inc.
  * See the usage policy above for ORPHE-INSOLE.js v1.0.0 and later.

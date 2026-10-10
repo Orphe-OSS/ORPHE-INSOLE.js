@@ -7,7 +7,8 @@
 // このテストがあるため、リリース時に package.json の version を上げると
 // 固定表記の更新漏れが CI で検出される。リリース手順:
 //   1. package.json の version を上げる
-//   2. このテストを実行 → 落ちた箇所（README.md / index.html の @vX.Y.Z）を新バージョンに更新
+//   2. このテストを実行 → 落ちた箇所（README.md / index.html の @vX.Y.Z、
+//      src/ORPHE-INSOLE.js の OrpheInsole.SDK_VERSION）を新バージョンに更新
 //   3. CHANGELOG の [Unreleased] を [X.Y.Z] に確定
 //   4. マージ後に git tag vX.Y.Z + GitHub Release
 const assert = require('node:assert/strict');
@@ -40,6 +41,16 @@ for (const file of targets) {
       `${file}: CDN 参照 "${ref}" が package.json の version (${version}) と一致しません。`
     );
   }
+}
+
+// SDK 本体が公開するバージョン定数も package.json と一致すること（CSV 等の来歴列に使う）
+{
+  const { OrpheInsole } = require(path.join(root, 'src/ORPHE-INSOLE.js'));
+  assert.equal(
+    OrpheInsole.SDK_VERSION,
+    version,
+    `src/ORPHE-INSOLE.js: OrpheInsole.SDK_VERSION (${OrpheInsole.SDK_VERSION}) が package.json の version (${version}) と一致しません。`
+  );
 }
 
 console.log('insole-version-sync.test.js passed');

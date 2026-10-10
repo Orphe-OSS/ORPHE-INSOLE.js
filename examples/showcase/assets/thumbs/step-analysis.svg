@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif">
+  <rect width="320" height="180" fill="#0b1116"/>
+  <g stroke="#2b3a44" stroke-width="1">
+    <line x1="24" y1="60" x2="296" y2="60"/>
+    <line x1="24" y1="100" x2="296" y2="100"/>
+    <line x1="24" y1="140" x2="296" y2="140"/>
+  </g>
+  <!-- stance / swing timeline (left foot) -->
+  <g>
+    <rect x="30" y="48" width="52" height="12" rx="3" fill="#45e6e6"/>
+    <rect x="82" y="48" width="30" height="12" rx="3" fill="#1d4c55"/>
+    <rect x="112" y="48" width="52" height="12" rx="3" fill="#45e6e6"/>
+    <rect x="164" y="48" width="30" height="12" rx="3" fill="#1d4c55"/>
+    <rect x="194" y="48" width="52" height="12" rx="3" fill="#45e6e6"/>
+    <rect x="246" y="48" width="30" height="12" rx="3" fill="#1d4c55"/>
+  </g>
+  <!-- stance / swing timeline (right foot, offset) -->
+  <g>
+    <rect x="30" y="88" width="26" height="12" rx="3" fill="#5a2a20"/>
+    <rect x="56" y="88" width="52" height="12" rx="3" fill="#ff6040"/>
+    <rect x="108" y="88" width="30" height="12" rx="3" fill="#5a2a20"/>
+    <rect x="138" y="88" width="52" height="12" rx="3" fill="#ff6040"/>
+    <rect x="190" y="88" width="30" height="12" rx="3" fill="#5a2a20"/>
+    <rect x="220" y="88" width="52" height="12" rx="3" fill="#ff6040"/>
+  </g>
+  <!-- per-step metrics -->
+  <g fill="#ffcd56">
+    <rect x="30" y="118" width="36" height="22" rx="3" opacity="0.85"/>
+    <rect x="74" y="124" width="36" height="16" rx="3" opacity="0.85"/>
+    <rect x="118" y="114" width="36" height="26" rx="3" opacity="0.85"/>
+    <rect x="162" y="120" width="36" height="20" rx="3" opacity="0.85"/>
+    <rect x="206" y="116" width="36" height="24" rx="3" opacity="0.85"/>
+    <rect x="250" y="122" width="36" height="18" rx="3" opacity="0.85"/>
+  </g>
+  <text x="24" y="26" fill="#9fb6c3" font-size="13" font-weight="bold">STEP ANALYSIS</text>
+  <g fill="#9fb6c3" font-size="9">
+    <rect x="196" y="16" width="10" height="8" rx="2" fill="#45e6e6"/><text x="210" y="24">stance</text>
+    <rect x="248" y="16" width="10" height="8" rx="2" fill="#1d4c55"/><text x="262" y="24">swing</text>
+  </g>
+</svg>
