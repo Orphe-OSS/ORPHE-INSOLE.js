@@ -130,6 +130,41 @@ export interface InsoleClientOptions {
   pinIdentity?: boolean;
 }
 
+/**
+ * One completed stride from the firmware gait analyzer (GaitAnalysisCore), as
+ * polled from get_gait_live. Physical units, raw values (no presentation sign
+ * flip): `pronation` is the analyzer's pronation Euler Y in degrees — the same
+ * quantity the product insole publishes as pronation_y — and `strikeAngle` is
+ * the foot angle at strike. `gaitType` / `footStrike` are the analyzer enums
+ * (GaitType 0 none / 1 walk / 2 run / 3 stance; FootStrike 0 none / 1 heel /
+ * 2 midfoot / 3 forefoot).
+ */
+export interface InsoleGaitStride {
+  strideSeq: number; // completed-stride counter within the firmware session (1 = first)
+  sessionId: number; // 0 = implicit live session
+  steps: number; // completed strides so far this session
+  distanceM: number; // sum of stride lengths [m]
+  strideLength: number; // [m]
+  strideHeight: number; // max vertical height [m]
+  speed: number; // [m/s]
+  pronation: number; // [deg] raw sign
+  strikeAngle: number; // [deg]
+  cadence: number; // [steps/s]
+  landingForce: number; // [kgf / body weight]
+  contactTime: number; // stance phase [s]
+  gaitType: number; // GaitType enum value
+  footStrike: number; // FootStrike enum value
+}
+
+/** Thrown by startGaitMonitor() when the firmware does not run the analyzer for get_gait_live alone. */
+export class GaitLiveUnsupportedError extends Error {
+  readonly code = 'INSOLE15_GAIT_UNSUPPORTED';
+  constructor() {
+    super('This firmware does not support live gait analysis (get_gait_live reports measuring = false)');
+    this.name = 'GaitLiveUnsupportedError';
+  }
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -142,6 +177,18 @@ export class InsoleClient extends BlerpcClient {
   private _monitoring = false;
   // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
   private _q: [number, number, number, number] = [1, 0, 0, 0];
+  private _gaitMonitoring = false;
+  // bleRPC request/response is not re-entrant (one shared notify assembler per
+  // link), so every RPC — the 100 ms window loop, gait polling, config reads —
+  // is queued on one promise chain. A failed call never blocks the next one.
+  private _rpcChain: Promise<unknown> = Promise.resolve();
+
+  protected override call(cmdName: string, requestData: Uint8Array): Promise<Uint8Array> {
+    const run = () => super.call(cmdName, requestData);
+    const p = this._rpcChain.then(run, run);
+    this._rpcChain = p.catch(() => undefined);
+    return p;
+  }
 
   constructor(options: InsoleClientOptions = {}) {
     super(
@@ -270,8 +317,84 @@ export class InsoleClient extends BlerpcClient {
     this._monitoring = false;
   }
 
+  /** True while the gait monitor (get_gait_live polling) is running. */
+  get isGaitMonitoring(): boolean {
+    return this._gaitMonitoring;
+  }
+
+  /**
+   * Gait monitor: poll get_gait_live every `pollMs` (default 250 ms) and emit
+   * each newly completed stride via `onStride`. No measurement session is
+   * opened and nothing is recorded on the device: the firmware starts an
+   * implicit live session on the first poll, keeps it alive while polled and
+   * ends it ~3 s after the last one (its stride counter then restarts from 0,
+   * which the loop handles). Can run alongside startMonitor(); all RPCs are
+   * serialized. Only the latest completed stride is reported per poll, so
+   * strides that complete faster than the poll interval are counted (`steps`)
+   * but their metrics are not delivered.
+   * @throws GaitLiveUnsupportedError when the first poll reports
+   *   measuring = false — firmware that only runs the analyzer inside a
+   *   host-started measurement session (nothing was started on the device).
+   */
+  async startGaitMonitor(
+    onStride: (stride: InsoleGaitStride) => void,
+    opts: { pollMs?: number; onError?: (e: unknown) => void } = {},
+  ): Promise<void> {
+    if (this._gaitMonitoring) return;
+    const first = await this.getGaitLive();
+    if (!first.measuring) throw new GaitLiveUnsupportedError();
+    this._gaitMonitoring = true;
+    const pollMs = opts.pollMs ?? 250;
+    let lastSeq = 0;
+    const emit = (live: insole.GetGaitLiveResponse) => {
+      const seq = live.strideSeq ?? 0;
+      if (seq < lastSeq) lastSeq = 0; // the firmware restarted the live session (idle gap)
+      const last = live.last;
+      if (seq > lastSeq && last) {
+        lastSeq = seq;
+        onStride({
+          strideSeq: seq,
+          sessionId: live.sessionId ?? 0,
+          steps: live.steps ?? 0,
+          distanceM: live.distanceM ?? 0,
+          strideLength: last.strideLength ?? 0,
+          strideHeight: last.strideHeight ?? 0,
+          speed: last.speed ?? 0,
+          pronation: last.pronation ?? 0,
+          strikeAngle: last.strikeAngle ?? 0,
+          cadence: last.cadence ?? 0,
+          landingForce: last.landingForce ?? 0,
+          contactTime: last.contactTime ?? 0,
+          gaitType: last.gaitType ?? 0,
+          footStrike: last.footStrike ?? 0,
+        });
+      }
+    };
+    emit(first);
+    void (async () => {
+      while (this._gaitMonitoring) {
+        await sleep(pollMs);
+        if (!this._gaitMonitoring) break;
+        try {
+          emit(await this.getGaitLive());
+        } catch (e) {
+          opts.onError?.(e); // transient BLE/RPC error — keep polling
+        }
+      }
+    })();
+  }
+
+  /**
+   * Stop polling. Nothing is sent to the device: the firmware ends the live
+   * session on its own ~3 s after the last poll.
+   */
+  stopGaitMonitor(): void {
+    this._gaitMonitoring = false;
+  }
+
   disconnect(): void {
     this._monitoring = false;
+    this._gaitMonitoring = false;
     super.disconnect();
   }
 }

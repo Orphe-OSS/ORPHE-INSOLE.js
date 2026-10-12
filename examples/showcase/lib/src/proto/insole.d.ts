@@ -860,4 +860,373 @@ export namespace insole {
          */
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
+
+    /** Properties of a GaitStride. */
+    interface IGaitStride {
+
+        /** GaitStride strideLength */
+        strideLength?: (number|null);
+
+        /** GaitStride strideHeight */
+        strideHeight?: (number|null);
+
+        /** GaitStride speed */
+        speed?: (number|null);
+
+        /** GaitStride pronation */
+        pronation?: (number|null);
+
+        /** GaitStride strikeAngle */
+        strikeAngle?: (number|null);
+
+        /** GaitStride cadence */
+        cadence?: (number|null);
+
+        /** GaitStride landingForce */
+        landingForce?: (number|null);
+
+        /** GaitStride contactTime */
+        contactTime?: (number|null);
+
+        /** GaitStride gaitType */
+        gaitType?: (number|null);
+
+        /** GaitStride footStrike */
+        footStrike?: (number|null);
+    }
+
+    /** Represents a GaitStride. */
+    class GaitStride implements IGaitStride {
+
+        /**
+         * Constructs a new GaitStride.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: insole.IGaitStride);
+
+        /** GaitStride strideLength. */
+        public strideLength: number;
+
+        /** GaitStride strideHeight. */
+        public strideHeight: number;
+
+        /** GaitStride speed. */
+        public speed: number;
+
+        /** GaitStride pronation. */
+        public pronation: number;
+
+        /** GaitStride strikeAngle. */
+        public strikeAngle: number;
+
+        /** GaitStride cadence. */
+        public cadence: number;
+
+        /** GaitStride landingForce. */
+        public landingForce: number;
+
+        /** GaitStride contactTime. */
+        public contactTime: number;
+
+        /** GaitStride gaitType. */
+        public gaitType: number;
+
+        /** GaitStride footStrike. */
+        public footStrike: number;
+
+        /**
+         * Creates a new GaitStride instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GaitStride instance
+         */
+        public static create(properties?: insole.IGaitStride): insole.GaitStride;
+
+        /**
+         * Encodes the specified GaitStride message. Does not implicitly {@link insole.GaitStride.verify|verify} messages.
+         * @param message GaitStride message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: insole.IGaitStride, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GaitStride message, length delimited. Does not implicitly {@link insole.GaitStride.verify|verify} messages.
+         * @param message GaitStride message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: insole.IGaitStride, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GaitStride message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns GaitStride
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): insole.GaitStride;
+
+        /**
+         * Decodes a GaitStride message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns GaitStride
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): insole.GaitStride;
+
+        /**
+         * Verifies a GaitStride message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GaitStride message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GaitStride
+         */
+        public static fromObject(object: { [k: string]: any }): insole.GaitStride;
+
+        /**
+         * Creates a plain object from a GaitStride message. Also converts values to other types if specified.
+         * @param message GaitStride
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: insole.GaitStride, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GaitStride to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for GaitStride
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a GetGaitLiveRequest. */
+    interface IGetGaitLiveRequest {
+    }
+
+    /** Represents a GetGaitLiveRequest. */
+    class GetGaitLiveRequest implements IGetGaitLiveRequest {
+
+        /**
+         * Constructs a new GetGaitLiveRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: insole.IGetGaitLiveRequest);
+
+        /**
+         * Creates a new GetGaitLiveRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GetGaitLiveRequest instance
+         */
+        public static create(properties?: insole.IGetGaitLiveRequest): insole.GetGaitLiveRequest;
+
+        /**
+         * Encodes the specified GetGaitLiveRequest message. Does not implicitly {@link insole.GetGaitLiveRequest.verify|verify} messages.
+         * @param message GetGaitLiveRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: insole.IGetGaitLiveRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GetGaitLiveRequest message, length delimited. Does not implicitly {@link insole.GetGaitLiveRequest.verify|verify} messages.
+         * @param message GetGaitLiveRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: insole.IGetGaitLiveRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GetGaitLiveRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns GetGaitLiveRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): insole.GetGaitLiveRequest;
+
+        /**
+         * Decodes a GetGaitLiveRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns GetGaitLiveRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): insole.GetGaitLiveRequest;
+
+        /**
+         * Verifies a GetGaitLiveRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GetGaitLiveRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GetGaitLiveRequest
+         */
+        public static fromObject(object: { [k: string]: any }): insole.GetGaitLiveRequest;
+
+        /**
+         * Creates a plain object from a GetGaitLiveRequest message. Also converts values to other types if specified.
+         * @param message GetGaitLiveRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: insole.GetGaitLiveRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GetGaitLiveRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for GetGaitLiveRequest
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a GetGaitLiveResponse. */
+    interface IGetGaitLiveResponse {
+
+        /** GetGaitLiveResponse measuring */
+        measuring?: (boolean|null);
+
+        /** GetGaitLiveResponse sessionId */
+        sessionId?: (number|null);
+
+        /** GetGaitLiveResponse steps */
+        steps?: (number|null);
+
+        /** GetGaitLiveResponse distanceM */
+        distanceM?: (number|null);
+
+        /** GetGaitLiveResponse strideSeq */
+        strideSeq?: (number|null);
+
+        /** GetGaitLiveResponse last */
+        last?: (insole.IGaitStride|null);
+    }
+
+    /** Represents a GetGaitLiveResponse. */
+    class GetGaitLiveResponse implements IGetGaitLiveResponse {
+
+        /**
+         * Constructs a new GetGaitLiveResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: insole.IGetGaitLiveResponse);
+
+        /** GetGaitLiveResponse measuring. */
+        public measuring: boolean;
+
+        /** GetGaitLiveResponse sessionId. */
+        public sessionId: number;
+
+        /** GetGaitLiveResponse steps. */
+        public steps: number;
+
+        /** GetGaitLiveResponse distanceM. */
+        public distanceM: number;
+
+        /** GetGaitLiveResponse strideSeq. */
+        public strideSeq: number;
+
+        /** GetGaitLiveResponse last. */
+        public last?: (insole.IGaitStride|null);
+
+        /**
+         * Creates a new GetGaitLiveResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GetGaitLiveResponse instance
+         */
+        public static create(properties?: insole.IGetGaitLiveResponse): insole.GetGaitLiveResponse;
+
+        /**
+         * Encodes the specified GetGaitLiveResponse message. Does not implicitly {@link insole.GetGaitLiveResponse.verify|verify} messages.
+         * @param message GetGaitLiveResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: insole.IGetGaitLiveResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GetGaitLiveResponse message, length delimited. Does not implicitly {@link insole.GetGaitLiveResponse.verify|verify} messages.
+         * @param message GetGaitLiveResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: insole.IGetGaitLiveResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GetGaitLiveResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns GetGaitLiveResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): insole.GetGaitLiveResponse;
+
+        /**
+         * Decodes a GetGaitLiveResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns GetGaitLiveResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): insole.GetGaitLiveResponse;
+
+        /**
+         * Verifies a GetGaitLiveResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GetGaitLiveResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GetGaitLiveResponse
+         */
+        public static fromObject(object: { [k: string]: any }): insole.GetGaitLiveResponse;
+
+        /**
+         * Creates a plain object from a GetGaitLiveResponse message. Also converts values to other types if specified.
+         * @param message GetGaitLiveResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: insole.GetGaitLiveResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GetGaitLiveResponse to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for GetGaitLiveResponse
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
 }

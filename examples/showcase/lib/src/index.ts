@@ -13,11 +13,12 @@ import * as protobuf from 'protobufjs/minimal';
 (protobuf.util as unknown as { Long: unknown }).Long = null;
 protobuf.configure();
 
-export { InsoleClient, WINDOW_MS, SAMPLE_PERIOD_MS } from './client/InsoleClient';
+export { InsoleClient, GaitLiveUnsupportedError, WINDOW_MS, SAMPLE_PERIOD_MS } from './client/InsoleClient';
 export type {
   InsoleFrame,
   InsoleConfig,
   InsoleClientOptions,
+  InsoleGaitStride,
 } from './client/InsoleClient';
 export {
   BlerpcClient,
