@@ -1,7 +1,6 @@
 // orphe_insole bleRPC service definitions — the subset used by the showcase
-// client (sensor streaming by time window, device configuration read, and
-// gait-analysis measurement). Firmware maintenance commands are intentionally
-// not included here.
+// client (sensor streaming by time window and device configuration read).
+// Firmware maintenance commands are intentionally not included here.
 //
 // Reliable, lossless data extraction by time window (pull model):
 //   1. set_time   — set the insole clock (epoch ms).
@@ -93,62 +92,4 @@ message GetConfigResponse {
   uint32 device_id = 1;
   Foot foot = 2;
   string firmware_version = 3;       // running firmware version
-}
-
-// ---------------------------------------------------------------------------
-// Gait-analysis measurement.
-//
-//   1. start_measurement — reset the analyzer + open a session; the firmware
-//      folds every completed stride into running statistics while active.
-//   2. stop_measurement  — close the session and append one summary record
-//      (avg/min/max/variance per metric, raw float32) to the flash log.
-//   3. get_gait_live      — poll the latest completed-stride metrics + running
-//      session counters, for a real-time monitor.
-// ---------------------------------------------------------------------------
-
-message StartMeasurementRequest {
-  uint32 activity_id = 1;  // host-assigned id stamped into this session's summaries -> CSV "activityType" (0 if unset)
-}
-
-message StartMeasurementResponse {
-  bool ok = 1;
-  uint32 session_id = 2;   // id assigned to this measurement
-  uint32 activity_id = 3;  // echoes the activity_id applied to this session
-}
-
-message StopMeasurementRequest {}
-
-message StopMeasurementResponse {
-  bool ok = 1;
-  uint32 session_id = 2;
-  uint32 steps = 3;    // completed strides accumulated this session
-  bool recorded = 4;   // whether a summary record was stored
-}
-
-// One completed stride's instantaneous metrics (raw float, physical units).
-message GaitStride {
-  float stride_length = 1; // [m]
-  float stride_height = 2; // [m]
-  float speed = 3;         // [m/s]
-  float pronation = 4;     // [deg]
-  float strike_angle = 5;  // [deg]
-  float cadence = 6;       // [steps/s]
-  float landing_force = 7; // [kgf / body weight]
-  float contact_time = 8;  // [s]
-  int32 gait_type = 9;     // GaitType enum value
-  int32 foot_strike = 10;  // FootStrike enum value
-}
-
-// GetGaitLive - poll the current measurement's running counters and the most
-// recently completed stride, for a live monitor. stride_seq increments once per
-// completed stride so the client can tell when `last` is new.
-message GetGaitLiveRequest {}
-
-message GetGaitLiveResponse {
-  bool measuring = 1;
-  uint32 session_id = 2;
-  uint32 steps = 3;        // completed strides so far this session
-  float distance_m = 4;
-  uint32 stride_seq = 5;   // monotonic completed-stride counter
-  GaitStride last = 6;     // latest completed stride (valid when stride_seq > 0)
 }
