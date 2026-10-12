@@ -8,7 +8,10 @@ module.exports = [
             'src/vendor/',
             'proto/',
             'docs/',
-            'node_modules/'
+            'node_modules/',
+            // The showcase's INSOLE 1.5 client is a TypeScript project +
+            // committed browser bundle built separately (see examples/showcase/lib/README.md).
+            'examples/showcase/lib/'
         ]
     },
     js.configs.recommended,
@@ -44,6 +47,7 @@ module.exports = [
                 makeLineChart: 'readonly',
                 AttitudeViz: 'readonly',
                 DemoData: 'readonly',
+                Insole15: 'readonly',
                 createPressurePanel: 'readonly',
                 createImuPanel: 'readonly',
                 createCanvas: 'readonly',
