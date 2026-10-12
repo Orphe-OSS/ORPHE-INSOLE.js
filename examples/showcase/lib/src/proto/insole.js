@@ -2331,6 +2331,978 @@ export const insole = $root.insole = (() => {
         return GetConfigResponse;
     })();
 
+    insole.GaitStride = (function() {
+
+        /**
+         * Properties of a GaitStride.
+         * @memberof insole
+         * @interface IGaitStride
+         * @property {number|null} [strideLength] GaitStride strideLength
+         * @property {number|null} [strideHeight] GaitStride strideHeight
+         * @property {number|null} [speed] GaitStride speed
+         * @property {number|null} [pronation] GaitStride pronation
+         * @property {number|null} [strikeAngle] GaitStride strikeAngle
+         * @property {number|null} [cadence] GaitStride cadence
+         * @property {number|null} [landingForce] GaitStride landingForce
+         * @property {number|null} [contactTime] GaitStride contactTime
+         * @property {number|null} [gaitType] GaitStride gaitType
+         * @property {number|null} [footStrike] GaitStride footStrike
+         */
+
+        /**
+         * Constructs a new GaitStride.
+         * @memberof insole
+         * @classdesc Represents a GaitStride.
+         * @implements IGaitStride
+         * @constructor
+         * @param {insole.IGaitStride=} [properties] Properties to set
+         */
+        function GaitStride(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * GaitStride strideLength.
+         * @member {number} strideLength
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.strideLength = 0;
+
+        /**
+         * GaitStride strideHeight.
+         * @member {number} strideHeight
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.strideHeight = 0;
+
+        /**
+         * GaitStride speed.
+         * @member {number} speed
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.speed = 0;
+
+        /**
+         * GaitStride pronation.
+         * @member {number} pronation
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.pronation = 0;
+
+        /**
+         * GaitStride strikeAngle.
+         * @member {number} strikeAngle
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.strikeAngle = 0;
+
+        /**
+         * GaitStride cadence.
+         * @member {number} cadence
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.cadence = 0;
+
+        /**
+         * GaitStride landingForce.
+         * @member {number} landingForce
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.landingForce = 0;
+
+        /**
+         * GaitStride contactTime.
+         * @member {number} contactTime
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.contactTime = 0;
+
+        /**
+         * GaitStride gaitType.
+         * @member {number} gaitType
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.gaitType = 0;
+
+        /**
+         * GaitStride footStrike.
+         * @member {number} footStrike
+         * @memberof insole.GaitStride
+         * @instance
+         */
+        GaitStride.prototype.footStrike = 0;
+
+        /**
+         * Creates a new GaitStride instance using the specified properties.
+         * @function create
+         * @memberof insole.GaitStride
+         * @static
+         * @param {insole.IGaitStride=} [properties] Properties to set
+         * @returns {insole.GaitStride} GaitStride instance
+         */
+        GaitStride.create = function create(properties) {
+            return new GaitStride(properties);
+        };
+
+        /**
+         * Encodes the specified GaitStride message. Does not implicitly {@link insole.GaitStride.verify|verify} messages.
+         * @function encode
+         * @memberof insole.GaitStride
+         * @static
+         * @param {insole.IGaitStride} message GaitStride message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GaitStride.encode = function encode(message, writer, q) {
+            if (!writer)
+                writer = $Writer.create();
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            if (message.strideLength != null && Object.hasOwnProperty.call(message, "strideLength"))
+                writer.uint32(/* id 1, wireType 5 =*/13).float(message.strideLength);
+            if (message.strideHeight != null && Object.hasOwnProperty.call(message, "strideHeight"))
+                writer.uint32(/* id 2, wireType 5 =*/21).float(message.strideHeight);
+            if (message.speed != null && Object.hasOwnProperty.call(message, "speed"))
+                writer.uint32(/* id 3, wireType 5 =*/29).float(message.speed);
+            if (message.pronation != null && Object.hasOwnProperty.call(message, "pronation"))
+                writer.uint32(/* id 4, wireType 5 =*/37).float(message.pronation);
+            if (message.strikeAngle != null && Object.hasOwnProperty.call(message, "strikeAngle"))
+                writer.uint32(/* id 5, wireType 5 =*/45).float(message.strikeAngle);
+            if (message.cadence != null && Object.hasOwnProperty.call(message, "cadence"))
+                writer.uint32(/* id 6, wireType 5 =*/53).float(message.cadence);
+            if (message.landingForce != null && Object.hasOwnProperty.call(message, "landingForce"))
+                writer.uint32(/* id 7, wireType 5 =*/61).float(message.landingForce);
+            if (message.contactTime != null && Object.hasOwnProperty.call(message, "contactTime"))
+                writer.uint32(/* id 8, wireType 5 =*/69).float(message.contactTime);
+            if (message.gaitType != null && Object.hasOwnProperty.call(message, "gaitType"))
+                writer.uint32(/* id 9, wireType 0 =*/72).int32(message.gaitType);
+            if (message.footStrike != null && Object.hasOwnProperty.call(message, "footStrike"))
+                writer.uint32(/* id 10, wireType 0 =*/80).int32(message.footStrike);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GaitStride message, length delimited. Does not implicitly {@link insole.GaitStride.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof insole.GaitStride
+         * @static
+         * @param {insole.IGaitStride} message GaitStride message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GaitStride.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+        };
+
+        /**
+         * Decodes a GaitStride message from the specified reader or buffer.
+         * @function decode
+         * @memberof insole.GaitStride
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {insole.GaitStride} GaitStride
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GaitStride.decode = function decode(reader, length, error, long) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (long === undefined)
+                long = 0;
+            if (long > $Reader.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.insole.GaitStride();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.strideLength = reader.float();
+                        break;
+                    }
+                case 2: {
+                        message.strideHeight = reader.float();
+                        break;
+                    }
+                case 3: {
+                        message.speed = reader.float();
+                        break;
+                    }
+                case 4: {
+                        message.pronation = reader.float();
+                        break;
+                    }
+                case 5: {
+                        message.strikeAngle = reader.float();
+                        break;
+                    }
+                case 6: {
+                        message.cadence = reader.float();
+                        break;
+                    }
+                case 7: {
+                        message.landingForce = reader.float();
+                        break;
+                    }
+                case 8: {
+                        message.contactTime = reader.float();
+                        break;
+                    }
+                case 9: {
+                        message.gaitType = reader.int32();
+                        break;
+                    }
+                case 10: {
+                        message.footStrike = reader.int32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7, long);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GaitStride message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof insole.GaitStride
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {insole.GaitStride} GaitStride
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GaitStride.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GaitStride message.
+         * @function verify
+         * @memberof insole.GaitStride
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GaitStride.verify = function verify(message, long) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                return "maximum nesting depth exceeded";
+            if (message.strideLength != null && Object.hasOwnProperty.call(message, "strideLength"))
+                if (typeof message.strideLength !== "number")
+                    return "strideLength: number expected";
+            if (message.strideHeight != null && Object.hasOwnProperty.call(message, "strideHeight"))
+                if (typeof message.strideHeight !== "number")
+                    return "strideHeight: number expected";
+            if (message.speed != null && Object.hasOwnProperty.call(message, "speed"))
+                if (typeof message.speed !== "number")
+                    return "speed: number expected";
+            if (message.pronation != null && Object.hasOwnProperty.call(message, "pronation"))
+                if (typeof message.pronation !== "number")
+                    return "pronation: number expected";
+            if (message.strikeAngle != null && Object.hasOwnProperty.call(message, "strikeAngle"))
+                if (typeof message.strikeAngle !== "number")
+                    return "strikeAngle: number expected";
+            if (message.cadence != null && Object.hasOwnProperty.call(message, "cadence"))
+                if (typeof message.cadence !== "number")
+                    return "cadence: number expected";
+            if (message.landingForce != null && Object.hasOwnProperty.call(message, "landingForce"))
+                if (typeof message.landingForce !== "number")
+                    return "landingForce: number expected";
+            if (message.contactTime != null && Object.hasOwnProperty.call(message, "contactTime"))
+                if (typeof message.contactTime !== "number")
+                    return "contactTime: number expected";
+            if (message.gaitType != null && Object.hasOwnProperty.call(message, "gaitType"))
+                if (!$util.isInteger(message.gaitType))
+                    return "gaitType: integer expected";
+            if (message.footStrike != null && Object.hasOwnProperty.call(message, "footStrike"))
+                if (!$util.isInteger(message.footStrike))
+                    return "footStrike: integer expected";
+            return null;
+        };
+
+        /**
+         * Creates a GaitStride message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof insole.GaitStride
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {insole.GaitStride} GaitStride
+         */
+        GaitStride.fromObject = function fromObject(object, long) {
+            if (object instanceof $root.insole.GaitStride)
+                return object;
+            if (!$util.isObject(object))
+                throw TypeError(".insole.GaitStride: object expected");
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let message = new $root.insole.GaitStride();
+            if (object.strideLength != null)
+                message.strideLength = Number(object.strideLength);
+            if (object.strideHeight != null)
+                message.strideHeight = Number(object.strideHeight);
+            if (object.speed != null)
+                message.speed = Number(object.speed);
+            if (object.pronation != null)
+                message.pronation = Number(object.pronation);
+            if (object.strikeAngle != null)
+                message.strikeAngle = Number(object.strikeAngle);
+            if (object.cadence != null)
+                message.cadence = Number(object.cadence);
+            if (object.landingForce != null)
+                message.landingForce = Number(object.landingForce);
+            if (object.contactTime != null)
+                message.contactTime = Number(object.contactTime);
+            if (object.gaitType != null)
+                message.gaitType = object.gaitType | 0;
+            if (object.footStrike != null)
+                message.footStrike = object.footStrike | 0;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a GaitStride message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof insole.GaitStride
+         * @static
+         * @param {insole.GaitStride} message GaitStride
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GaitStride.toObject = function toObject(message, options, q) {
+            if (!options)
+                options = {};
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            let object = {};
+            if (options.defaults) {
+                object.strideLength = 0;
+                object.strideHeight = 0;
+                object.speed = 0;
+                object.pronation = 0;
+                object.strikeAngle = 0;
+                object.cadence = 0;
+                object.landingForce = 0;
+                object.contactTime = 0;
+                object.gaitType = 0;
+                object.footStrike = 0;
+            }
+            if (message.strideLength != null && Object.hasOwnProperty.call(message, "strideLength"))
+                object.strideLength = options.json && !isFinite(message.strideLength) ? String(message.strideLength) : message.strideLength;
+            if (message.strideHeight != null && Object.hasOwnProperty.call(message, "strideHeight"))
+                object.strideHeight = options.json && !isFinite(message.strideHeight) ? String(message.strideHeight) : message.strideHeight;
+            if (message.speed != null && Object.hasOwnProperty.call(message, "speed"))
+                object.speed = options.json && !isFinite(message.speed) ? String(message.speed) : message.speed;
+            if (message.pronation != null && Object.hasOwnProperty.call(message, "pronation"))
+                object.pronation = options.json && !isFinite(message.pronation) ? String(message.pronation) : message.pronation;
+            if (message.strikeAngle != null && Object.hasOwnProperty.call(message, "strikeAngle"))
+                object.strikeAngle = options.json && !isFinite(message.strikeAngle) ? String(message.strikeAngle) : message.strikeAngle;
+            if (message.cadence != null && Object.hasOwnProperty.call(message, "cadence"))
+                object.cadence = options.json && !isFinite(message.cadence) ? String(message.cadence) : message.cadence;
+            if (message.landingForce != null && Object.hasOwnProperty.call(message, "landingForce"))
+                object.landingForce = options.json && !isFinite(message.landingForce) ? String(message.landingForce) : message.landingForce;
+            if (message.contactTime != null && Object.hasOwnProperty.call(message, "contactTime"))
+                object.contactTime = options.json && !isFinite(message.contactTime) ? String(message.contactTime) : message.contactTime;
+            if (message.gaitType != null && Object.hasOwnProperty.call(message, "gaitType"))
+                object.gaitType = message.gaitType;
+            if (message.footStrike != null && Object.hasOwnProperty.call(message, "footStrike"))
+                object.footStrike = message.footStrike;
+            return object;
+        };
+
+        /**
+         * Converts this GaitStride to JSON.
+         * @function toJSON
+         * @memberof insole.GaitStride
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GaitStride.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GaitStride
+         * @function getTypeUrl
+         * @memberof insole.GaitStride
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GaitStride.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/insole.GaitStride";
+        };
+
+        return GaitStride;
+    })();
+
+    insole.GetGaitLiveRequest = (function() {
+
+        /**
+         * Properties of a GetGaitLiveRequest.
+         * @memberof insole
+         * @interface IGetGaitLiveRequest
+         */
+
+        /**
+         * Constructs a new GetGaitLiveRequest.
+         * @memberof insole
+         * @classdesc Represents a GetGaitLiveRequest.
+         * @implements IGetGaitLiveRequest
+         * @constructor
+         * @param {insole.IGetGaitLiveRequest=} [properties] Properties to set
+         */
+        function GetGaitLiveRequest(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new GetGaitLiveRequest instance using the specified properties.
+         * @function create
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {insole.IGetGaitLiveRequest=} [properties] Properties to set
+         * @returns {insole.GetGaitLiveRequest} GetGaitLiveRequest instance
+         */
+        GetGaitLiveRequest.create = function create(properties) {
+            return new GetGaitLiveRequest(properties);
+        };
+
+        /**
+         * Encodes the specified GetGaitLiveRequest message. Does not implicitly {@link insole.GetGaitLiveRequest.verify|verify} messages.
+         * @function encode
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {insole.IGetGaitLiveRequest} message GetGaitLiveRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetGaitLiveRequest.encode = function encode(message, writer, q) {
+            if (!writer)
+                writer = $Writer.create();
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetGaitLiveRequest message, length delimited. Does not implicitly {@link insole.GetGaitLiveRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {insole.IGetGaitLiveRequest} message GetGaitLiveRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetGaitLiveRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+        };
+
+        /**
+         * Decodes a GetGaitLiveRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {insole.GetGaitLiveRequest} GetGaitLiveRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetGaitLiveRequest.decode = function decode(reader, length, error, long) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (long === undefined)
+                long = 0;
+            if (long > $Reader.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.insole.GetGaitLiveRequest();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7, long);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GetGaitLiveRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {insole.GetGaitLiveRequest} GetGaitLiveRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetGaitLiveRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetGaitLiveRequest message.
+         * @function verify
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetGaitLiveRequest.verify = function verify(message, long) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                return "maximum nesting depth exceeded";
+            return null;
+        };
+
+        /**
+         * Creates a GetGaitLiveRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {insole.GetGaitLiveRequest} GetGaitLiveRequest
+         */
+        GetGaitLiveRequest.fromObject = function fromObject(object, long) {
+            if (object instanceof $root.insole.GetGaitLiveRequest)
+                return object;
+            return new $root.insole.GetGaitLiveRequest();
+        };
+
+        /**
+         * Creates a plain object from a GetGaitLiveRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {insole.GetGaitLiveRequest} message GetGaitLiveRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetGaitLiveRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this GetGaitLiveRequest to JSON.
+         * @function toJSON
+         * @memberof insole.GetGaitLiveRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetGaitLiveRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GetGaitLiveRequest
+         * @function getTypeUrl
+         * @memberof insole.GetGaitLiveRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GetGaitLiveRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/insole.GetGaitLiveRequest";
+        };
+
+        return GetGaitLiveRequest;
+    })();
+
+    insole.GetGaitLiveResponse = (function() {
+
+        /**
+         * Properties of a GetGaitLiveResponse.
+         * @memberof insole
+         * @interface IGetGaitLiveResponse
+         * @property {boolean|null} [measuring] GetGaitLiveResponse measuring
+         * @property {number|null} [sessionId] GetGaitLiveResponse sessionId
+         * @property {number|null} [steps] GetGaitLiveResponse steps
+         * @property {number|null} [distanceM] GetGaitLiveResponse distanceM
+         * @property {number|null} [strideSeq] GetGaitLiveResponse strideSeq
+         * @property {insole.IGaitStride|null} [last] GetGaitLiveResponse last
+         */
+
+        /**
+         * Constructs a new GetGaitLiveResponse.
+         * @memberof insole
+         * @classdesc Represents a GetGaitLiveResponse.
+         * @implements IGetGaitLiveResponse
+         * @constructor
+         * @param {insole.IGetGaitLiveResponse=} [properties] Properties to set
+         */
+        function GetGaitLiveResponse(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * GetGaitLiveResponse measuring.
+         * @member {boolean} measuring
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         */
+        GetGaitLiveResponse.prototype.measuring = false;
+
+        /**
+         * GetGaitLiveResponse sessionId.
+         * @member {number} sessionId
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         */
+        GetGaitLiveResponse.prototype.sessionId = 0;
+
+        /**
+         * GetGaitLiveResponse steps.
+         * @member {number} steps
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         */
+        GetGaitLiveResponse.prototype.steps = 0;
+
+        /**
+         * GetGaitLiveResponse distanceM.
+         * @member {number} distanceM
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         */
+        GetGaitLiveResponse.prototype.distanceM = 0;
+
+        /**
+         * GetGaitLiveResponse strideSeq.
+         * @member {number} strideSeq
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         */
+        GetGaitLiveResponse.prototype.strideSeq = 0;
+
+        /**
+         * GetGaitLiveResponse last.
+         * @member {insole.IGaitStride|null|undefined} last
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         */
+        GetGaitLiveResponse.prototype.last = null;
+
+        /**
+         * Creates a new GetGaitLiveResponse instance using the specified properties.
+         * @function create
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {insole.IGetGaitLiveResponse=} [properties] Properties to set
+         * @returns {insole.GetGaitLiveResponse} GetGaitLiveResponse instance
+         */
+        GetGaitLiveResponse.create = function create(properties) {
+            return new GetGaitLiveResponse(properties);
+        };
+
+        /**
+         * Encodes the specified GetGaitLiveResponse message. Does not implicitly {@link insole.GetGaitLiveResponse.verify|verify} messages.
+         * @function encode
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {insole.IGetGaitLiveResponse} message GetGaitLiveResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetGaitLiveResponse.encode = function encode(message, writer, q) {
+            if (!writer)
+                writer = $Writer.create();
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            if (message.measuring != null && Object.hasOwnProperty.call(message, "measuring"))
+                writer.uint32(/* id 1, wireType 0 =*/8).bool(message.measuring);
+            if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.sessionId);
+            if (message.steps != null && Object.hasOwnProperty.call(message, "steps"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.steps);
+            if (message.distanceM != null && Object.hasOwnProperty.call(message, "distanceM"))
+                writer.uint32(/* id 4, wireType 5 =*/37).float(message.distanceM);
+            if (message.strideSeq != null && Object.hasOwnProperty.call(message, "strideSeq"))
+                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.strideSeq);
+            if (message.last != null && Object.hasOwnProperty.call(message, "last"))
+                $root.insole.GaitStride.encode(message.last, writer.uint32(/* id 6, wireType 2 =*/50).fork(), q + 1).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetGaitLiveResponse message, length delimited. Does not implicitly {@link insole.GetGaitLiveResponse.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {insole.IGetGaitLiveResponse} message GetGaitLiveResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetGaitLiveResponse.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+        };
+
+        /**
+         * Decodes a GetGaitLiveResponse message from the specified reader or buffer.
+         * @function decode
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {insole.GetGaitLiveResponse} GetGaitLiveResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetGaitLiveResponse.decode = function decode(reader, length, error, long) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (long === undefined)
+                long = 0;
+            if (long > $Reader.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.insole.GetGaitLiveResponse();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.measuring = reader.bool();
+                        break;
+                    }
+                case 2: {
+                        message.sessionId = reader.uint32();
+                        break;
+                    }
+                case 3: {
+                        message.steps = reader.uint32();
+                        break;
+                    }
+                case 4: {
+                        message.distanceM = reader.float();
+                        break;
+                    }
+                case 5: {
+                        message.strideSeq = reader.uint32();
+                        break;
+                    }
+                case 6: {
+                        message.last = $root.insole.GaitStride.decode(reader, reader.uint32(), undefined, long + 1);
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7, long);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GetGaitLiveResponse message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {insole.GetGaitLiveResponse} GetGaitLiveResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetGaitLiveResponse.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetGaitLiveResponse message.
+         * @function verify
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetGaitLiveResponse.verify = function verify(message, long) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                return "maximum nesting depth exceeded";
+            if (message.measuring != null && Object.hasOwnProperty.call(message, "measuring"))
+                if (typeof message.measuring !== "boolean")
+                    return "measuring: boolean expected";
+            if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+                if (!$util.isInteger(message.sessionId))
+                    return "sessionId: integer expected";
+            if (message.steps != null && Object.hasOwnProperty.call(message, "steps"))
+                if (!$util.isInteger(message.steps))
+                    return "steps: integer expected";
+            if (message.distanceM != null && Object.hasOwnProperty.call(message, "distanceM"))
+                if (typeof message.distanceM !== "number")
+                    return "distanceM: number expected";
+            if (message.strideSeq != null && Object.hasOwnProperty.call(message, "strideSeq"))
+                if (!$util.isInteger(message.strideSeq))
+                    return "strideSeq: integer expected";
+            if (message.last != null && Object.hasOwnProperty.call(message, "last")) {
+                let error = $root.insole.GaitStride.verify(message.last, long + 1);
+                if (error)
+                    return "last." + error;
+            }
+            return null;
+        };
+
+        /**
+         * Creates a GetGaitLiveResponse message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {insole.GetGaitLiveResponse} GetGaitLiveResponse
+         */
+        GetGaitLiveResponse.fromObject = function fromObject(object, long) {
+            if (object instanceof $root.insole.GetGaitLiveResponse)
+                return object;
+            if (!$util.isObject(object))
+                throw TypeError(".insole.GetGaitLiveResponse: object expected");
+            if (long === undefined)
+                long = 0;
+            if (long > $util.recursionLimit)
+                throw Error("maximum nesting depth exceeded");
+            let message = new $root.insole.GetGaitLiveResponse();
+            if (object.measuring != null)
+                message.measuring = Boolean(object.measuring);
+            if (object.sessionId != null)
+                message.sessionId = object.sessionId >>> 0;
+            if (object.steps != null)
+                message.steps = object.steps >>> 0;
+            if (object.distanceM != null)
+                message.distanceM = Number(object.distanceM);
+            if (object.strideSeq != null)
+                message.strideSeq = object.strideSeq >>> 0;
+            if (object.last != null) {
+                if (!$util.isObject(object.last))
+                    throw TypeError(".insole.GetGaitLiveResponse.last: object expected");
+                message.last = $root.insole.GaitStride.fromObject(object.last, long + 1);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a GetGaitLiveResponse message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {insole.GetGaitLiveResponse} message GetGaitLiveResponse
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetGaitLiveResponse.toObject = function toObject(message, options, q) {
+            if (!options)
+                options = {};
+            if (q === undefined)
+                q = 0;
+            if (q > $util.recursionLimit)
+                throw Error("max depth exceeded");
+            let object = {};
+            if (options.defaults) {
+                object.measuring = false;
+                object.sessionId = 0;
+                object.steps = 0;
+                object.distanceM = 0;
+                object.strideSeq = 0;
+                object.last = null;
+            }
+            if (message.measuring != null && Object.hasOwnProperty.call(message, "measuring"))
+                object.measuring = message.measuring;
+            if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+                object.sessionId = message.sessionId;
+            if (message.steps != null && Object.hasOwnProperty.call(message, "steps"))
+                object.steps = message.steps;
+            if (message.distanceM != null && Object.hasOwnProperty.call(message, "distanceM"))
+                object.distanceM = options.json && !isFinite(message.distanceM) ? String(message.distanceM) : message.distanceM;
+            if (message.strideSeq != null && Object.hasOwnProperty.call(message, "strideSeq"))
+                object.strideSeq = message.strideSeq;
+            if (message.last != null && Object.hasOwnProperty.call(message, "last"))
+                object.last = $root.insole.GaitStride.toObject(message.last, options, q + 1);
+            return object;
+        };
+
+        /**
+         * Converts this GetGaitLiveResponse to JSON.
+         * @function toJSON
+         * @memberof insole.GetGaitLiveResponse
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetGaitLiveResponse.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GetGaitLiveResponse
+         * @function getTypeUrl
+         * @memberof insole.GetGaitLiveResponse
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GetGaitLiveResponse.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/insole.GetGaitLiveResponse";
+        };
+
+        return GetGaitLiveResponse;
+    })();
+
     return insole;
 })();
 
