@@ -27,24 +27,4 @@ export abstract class GeneratedClient {
     const respData = await this.call('get_config', insole.GetConfigRequest.encode(req).finish());
     return insole.GetConfigResponse.decode(respData);
   }
-
-  async startMeasurement({
-    activityId = 0,
-  }: { activityId?: number } = {}): Promise<insole.StartMeasurementResponse> {
-    const req = insole.StartMeasurementRequest.create({ activityId });
-    const respData = await this.call('start_measurement', insole.StartMeasurementRequest.encode(req).finish());
-    return insole.StartMeasurementResponse.decode(respData);
-  }
-
-  async stopMeasurement(): Promise<insole.StopMeasurementResponse> {
-    const req = insole.StopMeasurementRequest.create({});
-    const respData = await this.call('stop_measurement', insole.StopMeasurementRequest.encode(req).finish());
-    return insole.StopMeasurementResponse.decode(respData);
-  }
-
-  async getGaitLive(): Promise<insole.GetGaitLiveResponse> {
-    const req = insole.GetGaitLiveRequest.create({});
-    const respData = await this.call('get_gait_live', insole.GetGaitLiveRequest.encode(req).finish());
-    return insole.GetGaitLiveResponse.decode(respData);
-  }
 }

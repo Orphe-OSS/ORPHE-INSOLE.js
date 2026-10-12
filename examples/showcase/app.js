@@ -607,9 +607,6 @@ async function connectInsole15(id, device) {
         applySide(id, side);
         insole15PressureMaps[id] = side === 'R' ? INSOLE15_PRESSURE_MAP_RIGHT : INSOLE15_PRESSURE_MAP_LEFT;
         setInsole15HeaderBadges(id, cfg);
-        // 歩容パネルがこのスロットの計測器として使う（製品版の Toolkit gait と同じ口）
-        insole15GaitSources[id] = createInsole15GaitSource(id, client);
-        gaits[id] = insole15GaitSources[id];
         client.startMonitor(
             (frame) => dispatchFrame(id, adaptInsole15Frame(frame, insole15PressureMaps[id]), true),
             { onError: (e) => console.warn(`INSOLE${id} monitor:`, e) },
@@ -617,7 +614,7 @@ async function connectInsole15(id, device) {
         // 予期しない切断（電源断・圏外）でトグルが ON のまま残らないようにする
         device.addEventListener('gattserverdisconnected', () => {
             if (insole15Clients[id] !== client) return;
-            disconnectInsole15(id, { graceful: false });
+            disconnectInsole15(id);
             deviceKind[id] = null;
             setToolkitUiVisible(id, false);
             const sw = document.querySelector(`#switch_ble${id}`);
@@ -632,110 +629,12 @@ async function connectInsole15(id, device) {
     }
 }
 
-async function disconnectInsole15(id, { graceful = true } = {}) {
+function disconnectInsole15(id) {
     const client = insole15Clients[id];
-    insole15Clients[id] = null;
     if (client) {
-        // 手動切断時は FW の歩容計測セッションを閉じてから切る（FW が要約をログに記録する）。
-        // 予期しない切断（リンク喪失）時は RPC が通らないので省略する。
-        if (graceful && client.isGaitMonitoring) {
-            try { await client.stopGaitMonitor(); } catch { /* ignore */ }
-        }
         try { client.stopMonitor(); client.disconnect(); } catch { /* ignore */ }
     }
-    // gaits[id] は差し替えたままにする（切断後も計測結果の表示・CSV 保存ができるように）。
-    // 製品版が同じスロットに接続したときに Toolkit の gait へ戻す（installUnifiedToggle）。
-}
-
-//--------------------------------------------------
-// INSOLE 1.5 の歩容解析
-//   FW の計測セッション（start_measurement）を開き、get_gait_live をポーリングして
-//   完了ストライドごとに SDK（OrpheInsoleGait）と同じ row 形式へ変換する。
-//   歩容パネルが使う { stepCount, rows, active, start(), stop(), download() } を持つ
-//   「計測器」オブジェクトを gaits[id] に差し込むので、パネル側の表示・CSV 保存は共通。
-//--------------------------------------------------
-const INSOLE15_GAIT_POLL_MS = 250;
-const INSOLE15_FOOT_STRIKES = ['none', 'heelStrike', 'midfoot', 'forefoot']; // FW の FootStrike enum
-const insole15GaitSources = [null, null];
-
-function insole15GaitSupported() {
-    return typeof OrpheInsoleGait !== 'undefined' && typeof OrpheInsoleGait.gaitRowToCsv === 'function';
-}
-
-/**
- * FW の完了ストライド（get_gait_live）→ OrpheInsoleGait と同じ row。
- * 非負量は負値・非有限を欠損(null)に、派生値（duration/swing）は入力が有限かつ正のときだけ計算する。
- * get_gait_live に無い項目（ストライド方向・X/Y 成分・pronation_z・カロリー）は null（CSV では空欄）。
- */
-function insole15StrideToRow(s) {
-    const num = (v) => (Number.isFinite(v) ? v : null);
-    const nonNeg = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
-    const pos = (v) => (Number.isFinite(v) && v > 0 ? v : null);
-    const cadence = pos(s.cadence);
-    const duration = cadence ? 1 / cadence : null;
-    const stance = pos(s.contactTime);
-    const swing = (duration !== null && stance !== null && duration > stance) ? duration - stance : null;
-    const pronation = num(s.pronation);
-    return {
-        step_number: s.strideSeq,
-        gait_type: OrpheInsoleGait.gaitTypeToStr(s.gaitType),
-        stride_direction: null,
-        distance_m: nonNeg(s.distanceM),
-        stance_phase_s: stance,
-        swing_phase_s: swing,
-        duration_s: duration,
-        cadence_hz: cadence,
-        speed_mps: nonNeg(s.speed),
-        foot_angle_deg: num(s.strikeAngle),   // FW の strike_angle は着地時の足角度
-        stride_x_m: null,
-        stride_y_m: null,
-        stride_z_m: nonNeg(s.strideHeight),
-        stride_norm_m: nonNeg(s.strideLength),
-        landing_force: nonNeg(s.landingForce),
-        strike_angle_deg: num(s.strikeAngle),
-        foot_strike: INSOLE15_FOOT_STRIKES[s.footStrike] ?? 'unknown',   // FW（GaitAnalysisCore）の判定をそのまま使う
-        // 生の符号のまま（製品版の pronation_y と同じ GaitAnalysisCore の値）。分類しきい値も SDK と共通
-        pronation_deg: pronation,
-        pronation_type: OrpheInsoleGait.pronationToStr(pronation),
-        pronation_z_deg: null,
-        calorie: null,
-    };
-}
-
-function createInsole15GaitSource(id, client) {
-    return {
-        rows: [],
-        get stepCount() { return this.rows.length; },
-        get active() { return !!(client && client.isGaitMonitoring); },
-        async start() {
-            this.rows = [];
-            await client.startGaitMonitor((stride) => {
-                const row = insole15StrideToRow(stride);
-                this.rows.push(row);
-                gaitLatest[id] = row;
-                gaitDisplayDirty = true;
-            }, {
-                pollMs: INSOLE15_GAIT_POLL_MS,
-                onError: (e) => console.warn(`INSOLE${id} gait poll:`, e),
-            });
-        },
-        async stop() { await client.stopGaitMonitor(); },
-        toCSV() {
-            return [OrpheInsoleGait.CSV_HEADER, ...this.rows.map(OrpheInsoleGait.gaitRowToCsv)].join('\n') + '\n';
-        },
-        download(filename) {
-            const blob = new Blob([this.toCSV()], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename || 'orphe-insole-1.5-gait.csv';
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        },
-    };
+    insole15Clients[id] = null;
 }
 
 function installUnifiedToggle() {
@@ -745,7 +644,7 @@ function installUnifiedToggle() {
         const id = parseInt(dom.value, 10);
         if (!dom.checked) {
             if (deviceKind[id] === 'insole15') {
-                await disconnectInsole15(id);
+                disconnectInsole15(id);
                 setToolkitUiVisible(id, false);
             } else {
                 await orig(dom, options);
@@ -775,9 +674,6 @@ function installUnifiedToggle() {
         // （SDK の requestDevice() が選択後に行う初期化と同じ）
         const insole = insoles[id];
         const other = insoles[1 - id];
-        // このスロットに INSOLE 1.5 の計測器が残っていれば Toolkit の gait に戻す
-        const toolkitSession = getInsoleToolkitSession(id);
-        gaits[id] = toolkitSession ? toolkitSession.gait : null;
         if (other && other.bluetoothDevice && other.bluetoothDevice.id === device.id) {
             console.warn(`INSOLE${id}: "${device.name || device.id}" is already assigned to INSOLE${1 - id}`);
             dom.checked = false;
@@ -1098,17 +994,6 @@ window.onload = function () {
     function gaitStepsTotal() {
         return gaitActiveIds.reduce((n, id) => n + (gaits[id] ? gaits[id].stepCount : 0), 0);
     }
-    // 歩容計測できるスロット: 製品版は Toolkit の gait、INSOLE 1.5 は専用の計測器（insole15GaitSources）
-    function gaitCapableIds() {
-        const ids = connectedInsoleIds().filter((id) => gaits[id]);
-        for (let id = 0; id < 2; id++) {
-            if (deviceKind[id] === 'insole15' && insole15GaitSources[id] && insole15GaitSupported() && !ids.includes(id)) ids.push(id);
-        }
-        return ids.sort();
-    }
-    function isInsole15GaitSlot(id) {
-        return !!(insole15GaitSources[id] && gaits[id] === insole15GaitSources[id]);
-    }
     function updateGaitToggleLabel() {
         gaitToggle.innerHTML = gaitRunning
             ? i18nHtml('gaitStopHtml', undefined, '<i class="bi bi-stop-fill"></i> 計測停止')
@@ -1124,7 +1009,7 @@ window.onload = function () {
                 return `<div class="col-12 col-md-6"><div class="p-2 rounded border border-secondary small">${badge} <span class="text-muted">${i18nText('gaitWaiting')}</span></div></div>`;
             }
             const cells = [
-                [i18nText('gaitColGait'), `${row.gait_type} / ${row.stride_direction ?? '-'}`],
+                [i18nText('gaitColGait'), `${row.gait_type} / ${row.stride_direction}`],
                 [i18nText('gaitColStride'), `${gaitFmt(row.stride_norm_m)} m <span class="text-muted">(h ${gaitFmt(row.stride_z_m)} m)</span>`],
                 [i18nText('gaitColCadence'), `${gaitFmt(row.cadence_hz)} Hz`],
                 [i18nText('gaitColSpeed'), `${gaitFmt(row.speed_mps)} m/s`],
@@ -1142,7 +1027,7 @@ window.onload = function () {
         }).join('');
     }
     async function startGait() {
-        const ids = gaitCapableIds();
+        const ids = connectedInsoleIds().filter((id) => gaits[id]);
         if (ids.length === 0) return;
         gaitToggle.disabled = true;
         gaitDownload.disabled = true;
@@ -1152,23 +1037,9 @@ window.onload = function () {
         // Toolkit は購読直後に gaitActive を立て、その後 notify の疎通確認（最大1.5s×リトライ）を
         // await する。その間に追従処理が割り込むと同じIDが二重登録され、Stepカードが
         // 左右2枚ずつ出る。開始が確定するまで追従を止める。
-        // INSOLE 1.5 も同じ窓がある（startGaitMonitor() は start_measurement が返った時点で
-        // active になり、start() が resolve するまでの間に追従処理が走りうる）ので、
-        // 分岐はこのガードの中に置く。
         gaitStarting = true;
         try {
             const results = await Promise.all(ids.map(async (id) => {
-                if (isInsole15GaitSlot(id)) {
-                    const source = insole15GaitSources[id];
-                    try {
-                        await source.start();
-                        return source.active;
-                    } catch (error) {
-                        console.warn(`INSOLE${id}: failed to start INSOLE 1.5 gait measurement`, error);
-                        startErrors.push({ id, code: 'INSOLE15_GAIT_START', message: error?.message || String(error) });
-                        return false;
-                    }
-                }
                 const session = getInsoleToolkitSession(id);
                 if (!session || !session.gait) return false;
                 try {
@@ -1209,14 +1080,6 @@ window.onload = function () {
     async function stopGait() {
         gaitToggle.disabled = true;
         await Promise.all(gaitActiveIds.map(async (id) => {
-            if (isInsole15GaitSlot(id)) {
-                try {
-                    await insole15GaitSources[id].stop();   // stop_measurement（FW が要約をログに記録）
-                } catch (error) {
-                    console.warn(`INSOLE${id}: failed to stop INSOLE 1.5 gait measurement`, error);
-                }
-                return;
-            }
             const session = getInsoleToolkitSession(id);
             if (!session) return;
             try {
@@ -1240,7 +1103,7 @@ window.onload = function () {
             gaitStatus.textContent = i18nText('gaitStatusRunning', { steps: gaitStepsTotal() });
             if (gaitDisplayDirty) { renderGaitDisplay(); gaitDisplayDirty = false; }
         } else {
-            const connected = gaitCapableIds().length > 0;
+            const connected = connectedInsoleIds().length > 0;
             gaitToggle.disabled = !connected;
             if (gaitDownload.disabled) {
                 gaitStatus.textContent = connected ? i18nText('gaitStatusReady') : i18nText('gaitStatusIdle');
@@ -1286,9 +1149,7 @@ window.onload = function () {
         }
     }
     function syncGaitSessionState(connectedIds) {
-        const activeGaitIds = [0, 1].filter((id) => {
-            if (isInsole15GaitSlot(id)) return insole15GaitSources[id].active;   // INSOLE 1.5
-            if (!connectedIds.includes(id)) return false;
+        const activeGaitIds = connectedIds.filter((id) => {
             const session = getInsoleToolkitSession(id);
             return !!(session && session.gaitActive);
         });

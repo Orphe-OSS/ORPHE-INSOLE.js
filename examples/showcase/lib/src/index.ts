@@ -18,7 +18,6 @@ export type {
   InsoleFrame,
   InsoleConfig,
   InsoleClientOptions,
-  InsoleGaitStride,
 } from './client/InsoleClient';
 export {
   BlerpcClient,
