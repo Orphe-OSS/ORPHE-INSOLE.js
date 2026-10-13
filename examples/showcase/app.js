@@ -524,10 +524,9 @@ function applyMountPositionWhenReady(insole, tries = 20) {
 //   スイッチ（AttitudeViz.setSwapPitchRoll）が担うので、ここでは座標変換を掛けない。
 //   lib/insole-1.5.web.js が読み込まれていないページでは何もしない（従来のトグルのまま）。
 //--------------------------------------------------
-// INSOLE 1.5 の BLE 名。FW 0.1.7 以降は 'INS2'（製品版と同じ 'INS' 接頭辞なので chooser の
-// namePrefix: 'INS' に含まれる）、それより前は 'Orphe_Insole'。新旧が混在していても判別できるよう両方を見る。
+// INSOLE 1.5 の BLE 名（FW 0.1.7 以降）。製品版と同じ 'INS' 接頭辞なので chooser の
+// namePrefix: 'INS' に含まれる。製品版の INS… 名と区別するため完全一致で判別する。
 const INSOLE15_NAME = 'INS2';
-const INSOLE15_LEGACY_NAME_PREFIX = 'Orphe_Insole';
 const G_ACCEL = 9.80665;
 const INSOLE15_PRESSURE_SCALE = 10; // INSOLE 1.5 は圧力値[mV]が小さいため、表示用に10倍する
 // INSOLE 1.5 の圧力チャネル並び替え（表示 p0..p5 に対応する元チャネル）。左右で基板上の
@@ -551,15 +550,14 @@ function productOptionalServices() {
 /** 製品版・INSOLE 1.5 の両方を1つのダイアログに出す（同じ手順で接続するため） */
 async function pickAnyInsole() {
     return navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: 'INS' }, { namePrefix: INSOLE15_LEGACY_NAME_PREFIX }],
+        filters: [{ namePrefix: 'INS' }],
         optionalServices: [Insole15.SERVICE_UUID, ...productOptionalServices()],
         optionalManufacturerData: [0x0000],
     });
 }
 
 function isInsole15Device(device) {
-    const name = device.name || '';
-    return name === INSOLE15_NAME || name.startsWith(INSOLE15_LEGACY_NAME_PREFIX);
+    return device.name === INSOLE15_NAME;
 }
 
 // INSOLE 1.5 を製品版と同じ単位・スケールに揃える（加速度 m/s^2 → G、圧力[mV]は

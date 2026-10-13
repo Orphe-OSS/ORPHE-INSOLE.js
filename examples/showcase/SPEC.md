@@ -189,7 +189,7 @@ examples/showcase/
 
 データフロー: ライブ（`got*` コールバック）とデモ（再生プレイヤー）はどちらも同じ `dispatchFrame()` に1サンプル分のフレームを渡し、可視化モジュールはデータ源を区別しない。
 
-接続（統合トグル）: ヘッダの接続トグルは製品版・INSOLE 1.5 の両方を1つのデバイス選択ダイアログで受け付け、名前（FW 0.1.7 以降は `INS2` 完全一致、それより前は `Orphe_Insole` 接頭辞）で INSOLE 1.5 を判別して `lib/` のクライアント（Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得）へ振り分ける（`app.js` の `installUnifiedToggle()`）。製品版は従来どおり Toolkit の `session.connect()` → `begin()` で接続する。INSOLE 1.5 は姿勢を送らないためクライアント側で Madgwick により quat/euler を推定し、加速度は m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（`INSOLE15_PRESSURE_MAP_LEFT/RIGHT`。接続時に取得した foot で選択）をして同じ `dispatchFrame()` に流す。pitch/roll の表示補正は上記スイッチが両者共通で担う。
+接続（統合トグル）: ヘッダの接続トグルは製品版・INSOLE 1.5 の両方を1つのデバイス選択ダイアログで受け付け、名前（`INS2` との完全一致。FW 0.1.7 以降）で INSOLE 1.5 を判別して `lib/` のクライアント（Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得）へ振り分ける（`app.js` の `installUnifiedToggle()`）。製品版は従来どおり Toolkit の `session.connect()` → `begin()` で接続する。INSOLE 1.5 は姿勢を送らないためクライアント側で Madgwick により quat/euler を推定し、加速度は m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（`INSOLE15_PRESSURE_MAP_LEFT/RIGHT`。接続時に取得した foot で選択）をして同じ `dispatchFrame()` に流す。pitch/roll の表示補正は上記スイッチが両者共通で担う。
 
 ## 6. 非機能要件
 

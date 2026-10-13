@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- showcase: INSOLE 1.5 の FW 0.1.7 以降はデバイス名が `Orphe_Insole` から `INS2` に変わったため、名前の接頭辞だけで判別していた統合トグルが製品版と取り違え、Toolkit 接続に失敗していた。`INS2` との完全一致でも INSOLE 1.5 と判別するようにした（旧ファームの `Orphe_Insole…` も引き続き判別する）。選択ダイアログ上の表示名の案内（index.html / i18n.js）と SPEC.md も更新。
+- showcase: INSOLE 1.5 の FW 0.1.7 以降はデバイス名が `Orphe_Insole` から `INS2` に変わったため、名前の接頭辞だけで判別していた統合トグルが製品版と取り違え、Toolkit 接続に失敗していた。INSOLE 1.5 は `INS2` との完全一致で判別するようにし、旧ファームの `Orphe_Insole` 名による判別と chooser の `namePrefix: 'Orphe_Insole'` フィルタは削除した（FW 0.1.7 以降が必要）。選択ダイアログ上の表示名の案内（index.html / i18n.js）と SPEC.md も更新。
 
 ## [1.3.4] - 2026-09-06
 
