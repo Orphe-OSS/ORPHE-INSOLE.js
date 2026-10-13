@@ -26,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Gait Report starts without synthetic data by default; automatic demo is now opt-in via `?demo=1` (or the existing Play demo button).
 - Gait Report CG: once the 20-step report is finalized, the animation holds the same mean as the report (`gait-report:cg-complete` → `Feed.hold`) instead of continuing to follow later steps and pausing 8 s after the last one. Start recording / Clear release the hold. The status line reads "Replaying the finalized report mean".
 
+### Fixed
+
+- showcase: INSOLE 1.5 の FW 0.1.7 以降はデバイス名が `Orphe_Insole` から `INS2` に変わったため、名前の接頭辞だけで判別していた統合トグルが製品版と取り違え、Toolkit 接続に失敗していた。INSOLE 1.5 は `INS2` との完全一致で判別するようにし、旧ファームの `Orphe_Insole` 名による判別と chooser の `namePrefix: 'Orphe_Insole'` フィルタは削除した（FW 0.1.7 以降が必要）。選択ダイアログ上の表示名の案内（index.html / i18n.js）と SPEC.md も更新。
+
 ## [1.3.4] - 2026-09-06
 
 ### Security
