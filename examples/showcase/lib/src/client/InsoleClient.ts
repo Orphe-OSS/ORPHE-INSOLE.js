@@ -178,6 +178,14 @@ export class InsoleClient extends BlerpcClient {
   // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
   private _q: [number, number, number, number] = [1, 0, 0, 0];
   private _gaitMonitoring = false;
+  // True from startGaitMonitor() entry until its first poll settles, so a second
+  // start in that window does not open a second polling loop.
+  private _gaitStarting = false;
+  // Incremented by every start/stop/disconnect. A polling loop keeps running
+  // only while the generation it was started with is current, so a loop that
+  // is mid-sleep or mid-RPC when stop() → start() happens exits instead of
+  // running alongside the new one.
+  private _gaitGeneration = 0;
   // bleRPC request/response is not re-entrant (one shared notify assembler per
   // link), so every RPC — the 100 ms window loop, gait polling, config reads —
   // is queued on one promise chain. A failed call never blocks the next one.
@@ -331,7 +339,12 @@ export class InsoleClient extends BlerpcClient {
    * which the loop handles). Can run alongside startMonitor(); all RPCs are
    * serialized. Only the latest completed stride is reported per poll, so
    * strides that complete faster than the poll interval are counted (`steps`)
-   * but their metrics are not delivered.
+   * but their metrics are not delivered. The first poll only sets the
+   * baseline: a stride that had already completed when monitoring started (for
+   * example the last stride of a run stopped < ~3 s earlier, whose live session
+   * the firmware still holds) is not reported. Starting again while a start is
+   * in flight is a no-op, and stopGaitMonitor() during the first poll means
+   * polling never starts.
    * @throws GaitLiveUnsupportedError when the first poll reports
    *   measuring = false — firmware that only runs the analyzer inside a
    *   host-started measurement session (nothing was started on the device).
@@ -340,12 +353,26 @@ export class InsoleClient extends BlerpcClient {
     onStride: (stride: InsoleGaitStride) => void,
     opts: { pollMs?: number; onError?: (e: unknown) => void } = {},
   ): Promise<void> {
-    if (this._gaitMonitoring) return;
-    const first = await this.getGaitLive();
+    if (this._gaitMonitoring || this._gaitStarting) return;
+    this._gaitStarting = true;
+    const generation = ++this._gaitGeneration;
+    let first: insole.GetGaitLiveResponse;
+    try {
+      first = await this.getGaitLive();
+    } finally {
+      this._gaitStarting = false;
+    }
+    // stopGaitMonitor() / disconnect() ran while the first
+    // poll was in flight: do not start polling.
+    if (generation !== this._gaitGeneration) return;
     if (!first.measuring) throw new GaitLiveUnsupportedError();
     this._gaitMonitoring = true;
     const pollMs = opts.pollMs ?? 250;
-    let lastSeq = 0;
+    const alive = () => this._gaitMonitoring && generation === this._gaitGeneration;
+    // Baseline, not a new stride: if the previous run stopped < ~3 s ago the
+    // firmware's live session is still open and `first.last` is the stride
+    // that run already reported. Only strides completed after this poll count.
+    let lastSeq = first.strideSeq ?? 0;
     const emit = (live: insole.GetGaitLiveResponse) => {
       const seq = live.strideSeq ?? 0;
       if (seq < lastSeq) lastSeq = 0; // the firmware restarted the live session (idle gap)
@@ -370,15 +397,16 @@ export class InsoleClient extends BlerpcClient {
         });
       }
     };
-    emit(first);
     void (async () => {
-      while (this._gaitMonitoring) {
+      while (alive()) {
         await sleep(pollMs);
-        if (!this._gaitMonitoring) break;
+        if (!alive()) break;
         try {
-          emit(await this.getGaitLive());
+          const live = await this.getGaitLive();
+          if (!alive()) break; // stopped (or restarted) while this poll was in flight
+          emit(live);
         } catch (e) {
-          opts.onError?.(e); // transient BLE/RPC error — keep polling
+          if (alive()) opts.onError?.(e); // transient BLE/RPC error — keep polling
         }
       }
     })();
@@ -390,11 +418,13 @@ export class InsoleClient extends BlerpcClient {
    */
   stopGaitMonitor(): void {
     this._gaitMonitoring = false;
+    this._gaitGeneration++;
   }
 
   disconnect(): void {
     this._monitoring = false;
     this._gaitMonitoring = false;
+    this._gaitGeneration++;
     super.disconnect();
   }
 }
