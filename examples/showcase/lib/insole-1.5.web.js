@@ -8168,6 +8168,7 @@ var Insole15 = (() => {
   __export(index_exports, {
     BlerpcClient: () => BlerpcClient,
     CHAR_UUID: () => CHAR_UUID,
+    GaitLiveUnsupportedError: () => GaitLiveUnsupportedError,
     InsoleClient: () => InsoleClient,
     LocalStorageKnownKeyStore: () => LocalStorageKnownKeyStore,
     PayloadTooLargeError: () => PayloadTooLargeError,
@@ -9630,6 +9631,574 @@ var Insole15 = (() => {
       };
       return GetConfigResponse;
     }();
+    insole2.GaitStride = function() {
+      function GaitStride(properties) {
+        if (properties) {
+          for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+              this[keys[i]] = properties[keys[i]];
+        }
+      }
+      GaitStride.prototype.strideLength = 0;
+      GaitStride.prototype.strideHeight = 0;
+      GaitStride.prototype.speed = 0;
+      GaitStride.prototype.pronation = 0;
+      GaitStride.prototype.strikeAngle = 0;
+      GaitStride.prototype.cadence = 0;
+      GaitStride.prototype.landingForce = 0;
+      GaitStride.prototype.contactTime = 0;
+      GaitStride.prototype.gaitType = 0;
+      GaitStride.prototype.footStrike = 0;
+      GaitStride.create = function create(properties) {
+        return new GaitStride(properties);
+      };
+      GaitStride.encode = function encode(message, writer, q) {
+        if (!writer)
+          writer = $Writer.create();
+        if (q === void 0)
+          q = 0;
+        if (q > $util.recursionLimit)
+          throw Error("max depth exceeded");
+        if (message.strideLength != null && Object.hasOwnProperty.call(message, "strideLength"))
+          writer.uint32(
+            /* id 1, wireType 5 =*/
+            13
+          ).float(message.strideLength);
+        if (message.strideHeight != null && Object.hasOwnProperty.call(message, "strideHeight"))
+          writer.uint32(
+            /* id 2, wireType 5 =*/
+            21
+          ).float(message.strideHeight);
+        if (message.speed != null && Object.hasOwnProperty.call(message, "speed"))
+          writer.uint32(
+            /* id 3, wireType 5 =*/
+            29
+          ).float(message.speed);
+        if (message.pronation != null && Object.hasOwnProperty.call(message, "pronation"))
+          writer.uint32(
+            /* id 4, wireType 5 =*/
+            37
+          ).float(message.pronation);
+        if (message.strikeAngle != null && Object.hasOwnProperty.call(message, "strikeAngle"))
+          writer.uint32(
+            /* id 5, wireType 5 =*/
+            45
+          ).float(message.strikeAngle);
+        if (message.cadence != null && Object.hasOwnProperty.call(message, "cadence"))
+          writer.uint32(
+            /* id 6, wireType 5 =*/
+            53
+          ).float(message.cadence);
+        if (message.landingForce != null && Object.hasOwnProperty.call(message, "landingForce"))
+          writer.uint32(
+            /* id 7, wireType 5 =*/
+            61
+          ).float(message.landingForce);
+        if (message.contactTime != null && Object.hasOwnProperty.call(message, "contactTime"))
+          writer.uint32(
+            /* id 8, wireType 5 =*/
+            69
+          ).float(message.contactTime);
+        if (message.gaitType != null && Object.hasOwnProperty.call(message, "gaitType"))
+          writer.uint32(
+            /* id 9, wireType 0 =*/
+            72
+          ).int32(message.gaitType);
+        if (message.footStrike != null && Object.hasOwnProperty.call(message, "footStrike"))
+          writer.uint32(
+            /* id 10, wireType 0 =*/
+            80
+          ).int32(message.footStrike);
+        return writer;
+      };
+      GaitStride.encodeDelimited = function encodeDelimited(message, writer) {
+        return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+      };
+      GaitStride.decode = function decode(reader, length, error, long) {
+        if (!(reader instanceof $Reader))
+          reader = $Reader.create(reader);
+        if (long === void 0)
+          long = 0;
+        if (long > $Reader.recursionLimit)
+          throw Error("maximum nesting depth exceeded");
+        let end = length === void 0 ? reader.len : reader.pos + length, message = new $root.insole.GaitStride();
+        while (reader.pos < end) {
+          let tag = reader.uint32();
+          if (tag === error)
+            break;
+          switch (tag >>> 3) {
+            case 1: {
+              message.strideLength = reader.float();
+              break;
+            }
+            case 2: {
+              message.strideHeight = reader.float();
+              break;
+            }
+            case 3: {
+              message.speed = reader.float();
+              break;
+            }
+            case 4: {
+              message.pronation = reader.float();
+              break;
+            }
+            case 5: {
+              message.strikeAngle = reader.float();
+              break;
+            }
+            case 6: {
+              message.cadence = reader.float();
+              break;
+            }
+            case 7: {
+              message.landingForce = reader.float();
+              break;
+            }
+            case 8: {
+              message.contactTime = reader.float();
+              break;
+            }
+            case 9: {
+              message.gaitType = reader.int32();
+              break;
+            }
+            case 10: {
+              message.footStrike = reader.int32();
+              break;
+            }
+            default:
+              reader.skipType(tag & 7, long);
+              break;
+          }
+        }
+        return message;
+      };
+      GaitStride.decodeDelimited = function decodeDelimited(reader) {
+        if (!(reader instanceof $Reader))
+          reader = new $Reader(reader);
+        return this.decode(reader, reader.uint32());
+      };
+      GaitStride.verify = function verify(message, long) {
+        if (typeof message !== "object" || message === null)
+          return "object expected";
+        if (long === void 0)
+          long = 0;
+        if (long > $util.recursionLimit)
+          return "maximum nesting depth exceeded";
+        if (message.strideLength != null && Object.hasOwnProperty.call(message, "strideLength")) {
+          if (typeof message.strideLength !== "number")
+            return "strideLength: number expected";
+        }
+        if (message.strideHeight != null && Object.hasOwnProperty.call(message, "strideHeight")) {
+          if (typeof message.strideHeight !== "number")
+            return "strideHeight: number expected";
+        }
+        if (message.speed != null && Object.hasOwnProperty.call(message, "speed")) {
+          if (typeof message.speed !== "number")
+            return "speed: number expected";
+        }
+        if (message.pronation != null && Object.hasOwnProperty.call(message, "pronation")) {
+          if (typeof message.pronation !== "number")
+            return "pronation: number expected";
+        }
+        if (message.strikeAngle != null && Object.hasOwnProperty.call(message, "strikeAngle")) {
+          if (typeof message.strikeAngle !== "number")
+            return "strikeAngle: number expected";
+        }
+        if (message.cadence != null && Object.hasOwnProperty.call(message, "cadence")) {
+          if (typeof message.cadence !== "number")
+            return "cadence: number expected";
+        }
+        if (message.landingForce != null && Object.hasOwnProperty.call(message, "landingForce")) {
+          if (typeof message.landingForce !== "number")
+            return "landingForce: number expected";
+        }
+        if (message.contactTime != null && Object.hasOwnProperty.call(message, "contactTime")) {
+          if (typeof message.contactTime !== "number")
+            return "contactTime: number expected";
+        }
+        if (message.gaitType != null && Object.hasOwnProperty.call(message, "gaitType")) {
+          if (!$util.isInteger(message.gaitType))
+            return "gaitType: integer expected";
+        }
+        if (message.footStrike != null && Object.hasOwnProperty.call(message, "footStrike")) {
+          if (!$util.isInteger(message.footStrike))
+            return "footStrike: integer expected";
+        }
+        return null;
+      };
+      GaitStride.fromObject = function fromObject(object, long) {
+        if (object instanceof $root.insole.GaitStride)
+          return object;
+        if (!$util.isObject(object))
+          throw TypeError(".insole.GaitStride: object expected");
+        if (long === void 0)
+          long = 0;
+        if (long > $util.recursionLimit)
+          throw Error("maximum nesting depth exceeded");
+        let message = new $root.insole.GaitStride();
+        if (object.strideLength != null)
+          message.strideLength = Number(object.strideLength);
+        if (object.strideHeight != null)
+          message.strideHeight = Number(object.strideHeight);
+        if (object.speed != null)
+          message.speed = Number(object.speed);
+        if (object.pronation != null)
+          message.pronation = Number(object.pronation);
+        if (object.strikeAngle != null)
+          message.strikeAngle = Number(object.strikeAngle);
+        if (object.cadence != null)
+          message.cadence = Number(object.cadence);
+        if (object.landingForce != null)
+          message.landingForce = Number(object.landingForce);
+        if (object.contactTime != null)
+          message.contactTime = Number(object.contactTime);
+        if (object.gaitType != null)
+          message.gaitType = object.gaitType | 0;
+        if (object.footStrike != null)
+          message.footStrike = object.footStrike | 0;
+        return message;
+      };
+      GaitStride.toObject = function toObject(message, options, q) {
+        if (!options)
+          options = {};
+        if (q === void 0)
+          q = 0;
+        if (q > $util.recursionLimit)
+          throw Error("max depth exceeded");
+        let object = {};
+        if (options.defaults) {
+          object.strideLength = 0;
+          object.strideHeight = 0;
+          object.speed = 0;
+          object.pronation = 0;
+          object.strikeAngle = 0;
+          object.cadence = 0;
+          object.landingForce = 0;
+          object.contactTime = 0;
+          object.gaitType = 0;
+          object.footStrike = 0;
+        }
+        if (message.strideLength != null && Object.hasOwnProperty.call(message, "strideLength"))
+          object.strideLength = options.json && !isFinite(message.strideLength) ? String(message.strideLength) : message.strideLength;
+        if (message.strideHeight != null && Object.hasOwnProperty.call(message, "strideHeight"))
+          object.strideHeight = options.json && !isFinite(message.strideHeight) ? String(message.strideHeight) : message.strideHeight;
+        if (message.speed != null && Object.hasOwnProperty.call(message, "speed"))
+          object.speed = options.json && !isFinite(message.speed) ? String(message.speed) : message.speed;
+        if (message.pronation != null && Object.hasOwnProperty.call(message, "pronation"))
+          object.pronation = options.json && !isFinite(message.pronation) ? String(message.pronation) : message.pronation;
+        if (message.strikeAngle != null && Object.hasOwnProperty.call(message, "strikeAngle"))
+          object.strikeAngle = options.json && !isFinite(message.strikeAngle) ? String(message.strikeAngle) : message.strikeAngle;
+        if (message.cadence != null && Object.hasOwnProperty.call(message, "cadence"))
+          object.cadence = options.json && !isFinite(message.cadence) ? String(message.cadence) : message.cadence;
+        if (message.landingForce != null && Object.hasOwnProperty.call(message, "landingForce"))
+          object.landingForce = options.json && !isFinite(message.landingForce) ? String(message.landingForce) : message.landingForce;
+        if (message.contactTime != null && Object.hasOwnProperty.call(message, "contactTime"))
+          object.contactTime = options.json && !isFinite(message.contactTime) ? String(message.contactTime) : message.contactTime;
+        if (message.gaitType != null && Object.hasOwnProperty.call(message, "gaitType"))
+          object.gaitType = message.gaitType;
+        if (message.footStrike != null && Object.hasOwnProperty.call(message, "footStrike"))
+          object.footStrike = message.footStrike;
+        return object;
+      };
+      GaitStride.prototype.toJSON = function toJSON() {
+        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+      };
+      GaitStride.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        if (typeUrlPrefix === void 0) {
+          typeUrlPrefix = "type.googleapis.com";
+        }
+        return typeUrlPrefix + "/insole.GaitStride";
+      };
+      return GaitStride;
+    }();
+    insole2.GetGaitLiveRequest = function() {
+      function GetGaitLiveRequest(properties) {
+        if (properties) {
+          for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+              this[keys[i]] = properties[keys[i]];
+        }
+      }
+      GetGaitLiveRequest.create = function create(properties) {
+        return new GetGaitLiveRequest(properties);
+      };
+      GetGaitLiveRequest.encode = function encode(message, writer, q) {
+        if (!writer)
+          writer = $Writer.create();
+        if (q === void 0)
+          q = 0;
+        if (q > $util.recursionLimit)
+          throw Error("max depth exceeded");
+        return writer;
+      };
+      GetGaitLiveRequest.encodeDelimited = function encodeDelimited(message, writer) {
+        return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+      };
+      GetGaitLiveRequest.decode = function decode(reader, length, error, long) {
+        if (!(reader instanceof $Reader))
+          reader = $Reader.create(reader);
+        if (long === void 0)
+          long = 0;
+        if (long > $Reader.recursionLimit)
+          throw Error("maximum nesting depth exceeded");
+        let end = length === void 0 ? reader.len : reader.pos + length, message = new $root.insole.GetGaitLiveRequest();
+        while (reader.pos < end) {
+          let tag = reader.uint32();
+          if (tag === error)
+            break;
+          switch (tag >>> 3) {
+            default:
+              reader.skipType(tag & 7, long);
+              break;
+          }
+        }
+        return message;
+      };
+      GetGaitLiveRequest.decodeDelimited = function decodeDelimited(reader) {
+        if (!(reader instanceof $Reader))
+          reader = new $Reader(reader);
+        return this.decode(reader, reader.uint32());
+      };
+      GetGaitLiveRequest.verify = function verify(message, long) {
+        if (typeof message !== "object" || message === null)
+          return "object expected";
+        if (long === void 0)
+          long = 0;
+        if (long > $util.recursionLimit)
+          return "maximum nesting depth exceeded";
+        return null;
+      };
+      GetGaitLiveRequest.fromObject = function fromObject(object, long) {
+        if (object instanceof $root.insole.GetGaitLiveRequest)
+          return object;
+        return new $root.insole.GetGaitLiveRequest();
+      };
+      GetGaitLiveRequest.toObject = function toObject() {
+        return {};
+      };
+      GetGaitLiveRequest.prototype.toJSON = function toJSON() {
+        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+      };
+      GetGaitLiveRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        if (typeUrlPrefix === void 0) {
+          typeUrlPrefix = "type.googleapis.com";
+        }
+        return typeUrlPrefix + "/insole.GetGaitLiveRequest";
+      };
+      return GetGaitLiveRequest;
+    }();
+    insole2.GetGaitLiveResponse = function() {
+      function GetGaitLiveResponse(properties) {
+        if (properties) {
+          for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+              this[keys[i]] = properties[keys[i]];
+        }
+      }
+      GetGaitLiveResponse.prototype.measuring = false;
+      GetGaitLiveResponse.prototype.sessionId = 0;
+      GetGaitLiveResponse.prototype.steps = 0;
+      GetGaitLiveResponse.prototype.distanceM = 0;
+      GetGaitLiveResponse.prototype.strideSeq = 0;
+      GetGaitLiveResponse.prototype.last = null;
+      GetGaitLiveResponse.create = function create(properties) {
+        return new GetGaitLiveResponse(properties);
+      };
+      GetGaitLiveResponse.encode = function encode(message, writer, q) {
+        if (!writer)
+          writer = $Writer.create();
+        if (q === void 0)
+          q = 0;
+        if (q > $util.recursionLimit)
+          throw Error("max depth exceeded");
+        if (message.measuring != null && Object.hasOwnProperty.call(message, "measuring"))
+          writer.uint32(
+            /* id 1, wireType 0 =*/
+            8
+          ).bool(message.measuring);
+        if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+          writer.uint32(
+            /* id 2, wireType 0 =*/
+            16
+          ).uint32(message.sessionId);
+        if (message.steps != null && Object.hasOwnProperty.call(message, "steps"))
+          writer.uint32(
+            /* id 3, wireType 0 =*/
+            24
+          ).uint32(message.steps);
+        if (message.distanceM != null && Object.hasOwnProperty.call(message, "distanceM"))
+          writer.uint32(
+            /* id 4, wireType 5 =*/
+            37
+          ).float(message.distanceM);
+        if (message.strideSeq != null && Object.hasOwnProperty.call(message, "strideSeq"))
+          writer.uint32(
+            /* id 5, wireType 0 =*/
+            40
+          ).uint32(message.strideSeq);
+        if (message.last != null && Object.hasOwnProperty.call(message, "last"))
+          $root.insole.GaitStride.encode(message.last, writer.uint32(
+            /* id 6, wireType 2 =*/
+            50
+          ).fork(), q + 1).ldelim();
+        return writer;
+      };
+      GetGaitLiveResponse.encodeDelimited = function encodeDelimited(message, writer) {
+        return this.encode(message, writer && writer.len ? writer.fork() : writer).ldelim();
+      };
+      GetGaitLiveResponse.decode = function decode(reader, length, error, long) {
+        if (!(reader instanceof $Reader))
+          reader = $Reader.create(reader);
+        if (long === void 0)
+          long = 0;
+        if (long > $Reader.recursionLimit)
+          throw Error("maximum nesting depth exceeded");
+        let end = length === void 0 ? reader.len : reader.pos + length, message = new $root.insole.GetGaitLiveResponse();
+        while (reader.pos < end) {
+          let tag = reader.uint32();
+          if (tag === error)
+            break;
+          switch (tag >>> 3) {
+            case 1: {
+              message.measuring = reader.bool();
+              break;
+            }
+            case 2: {
+              message.sessionId = reader.uint32();
+              break;
+            }
+            case 3: {
+              message.steps = reader.uint32();
+              break;
+            }
+            case 4: {
+              message.distanceM = reader.float();
+              break;
+            }
+            case 5: {
+              message.strideSeq = reader.uint32();
+              break;
+            }
+            case 6: {
+              message.last = $root.insole.GaitStride.decode(reader, reader.uint32(), void 0, long + 1);
+              break;
+            }
+            default:
+              reader.skipType(tag & 7, long);
+              break;
+          }
+        }
+        return message;
+      };
+      GetGaitLiveResponse.decodeDelimited = function decodeDelimited(reader) {
+        if (!(reader instanceof $Reader))
+          reader = new $Reader(reader);
+        return this.decode(reader, reader.uint32());
+      };
+      GetGaitLiveResponse.verify = function verify(message, long) {
+        if (typeof message !== "object" || message === null)
+          return "object expected";
+        if (long === void 0)
+          long = 0;
+        if (long > $util.recursionLimit)
+          return "maximum nesting depth exceeded";
+        if (message.measuring != null && Object.hasOwnProperty.call(message, "measuring")) {
+          if (typeof message.measuring !== "boolean")
+            return "measuring: boolean expected";
+        }
+        if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId")) {
+          if (!$util.isInteger(message.sessionId))
+            return "sessionId: integer expected";
+        }
+        if (message.steps != null && Object.hasOwnProperty.call(message, "steps")) {
+          if (!$util.isInteger(message.steps))
+            return "steps: integer expected";
+        }
+        if (message.distanceM != null && Object.hasOwnProperty.call(message, "distanceM")) {
+          if (typeof message.distanceM !== "number")
+            return "distanceM: number expected";
+        }
+        if (message.strideSeq != null && Object.hasOwnProperty.call(message, "strideSeq")) {
+          if (!$util.isInteger(message.strideSeq))
+            return "strideSeq: integer expected";
+        }
+        if (message.last != null && Object.hasOwnProperty.call(message, "last")) {
+          let error = $root.insole.GaitStride.verify(message.last, long + 1);
+          if (error)
+            return "last." + error;
+        }
+        return null;
+      };
+      GetGaitLiveResponse.fromObject = function fromObject(object, long) {
+        if (object instanceof $root.insole.GetGaitLiveResponse)
+          return object;
+        if (!$util.isObject(object))
+          throw TypeError(".insole.GetGaitLiveResponse: object expected");
+        if (long === void 0)
+          long = 0;
+        if (long > $util.recursionLimit)
+          throw Error("maximum nesting depth exceeded");
+        let message = new $root.insole.GetGaitLiveResponse();
+        if (object.measuring != null)
+          message.measuring = Boolean(object.measuring);
+        if (object.sessionId != null)
+          message.sessionId = object.sessionId >>> 0;
+        if (object.steps != null)
+          message.steps = object.steps >>> 0;
+        if (object.distanceM != null)
+          message.distanceM = Number(object.distanceM);
+        if (object.strideSeq != null)
+          message.strideSeq = object.strideSeq >>> 0;
+        if (object.last != null) {
+          if (!$util.isObject(object.last))
+            throw TypeError(".insole.GetGaitLiveResponse.last: object expected");
+          message.last = $root.insole.GaitStride.fromObject(object.last, long + 1);
+        }
+        return message;
+      };
+      GetGaitLiveResponse.toObject = function toObject(message, options, q) {
+        if (!options)
+          options = {};
+        if (q === void 0)
+          q = 0;
+        if (q > $util.recursionLimit)
+          throw Error("max depth exceeded");
+        let object = {};
+        if (options.defaults) {
+          object.measuring = false;
+          object.sessionId = 0;
+          object.steps = 0;
+          object.distanceM = 0;
+          object.strideSeq = 0;
+          object.last = null;
+        }
+        if (message.measuring != null && Object.hasOwnProperty.call(message, "measuring"))
+          object.measuring = message.measuring;
+        if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+          object.sessionId = message.sessionId;
+        if (message.steps != null && Object.hasOwnProperty.call(message, "steps"))
+          object.steps = message.steps;
+        if (message.distanceM != null && Object.hasOwnProperty.call(message, "distanceM"))
+          object.distanceM = options.json && !isFinite(message.distanceM) ? String(message.distanceM) : message.distanceM;
+        if (message.strideSeq != null && Object.hasOwnProperty.call(message, "strideSeq"))
+          object.strideSeq = message.strideSeq;
+        if (message.last != null && Object.hasOwnProperty.call(message, "last"))
+          object.last = $root.insole.GaitStride.toObject(message.last, options, q + 1);
+        return object;
+      };
+      GetGaitLiveResponse.prototype.toJSON = function toJSON() {
+        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+      };
+      GetGaitLiveResponse.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        if (typeUrlPrefix === void 0) {
+          typeUrlPrefix = "type.googleapis.com";
+        }
+        return typeUrlPrefix + "/insole.GetGaitLiveResponse";
+      };
+      return GetGaitLiveResponse;
+    }();
     return insole2;
   })();
 
@@ -9649,6 +10218,11 @@ var Insole15 = (() => {
       const req = insole.GetConfigRequest.create({});
       const respData = await this.call("get_config", insole.GetConfigRequest.encode(req).finish());
       return insole.GetConfigResponse.decode(respData);
+    }
+    async getGaitLive() {
+      const req = insole.GetGaitLiveRequest.create({});
+      const respData = await this.call("get_gait_live", insole.GetGaitLiveRequest.encode(req).finish());
+      return insole.GetGaitLiveResponse.decode(respData);
     }
   };
 
@@ -10069,6 +10643,13 @@ var Insole15 = (() => {
     const yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
     return { pitch, roll, yaw };
   }
+  var GaitLiveUnsupportedError = class extends Error {
+    constructor() {
+      super("This firmware does not support live gait analysis (get_gait_live reports measuring = false)");
+      this.code = "INSOLE15_GAIT_UNSUPPORTED";
+      this.name = "GaitLiveUnsupportedError";
+    }
+  };
   var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   var InsoleClient = class extends BlerpcClient {
     constructor(options = {}) {
@@ -10080,6 +10661,25 @@ var Insole15 = (() => {
       this._monitoring = false;
       // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
       this._q = [1, 0, 0, 0];
+      this._gaitMonitoring = false;
+      // True from startGaitMonitor() entry until its first poll settles, so a second
+      // start in that window does not open a second polling loop.
+      this._gaitStarting = false;
+      // Incremented by every start/stop/disconnect. A polling loop keeps running
+      // only while the generation it was started with is current, so a loop that
+      // is mid-sleep or mid-RPC when stop() → start() happens exits instead of
+      // running alongside the new one.
+      this._gaitGeneration = 0;
+      // bleRPC request/response is not re-entrant (one shared notify assembler per
+      // link), so every RPC — the 100 ms window loop, gait polling, config reads —
+      // is queued on one promise chain. A failed call never blocks the next one.
+      this._rpcChain = Promise.resolve();
+    }
+    call(cmdName, requestData) {
+      const run = () => super.call(cmdName, requestData);
+      const p = this._rpcChain.then(run, run);
+      this._rpcChain = p.catch(() => void 0);
+      return p;
     }
     /** Read the persisted device configuration into a friendly shape. */
     async getConfigInfo() {
@@ -10183,8 +10783,95 @@ var Insole15 = (() => {
     stopMonitor() {
       this._monitoring = false;
     }
+    /** True while the gait monitor (get_gait_live polling) is running. */
+    get isGaitMonitoring() {
+      return this._gaitMonitoring;
+    }
+    /**
+     * Gait monitor: poll get_gait_live every `pollMs` (default 250 ms) and emit
+     * each newly completed stride via `onStride`. No measurement session is
+     * opened and nothing is recorded on the device: the firmware starts an
+     * implicit live session on the first poll, keeps it alive while polled and
+     * ends it ~3 s after the last one (its stride counter then restarts from 0,
+     * which the loop handles). Can run alongside startMonitor(); all RPCs are
+     * serialized. Only the latest completed stride is reported per poll, so
+     * strides that complete faster than the poll interval are counted (`steps`)
+     * but their metrics are not delivered. The first poll only sets the
+     * baseline: a stride that had already completed when monitoring started (for
+     * example the last stride of a run stopped < ~3 s earlier, whose live session
+     * the firmware still holds) is not reported. Starting again while a start is
+     * in flight is a no-op, and stopGaitMonitor() during the first poll means
+     * polling never starts.
+     * @throws GaitLiveUnsupportedError when the first poll reports
+     *   measuring = false — firmware that only runs the analyzer inside a
+     *   host-started measurement session (nothing was started on the device).
+     */
+    async startGaitMonitor(onStride, opts = {}) {
+      if (this._gaitMonitoring || this._gaitStarting) return;
+      this._gaitStarting = true;
+      const generation = ++this._gaitGeneration;
+      let first;
+      try {
+        first = await this.getGaitLive();
+      } finally {
+        this._gaitStarting = false;
+      }
+      if (generation !== this._gaitGeneration) return;
+      if (!first.measuring) throw new GaitLiveUnsupportedError();
+      this._gaitMonitoring = true;
+      const pollMs = opts.pollMs ?? 250;
+      const alive = () => this._gaitMonitoring && generation === this._gaitGeneration;
+      let lastSeq = first.strideSeq ?? 0;
+      const emit = (live) => {
+        const seq = live.strideSeq ?? 0;
+        if (seq < lastSeq) lastSeq = 0;
+        const last = live.last;
+        if (seq > lastSeq && last) {
+          lastSeq = seq;
+          onStride({
+            strideSeq: seq,
+            sessionId: live.sessionId ?? 0,
+            steps: live.steps ?? 0,
+            distanceM: live.distanceM ?? 0,
+            strideLength: last.strideLength ?? 0,
+            strideHeight: last.strideHeight ?? 0,
+            speed: last.speed ?? 0,
+            pronation: last.pronation ?? 0,
+            strikeAngle: last.strikeAngle ?? 0,
+            cadence: last.cadence ?? 0,
+            landingForce: last.landingForce ?? 0,
+            contactTime: last.contactTime ?? 0,
+            gaitType: last.gaitType ?? 0,
+            footStrike: last.footStrike ?? 0
+          });
+        }
+      };
+      void (async () => {
+        while (alive()) {
+          await sleep(pollMs);
+          if (!alive()) break;
+          try {
+            const live = await this.getGaitLive();
+            if (!alive()) break;
+            emit(live);
+          } catch (e) {
+            if (alive()) opts.onError?.(e);
+          }
+        }
+      })();
+    }
+    /**
+     * Stop polling. Nothing is sent to the device: the firmware ends the live
+     * session on its own ~3 s after the last poll.
+     */
+    stopGaitMonitor() {
+      this._gaitMonitoring = false;
+      this._gaitGeneration++;
+    }
     disconnect() {
       this._monitoring = false;
+      this._gaitMonitoring = false;
+      this._gaitGeneration++;
       super.disconnect();
     }
   };

@@ -1,6 +1,7 @@
 // orphe_insole bleRPC service definitions — the subset used by the showcase
-// client (sensor streaming by time window and device configuration read).
-// Firmware maintenance commands are intentionally not included here.
+// client (sensor streaming by time window, device configuration read, and live
+// gait analysis). Firmware maintenance commands are intentionally not included
+// here.
 //
 // Reliable, lossless data extraction by time window (pull model):
 //   1. set_time   — set the insole clock (epoch ms).
@@ -92,4 +93,44 @@ message GetConfigResponse {
   uint32 device_id = 1;
   Foot foot = 2;
   string firmware_version = 3;       // running firmware version
+}
+
+// ---------------------------------------------------------------------------
+// Live gait analysis. One command, no session: the firmware feeds its gait
+// analyzer (GaitAnalysisCore) while get_gait_live is being polled.
+// ---------------------------------------------------------------------------
+
+// One completed stride's instantaneous metrics (raw float, physical units).
+message GaitStride {
+  float stride_length = 1; // [m]
+  float stride_height = 2; // [m]
+  float speed = 3;         // [m/s]
+  float pronation = 4;     // [deg] (raw sign; analyzer pronation Euler Y)
+  float strike_angle = 5;  // [deg] foot angle at strike
+  float cadence = 6;       // [steps/s]
+  float landing_force = 7; // [kgf / body weight]
+  float contact_time = 8;  // [s] stance phase
+  int32 gait_type = 9;     // GaitType: 0 none / 1 walk / 2 run / 3 stance
+  int32 foot_strike = 10;  // FootStrike: 0 none / 1 heel / 2 midfoot / 3 forefoot
+}
+
+// GetGaitLive - poll the running counters and the most recently completed
+// stride. stride_seq increments once per completed stride so the client can
+// tell when `last` is new.
+//
+// Real-time analysis needs nothing else: the first call starts an implicit LIVE
+// session on the firmware — the analyzer runs and the sensors stay powered for
+// as long as the client keeps polling (every 150-250 ms is typical), and the
+// firmware ends it ~3 s after the last poll. A live session has session_id 0,
+// counts steps/distance from its start, and is never recorded. Firmware without
+// live-analysis support answers measuring = false and never advances stride_seq.
+message GetGaitLiveRequest {}
+
+message GetGaitLiveResponse {
+  bool measuring = 1;      // analyzer running (false = firmware without live support)
+  uint32 session_id = 2;   // 0 = implicit live session
+  uint32 steps = 3;        // completed strides so far this session
+  float distance_m = 4;
+  uint32 stride_seq = 5;   // monotonic completed-stride counter (resets with the session)
+  GaitStride last = 6;     // latest completed stride (valid when stride_seq > 0)
 }

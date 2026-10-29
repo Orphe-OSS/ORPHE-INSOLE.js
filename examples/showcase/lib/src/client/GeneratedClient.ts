@@ -27,4 +27,10 @@ export abstract class GeneratedClient {
     const respData = await this.call('get_config', insole.GetConfigRequest.encode(req).finish());
     return insole.GetConfigResponse.decode(respData);
   }
+
+  async getGaitLive(): Promise<insole.GetGaitLiveResponse> {
+    const req = insole.GetGaitLiveRequest.create({});
+    const respData = await this.call('get_gait_live', insole.GetGaitLiveRequest.encode(req).finish());
+    return insole.GetGaitLiveResponse.decode(respData);
+  }
 }
