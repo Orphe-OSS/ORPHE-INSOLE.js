@@ -115,3 +115,24 @@ Raw（SENSOR_VALUES）は正常なのに `GAIT_NO_NOTIFICATIONS` で失敗する
 
 解決しない場合は [GitHub Issues](https://github.com/Orphe-OSS/ORPHE-INSOLE.js/issues) へ。
 `insole.debug = true` のログと、ブラウザ / OS / INSOLE の FW バージョンを添えてください。
+
+## 9. INSOLE 1.5（INS2）が繋がらない・欠損する
+
+- **チューザに `INS2` が出るのに接続に失敗する（`INSOLE15_CLIENT_UNAVAILABLE`）**: コア SDK は INS2 を選ぶと
+  自身の URL と同じディレクトリから `Insole15Client.js` を遅延ロードする。SDK を `type="module"` やインライン評価で
+  読み込んでいて URL が取れない場合、または配信先に `Insole15Client(.min).js` を置いていない場合に失敗する。
+  `<script src=".../src/Insole15Client.js"></script>` を `ORPHE-INSOLE.js` の後に明示して読み込む。
+- **`NotFoundError: No Services matching UUID 01a9d6b5-…`**: 古い SDK（v1.3.4 以前）で INS2 を選んだとき。
+  1.5 対応版へ更新する。
+- **接続はできるが `press.values` が 590 前後で固定**: 正常。1.5 の圧力は mV × 10 で、無負荷が約 59 mV（= 590）。
+  製品版の ADC 生値とは由来が違うので、固定しきい値は見直す（相対しきい値・自動ベースラインは使える）。
+- **2 台同時で片方だけ欠損する**: `insoles[i].insole15Diagnostics()` の `rttMs.p90` を見る。get_window 1 回の往復が
+  100 ms を超え続けると 100 ms 窓に追従できず、FW キャッシュ（約 1.7 秒）を追い越した分が `tooOld` / `skippedSamples`
+  として失われる（`lostData` も呼ばれる）。描画の重いページ（3D・高頻度 chart）やホストの Bluetooth 負荷で RTT が
+  伸びる。軽いページ（fifo-guide など）で収録する、片足ずつ収録する、`gotBLEFrequency` の実効レートが 200 Hz に
+  張り付いているか見る。実測: 軽いページで両足 6 分間 missing 0（RTT 30〜90 ms）、重いページで片側 25〜40% 欠損（RTT 123 ms）。
+- **Step Analysis が `INSOLE15_GAIT_UNSUPPORTED`**: FW が `get_gait_live` のライブ解析に未対応（0.1.7 未満）。FW 更新。
+- **FIFO を選んだのに Realtime になる**: 仕様。1.5 に FIFO は無く、Toolkit が Realtime へ退避する
+  （診断 `insole15-fifo-unavailable`）。Realtime 自体がプル型でリンクが追従できている限りロスレス。
+- **`setDataStreamingMode` / `read` / `write` / `getDateTime` が効かない・`INSOLE15_UNSUPPORTED`**: 仕様。
+  1.5 は常に全データ 200 Hz。保守系 RPC（ログ消去・OTA・ID 書換）は公開クライアントに含めていない。
