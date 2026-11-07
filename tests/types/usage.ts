@@ -273,3 +273,33 @@ insole.gotConvertedPress = press => {
     void loadN;
     void timestamp;
 };
+
+// INSOLE 1.5（INS2）: 世代・診断・定数・遅延ロード・begin オプション
+const generation: 1 | 2 = insole.generation;
+void generation;
+if (insole.isInsole15) {
+    const diag = insole.insole15Diagnostics();
+    if (diag) {
+        const lossRate: number = diag.lossRate;
+        const rttP90: number | null = diag.rttMs ? diag.rttMs.p90 : null;
+        const foot: 'left' | 'right' | 'unspecified' | undefined = diag.config?.foot;
+        void lossRate; void rttP90; void foot;
+    }
+    const frame = insole.lastInsole15Frame;
+    if (frame && frame.press) { const mv: number = frame.press[0]; void mv; }
+}
+const insole15Name: 'INS2' = OrpheInsole.INSOLE15.NAME;
+const leftMap: readonly number[] = OrpheInsole.INSOLE15.PRESSURE_CHANNEL_MAP.left;
+void insole15Name; void leftMap;
+void OrpheInsole.isInsole15Device({ name: 'INS2' });
+void OrpheInsole.insole15ClientAvailable();
+void OrpheInsole.loadInsole15Client();
+void insole.begin('SENSOR_VALUES', {
+    streamingMode: 4,
+    insole15: { pressureScale: 10, pressureChannelMap: { left: [3, 4, 2, 5, 1, 0] }, requireEncryption: true, pinIdentity: true },
+});
+const packet: DataView = OrpheInsole.encodeInsole15Packet([
+    { t: 0, serial: 0, press: [0, 0, 0, 0, 0, 0], acc: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0 }, quat: { w: 1, x: 0, y: 0, z: 0 }, euler: null },
+    { t: 5, serial: 1, press: null, acc: null, gyro: null, quat: null, euler: null },
+], { channelMap: OrpheInsole.INSOLE15.PRESSURE_CHANNEL_MAP.right });
+void packet;
