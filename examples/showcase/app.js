@@ -618,7 +618,6 @@ window.onload = function () {
         };
     }
 
-    // 製品版・INSOLE 1.5 の両対応トグルを有効化（buildInsoleToolkit の後に差し替える）
 
     // 初期のL/Rバッジ・並び（デモは device0=左足 / device1=右足）
     applySide(0, 'L');

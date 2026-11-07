@@ -10659,6 +10659,8 @@ var Insole15 = (() => {
         options.pinIdentity ?? true
       );
       this._monitoring = false;
+      // Incremented by startMonitor()/stopMonitor()/disconnect(); see startMonitor.
+      this._monitorGeneration = 0;
       // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
       this._q = [1, 0, 0, 0];
       this._gaitMonitoring = false;
@@ -10748,15 +10750,23 @@ var Insole15 = (() => {
     async startMonitor(onFrame, opts = {}) {
       if (this._monitoring) return;
       this._monitoring = true;
+      const generation = ++this._monitorGeneration;
+      const alive = () => this._monitoring && generation === this._monitorGeneration;
       this._q = [1, 0, 0, 0];
       const WS = insole.WindowStatus;
       const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
       let base = Date.now();
-      await this.setTime({ epochMs: base });
+      try {
+        await this.setTime({ epochMs: base });
+      } catch (e) {
+        if (generation === this._monitorGeneration) this._monitoring = false;
+        throw e;
+      }
+      if (!alive()) return;
       let t = base;
       let serial = 0;
       let delivered = false;
-      while (this._monitoring) {
+      while (alive()) {
         const started = now();
         const requestedT = t;
         try {
@@ -10765,13 +10775,17 @@ var Insole15 = (() => {
           const status = resp.status;
           const oldestMs = Number.isFinite(Number(resp.oldestMs)) && Number(resp.oldestMs) > 0 ? Number(resp.oldestMs) : null;
           const newestMs = Number.isFinite(Number(resp.newestMs)) && Number(resp.newestMs) > 0 ? Number(resp.newestMs) : null;
-          if (!this._monitoring) break;
+          if (!alive()) break;
           if (status === WS.WINDOW_STATUS_OK) {
             const frames = this.framesFromWindow(resp, t, serial);
-            for (const f of frames) onFrame(f);
             serial += frames.length;
             delivered = delivered || frames.length > 0;
             t += WINDOW_MS;
+            try {
+              for (const f of frames) onFrame(f);
+            } catch (e) {
+              opts.onError?.(e);
+            }
             opts.onWindow?.({ status: "ok", startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
           } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
             opts.onWindow?.({ status: "too_new", startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
@@ -10787,13 +10801,15 @@ var Insole15 = (() => {
           } else {
             base = Date.now();
             await this.setTime({ epochMs: base });
-            const skippedMs = Math.max(0, base - t);
+            if (!alive()) break;
+            const skippedMs = delivered ? Math.max(0, base - t) : 0;
             const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
             serial += skippedSamples;
             t = base;
             opts.onWindow?.({ status: "time_not_set", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
           }
         } catch (e) {
+          if (!alive()) break;
           opts.onError?.(e);
           opts.onWindow?.({ status: "error", startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, error: e });
           await sleep(20);
@@ -10803,6 +10819,7 @@ var Insole15 = (() => {
     /** Stop the monitor loop started by startMonitor(). */
     stopMonitor() {
       this._monitoring = false;
+      this._monitorGeneration++;
     }
     /** True while the gait monitor (get_gait_live polling) is running. */
     get isGaitMonitoring() {
@@ -10845,7 +10862,7 @@ var Insole15 = (() => {
       try {
         first = await this.getGaitLive();
       } finally {
-        this._gaitStarting = false;
+        if (generation === this._gaitGeneration) this._gaitStarting = false;
       }
       if (generation !== this._gaitGeneration) return;
       opts.onPoll?.(pollInfo(first, now() - firstStarted));
@@ -10900,11 +10917,14 @@ var Insole15 = (() => {
      */
     stopGaitMonitor() {
       this._gaitMonitoring = false;
+      this._gaitStarting = false;
       this._gaitGeneration++;
     }
     disconnect() {
       this._monitoring = false;
+      this._monitorGeneration++;
       this._gaitMonitoring = false;
+      this._gaitStarting = false;
       this._gaitGeneration++;
       super.disconnect();
     }

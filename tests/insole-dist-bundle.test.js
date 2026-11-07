@@ -15,7 +15,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { buildDist, OUTPUT_FILE, SOURCE_FILE, COPY_FILES } = require('../scripts/build-dist.js');
+const { buildDist, OUTPUT_FILE, SOURCE_FILE, COPY_FILES, sha256, minifiedSourceSha } = require('../scripts/build-dist.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -129,7 +129,10 @@ function main() {
     assert.equal(read(copy.to), read(copy.from), `${copy.to} must equal ${copy.from} — run \`npm run build\` and commit`);
   }
   const min15 = read('dist/Insole15Client.min.js');
-  assert.match(min15.slice(0, 200), /var Insole15=/, 'dist/Insole15Client.min.js defines global Insole15');
+  assert.match(min15.slice(0, 400), /var Insole15=/, 'dist/Insole15Client.min.js defines global Insole15');
+  // .min.js は terser 生成物なので、先頭コメントの sha256 が元ファイルと一致することで鮮度を検査する
+  assert.equal(minifiedSourceSha(min15), sha256(read('src/Insole15Client.js')),
+    'dist/Insole15Client.min.js is stale — run `npm run build` and commit');
   assert.ok(/INS2|12340001-0000-1000-8000-00805f9b34fb/.test(src), 'src knows the INSOLE 1.5 service UUID');
   assert.ok(/Insole15Client\.min\.js/.test(src) && /Insole15Client\.js/.test(src), 'src names both client files for lazy load');
   // 遅延ロードは選択時のみ: 読み込み直後に Insole15Client が挿入されてはいけない（7 のケースで確認済み）

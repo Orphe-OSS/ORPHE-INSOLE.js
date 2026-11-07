@@ -99,10 +99,26 @@ function buildDist(options = {}) {
  * terser で生成）。
  */
 const COPY_FILES = [
-  { from: 'src/Insole15Client.js', to: 'dist/Insole15Client.js' },
+  { from: 'src/Insole15Client.js', to: 'dist/Insole15Client.js', min: 'dist/Insole15Client.min.js' },
 ];
 
-function syncCopies(check) {
+const crypto = require('crypto');
+
+/** 圧縮版の先頭に埋める来歴コメント。--check は元ファイルの sha256 と照合して古い .min.js を検出する。 */
+function minifiedPreamble(copy, sourceSha) {
+  return `/*! ${path.basename(copy.to)} — minified from ${copy.from} sha256:${sourceSha} by scripts/build-dist.js */`;
+}
+
+function sha256(text) {
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+
+function minifiedSourceSha(minified) {
+  const m = /sha256:([0-9a-f]{64})/.exec(minified.slice(0, 400));
+  return m ? m[1] : null;
+}
+
+async function syncCopies(check) {
   let stale = 0;
   for (const copy of COPY_FILES) {
     const source = readText(ROOT, copy.from);
@@ -110,21 +126,40 @@ function syncCopies(check) {
     const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
     if (current === source) {
       console.log(`[build-dist] ${copy.to} up to date`);
+    } else if (check) {
+      console.error(`[build-dist] ${copy.to} is out of date. Run \`npm run build\` and commit the result.`);
+      stale++;
+    } else {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, source);
+      console.log(`[build-dist] wrote ${copy.to} (${source.length} bytes)`);
+    }
+    if (!copy.min) continue;
+    const sourceSha = sha256(source);
+    const minTarget = path.join(ROOT, copy.min);
+    const currentMin = fs.existsSync(minTarget) ? fs.readFileSync(minTarget, 'utf8') : null;
+    if (currentMin && minifiedSourceSha(currentMin) === sourceSha) {
+      console.log(`[build-dist] ${copy.min} up to date`);
       continue;
     }
     if (check) {
-      console.error(`[build-dist] ${copy.to} is out of date. Run \`npm run build\` and commit the result.`);
+      console.error(`[build-dist] ${copy.min} is out of date (source sha256 mismatch). Run \`npm run build\` and commit the result.`);
       stale++;
       continue;
     }
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, source);
-    console.log(`[build-dist] wrote ${copy.to} (${source.length} bytes)`);
+    const { minify } = require('terser');
+    const result = await minify(source, {
+      compress: true,
+      mangle: true,
+      format: { preamble: minifiedPreamble(copy, sourceSha), comments: /@license|@preserve/ },
+    });
+    fs.writeFileSync(minTarget, result.code);
+    console.log(`[build-dist] wrote ${copy.min} (${result.code.length} bytes)`);
   }
   return stale;
 }
 
-function main(argv) {
+async function main(argv) {
   const check = argv.includes('--check');
   const output = buildDist();
   const target = path.join(ROOT, OUTPUT_FILE);
@@ -140,12 +175,15 @@ function main(argv) {
     fs.writeFileSync(target, output);
     console.log(`[build-dist] wrote ${OUTPUT_FILE} (${output.length} bytes)`);
   }
-  stale += syncCopies(check);
+  stale += await syncCopies(check);
   if (stale > 0) process.exit(1);
 }
 
 if (require.main === module) {
-  main(process.argv.slice(2));
+  main(process.argv.slice(2)).catch((error) => {
+    console.error('[build-dist] failed:', error);
+    process.exit(1);
+  });
 }
 
-module.exports = { buildDist, wrapVendor, VENDOR_FILES, SOURCE_FILE, OUTPUT_FILE, COPY_FILES };
+module.exports = { buildDist, wrapVendor, VENDOR_FILES, SOURCE_FILE, OUTPUT_FILE, COPY_FILES, sha256, minifiedSourceSha };

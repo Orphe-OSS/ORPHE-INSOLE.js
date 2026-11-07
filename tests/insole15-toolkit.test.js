@@ -127,6 +127,35 @@ async function testFifoFallback() {
   console.log('  ok  INSOLE 1.5: FIFO falls back to realtime; measurement records re-encoded packets');
 }
 
+async function testLongRecordingSerialSummary() {
+  // 1.5 の Realtime は 100 packet/s → 11 分で 66000 packet と uint16 を一周する。
+  // serial を unwrap して数えるので expected/received/missing が飽和しない。
+  const insole = new FakeInsole(0, 2);
+  const session = new InsoleToolkitSession(insole, { onError() {} }, { FifoClass: null, GaitClass: null });
+  await session.connect();
+  await session.startMeasurement({ maxSamples: 10 });
+  const total = 70000;
+  const holes = new Set([100, 101, 65535, 0 + 65536, 69000]); // 5 packet 欠損（wrap 境界をまたぐものを含む）
+  for (let packet = 0; packet < total; packet++) {
+    if (holes.has(packet)) continue;
+    insole.emitPacket(packet & 0xffff, [sample(packet * 2)]);
+  }
+  // 遅延到着（再要求）: 欠損のうち 1 つが後から届く
+  insole.emitPacket(69000 & 0xffff, [sample(69000 * 2)]);
+  const result = await session.stopMeasurement();
+  assert.equal(result.raw.packets, total - 4);
+  assert.deepEqual(
+    { expected: result.raw.serial.expected, received: result.raw.serial.received, missing: result.raw.serial.missing },
+    { expected: total, received: total - 4, missing: 4 },
+    'serial summary survives a uint16 wrap'
+  );
+  assert.equal(result.raw.serial.first, 0);
+  assert.equal(result.raw.serial.last, (total - 1) & 0xffff);
+  assert.equal(result.raw.truncated, true, 'samples are capped by maxSamples but serials keep counting');
+  await session.disconnect();
+  console.log('  ok  measurement serial summary is exact past 65536 packets');
+}
+
 async function testProductUnchanged() {
   const insole = new FakeInsole(1, 1);
   const session = new InsoleToolkitSession(insole, { onError() {}, sensorDataMode: 'fifo' }, { FifoClass: FakeFifo, GaitClass: null });
@@ -144,6 +173,7 @@ async function testProductUnchanged() {
 
 async function main() {
   await testFifoFallback();
+  await testLongRecordingSerialSummary();
   await testProductUnchanged();
   console.log('insole15-toolkit.test.js passed');
 }

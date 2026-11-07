@@ -212,6 +212,8 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  */
 export class InsoleClient extends BlerpcClient {
   private _monitoring = false;
+  // Incremented by startMonitor()/stopMonitor()/disconnect(); see startMonitor.
+  private _monitorGeneration = 0;
   // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
   private _q: [number, number, number, number] = [1, 0, 0, 0];
   private _gaitMonitoring = false;
@@ -322,12 +324,24 @@ export class InsoleClient extends BlerpcClient {
   ): Promise<void> {
     if (this._monitoring) return;
     this._monitoring = true;
+    // A loop keeps running only while the generation it started with is
+    // current: stopMonitor() → startMonitor() within one round trip would
+    // otherwise leave the old loop (suspended in getWindow/sleep) alive next to
+    // the new one, both emitting frames with their own serials.
+    const generation = ++this._monitorGeneration;
+    const alive = () => this._monitoring && generation === this._monitorGeneration;
     this._q = [1, 0, 0, 0]; // reset orientation estimate
 
     const WS = insole.WindowStatus;
     const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     let base = Date.now();
-    await this.setTime({ epochMs: base });
+    try {
+      await this.setTime({ epochMs: base });
+    } catch (e) {
+      if (generation === this._monitorGeneration) this._monitoring = false;
+      throw e;
+    }
+    if (!alive()) return;
     let t = base;
     // `serial` counts delivered samples plus the ones the loop had to skip
     // (too_old / clock re-sync), so a gap in the frame serials is a gap in the
@@ -343,7 +357,7 @@ export class InsoleClient extends BlerpcClient {
     // effect were never stamped with this clock), not data that was lost.
     let delivered = false;
 
-    while (this._monitoring) {
+    while (alive()) {
       const started = now();
       const requestedT = t;
       try {
@@ -352,13 +366,19 @@ export class InsoleClient extends BlerpcClient {
         const status = resp.status as number;
         const oldestMs = Number.isFinite(Number(resp.oldestMs)) && Number(resp.oldestMs) > 0 ? Number(resp.oldestMs) : null;
         const newestMs = Number.isFinite(Number(resp.newestMs)) && Number(resp.newestMs) > 0 ? Number(resp.newestMs) : null;
-        if (!this._monitoring) break; // stopMonitor() during the round trip: do not emit
+        if (!alive()) break; // stopMonitor()/restart during the round trip: do not emit
         if (status === WS.WINDOW_STATUS_OK) {
           const frames = this.framesFromWindow(resp, t, serial);
-          for (const f of frames) onFrame(f);
+          // Advance the cursor before emitting: a throwing host callback must
+          // not make the loop re-request (and re-emit) the same window forever.
           serial += frames.length;
           delivered = delivered || frames.length > 0;
           t += WINDOW_MS;
+          try {
+            for (const f of frames) onFrame(f);
+          } catch (e) {
+            opts.onError?.(e);
+          }
           opts.onWindow?.({ status: 'ok', startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
         } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
           opts.onWindow?.({ status: 'too_new', startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
@@ -374,16 +394,19 @@ export class InsoleClient extends BlerpcClient {
         } else {
           // TIME_NOT_SET (or unspecified) — re-sync the clock. Both clocks are
           // host epoch ms (set_time), so the samples between the window we were
-          // about to read and the new base are lost: skip their serials too.
+          // about to read and the new base are lost: skip their serials too
+          // (unless nothing had been delivered yet — then it is start-up alignment).
           base = Date.now();
           await this.setTime({ epochMs: base });
-          const skippedMs = Math.max(0, base - t);
+          if (!alive()) break;
+          const skippedMs = delivered ? Math.max(0, base - t) : 0;
           const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
           serial += skippedSamples;
           t = base;
           opts.onWindow?.({ status: 'time_not_set', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
         }
       } catch (e) {
+        if (!alive()) break;
         opts.onError?.(e);
         opts.onWindow?.({ status: 'error', startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, error: e });
         await sleep(20); // transient BLE/RPC error — keep going
@@ -394,6 +417,7 @@ export class InsoleClient extends BlerpcClient {
   /** Stop the monitor loop started by startMonitor(). */
   stopMonitor(): void {
     this._monitoring = false;
+    this._monitorGeneration++; // a loop mid-await exits instead of running next to the next one
   }
 
   /** True while the gait monitor (get_gait_live polling) is running. */
@@ -441,7 +465,9 @@ export class InsoleClient extends BlerpcClient {
     try {
       first = await this.getGaitLive();
     } finally {
-      this._gaitStarting = false;
+      // Only this generation may clear the flag: stopGaitMonitor() during the
+      // first poll already cleared it for the next start.
+      if (generation === this._gaitGeneration) this._gaitStarting = false;
     }
     // stopGaitMonitor() / disconnect() ran while the first
     // poll was in flight: do not start polling.
@@ -502,12 +528,15 @@ export class InsoleClient extends BlerpcClient {
    */
   stopGaitMonitor(): void {
     this._gaitMonitoring = false;
+    this._gaitStarting = false; // a start whose first poll is still in flight is abandoned; the next start may proceed
     this._gaitGeneration++;
   }
 
   disconnect(): void {
     this._monitoring = false;
+    this._monitorGeneration++;
     this._gaitMonitoring = false;
+    this._gaitStarting = false;
     this._gaitGeneration++;
     super.disconnect();
   }

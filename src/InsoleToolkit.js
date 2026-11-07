@@ -493,10 +493,14 @@ class InsoleToolkitSession {
                 raw: {
                     packets: 0,
                     samples: [],
-                    serials: new Set(),
+                    serials: new Set(),      // uint16 の serial（互換用）
+                    offsets: new Set(),      // 先頭からの unwrap 済み距離（65536 packet 超の収録でも数えられる）
                     firstSerial: null,
                     lastSerial: null,
                     lastForwardSerial: null,
+                    lastOffset: 0,
+                    minOffset: 0,
+                    maxOffset: 0,
                     maxSerialDistance: -1,
                     truncated: false,
                 },
@@ -925,10 +929,14 @@ class InsoleToolkitSession {
             const serial = sample && Number.isInteger(sample.serial_number) ? sample.serial_number : null;
             if (serial !== null) this._recordMeasurementSerial(raw, serial);
         }
-        raw.packets = raw.serials.size;
+        raw.packets = raw.offsets.size;
         this._appendMeasurementSamples(raw, samples);
     }
 
+    // serial（uint16、65535 → 0 で巻き戻る）を受信順に unwrap して「先頭からの距離（offset）」で数える。
+    // 連続する packet 間の前方距離が半周（32768）未満なら前進、以上なら遅延到着（後方）とみなす。
+    // 数値の大小やモジュロ距離だけで expected を出すと 65536 packet（製品版 50 packet/s で約 21.8 分、
+    // INSOLE 1.5 の 100 packet/s で約 10.9 分）を超えた時点で飽和し、欠損が 0 に見えてしまう。
     _recordMeasurementSerial(raw, serial) {
         if (!Number.isInteger(serial)) return;
         const normalized = serial & 0xffff;
@@ -937,25 +945,33 @@ class InsoleToolkitSession {
             raw.firstSerial = normalized;
             raw.lastSerial = normalized;
             raw.lastForwardSerial = normalized;
+            raw.lastOffset = 0;
+            raw.minOffset = 0;
+            raw.maxOffset = 0;
+            raw.offsets.add(0);
             raw.maxSerialDistance = 0;
             return;
         }
         const forward = (normalized - raw.lastForwardSerial + 65536) % 65536;
-        if (forward === 0) return;
-        if (forward >= 32768) {
-            const beforeFirst = (raw.firstSerial - normalized + 65536) % 65536;
-            if (beforeFirst > 0 && beforeFirst < 32768) {
-                raw.firstSerial = normalized;
-                raw.maxSerialDistance += beforeFirst;
-            }
-            return;
+        let offset;
+        if (forward === 0) {
+            offset = raw.lastOffset;
+        } else if (forward >= 32768) {
+            offset = raw.lastOffset - (65536 - forward);   // 遅延到着（drain / 再要求）
+        } else {
+            offset = raw.lastOffset + forward;
+            raw.lastForwardSerial = normalized;
+            raw.lastSerial = normalized;
+            raw.lastOffset = offset;
         }
-        raw.lastForwardSerial = normalized;
-        raw.lastSerial = normalized;
-        raw.maxSerialDistance = Math.max(
-            raw.maxSerialDistance,
-            (normalized - raw.firstSerial + 65536) % 65536
-        );
+        if (raw.offsets.has(offset)) return;   // 重複
+        raw.offsets.add(offset);
+        if (offset < raw.minOffset) {
+            raw.minOffset = offset;
+            raw.firstSerial = normalized;
+        }
+        if (offset > raw.maxOffset) raw.maxOffset = offset;
+        raw.maxSerialDistance = raw.maxOffset - raw.minOffset;
     }
 
     _appendMeasurementSamples(raw, samples) {
@@ -1140,9 +1156,8 @@ class InsoleToolkitSession {
         }
         const expected = raw.maxSerialDistance + 1;
         let received = 0;
-        for (const serial of raw.serials) {
-            const distance = (serial - raw.firstSerial + 65536) % 65536;
-            if (distance <= raw.maxSerialDistance) received += 1;
+        for (const offset of raw.offsets) {
+            if (offset >= raw.minOffset && offset <= raw.maxOffset) received += 1;
         }
         const missing = Math.max(0, expected - received);
         return {

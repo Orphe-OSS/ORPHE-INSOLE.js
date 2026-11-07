@@ -1090,6 +1090,12 @@ class OrpheInsole {
     const device = this.bluetoothDevice;
     if (!device) throw _insoleError('NO_DEVICE', 'No Bluetooth Device');
     const Insole15 = await OrpheInsole.loadInsole15Client();
+    // クライアント読み込み待ちの間に reset()/別デバイス選択が起きていたら、この接続は続けない
+    if (this.bluetoothDevice !== device) throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
+    // 既に同じデバイスへ接続・配信中なら二重接続しない（Toolkit の connect() と同じ「already connected」扱い）
+    if (this._insole15 && this.isConnected() && this._insole15.isMonitoring) {
+      return 'done begin(); SENSOR VALUES (INSOLE 1.5, already connected)';
+    }
     const userOptions = (options && typeof options.insole15 === 'object' && options.insole15) || {};
     this._insole15Options = Object.assign({}, userOptions);
     this._releaseInsole15Client(false);          // 古いクライアントを止める（session も進む）
@@ -1105,7 +1111,9 @@ class OrpheInsole {
         throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
       }
       const cfg = await client.getConfigInfo();
-      if (this._insole15 !== client) throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
+      if (this._insole15 !== client || session !== this._insole15Session) {
+        throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
+      }
       this._insole15Config = cfg;
       this.firmware_version = cfg.firmwareVersion || null;
       this.device_information = this._insole15DeviceInformation(cfg);
@@ -1121,7 +1129,13 @@ class OrpheInsole {
       this.onStartNotify('SENSOR_VALUES');
       return 'done begin(); SENSOR VALUES (INSOLE 1.5)';
     } catch (error) {
-      if (this._insole15 === client) this._releaseInsole15Client(true);
+      if (this._insole15 === client) {
+        this._releaseInsole15Client(true);
+      } else if (this.bluetoothDevice !== device || !this._insole15) {
+        // reset()/切断で手放された接続が後から確立した場合: 持ち主の無い GATT を残さない。
+        // 同じデバイスへ新しいクライアントが既に接続中なら（再接続の競合）そのリンクは触らない。
+        try { client.disconnect(); } catch { /* noop */ }
+      }
       throw error;
     }
   }
@@ -1163,9 +1177,16 @@ class OrpheInsole {
     };
     this._insole15Pending = [];
     this._insole15Rate = { count: 0, since: (typeof performance !== 'undefined' ? performance.now() : Date.now()) };
+    // モニタ再開（stopNotify → startNotify）でクライアントの serial は 0 から振り直されるので、
+    // 直前の serial との差分で lostData を出さないようにする
+    this._serialInitialized = false;
     const alive = () => this._insole15 === client && session === this._insole15Session;
     client.startMonitor(
-      (frame) => { if (alive()) this._onInsole15Frame(frame); },
+      (frame) => {
+        if (!alive()) return;
+        // ユーザの got* / listener が throw しても配信ループは止めない（製品版の notify と同じ隔離）
+        try { this._onInsole15Frame(frame); } catch (error) { this._safeReportError(error, 'insole15Frame'); }
+      },
       {
         onError: (error) => {
           if (!alive()) return;
@@ -1287,8 +1308,10 @@ class OrpheInsole {
     try { client.stopMonitor(); } catch { /* noop */ }
     if (disconnectGatt) {
       try { client.disconnect(); } catch { /* noop */ }
-    } else {
-      // 物理切断後: GATT はもう無いので transport のリスナー解除だけ行う
+    } else if (!(this.bluetoothDevice && this.bluetoothDevice.gatt && this.bluetoothDevice.gatt.connected)) {
+      // 物理切断後: GATT はもう無いので transport のリスナー解除だけ行う。
+      // GATT がまだ繋がっているとき（clear() 等）は製品版の clear() と同じく物理リンクには触れない
+      // （transport.disconnect() は接続中なら gatt.disconnect() まで呼ぶため、ここでは呼ばない）。
       try { if (client.transport && typeof client.transport.disconnect === 'function') client.transport.disconnect(); } catch { /* noop */ }
     }
   }
@@ -2541,9 +2564,12 @@ class OrpheInsole {
       if (client && this.isConnected()) {
         try {
           const cfg = await client.getConfigInfo();
-          this._insole15Config = cfg;
-          this.firmware_version = cfg.firmwareVersion || null;
-          this.device_information = this._insole15DeviceInformation(cfg);
+          if (this._insole15 === client) {
+            // 待機中に再接続して別クライアントになっていたら、古い応答で上書きしない
+            this._insole15Config = cfg;
+            this.firmware_version = cfg.firmwareVersion || null;
+            this.device_information = this._insole15DeviceInformation(cfg);
+          }
         } catch (error) {
           this._reportError(error);
           throw error;

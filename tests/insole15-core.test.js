@@ -298,13 +298,29 @@ async function testBeginAndDispatch() {
   assert.equal(client.calls.filter((c) => c === 'getConfigInfo').length, 2, 'getDeviceInformation re-reads get_config');
   assert.equal(await insole.getPressureCalibration(), null);
 
-  // stopNotify / startNotify = モニタ停止・再開
+  // stopNotify / startNotify = モニタ停止・再開。再開後は serial が 0 から振り直されるが lostData は出ない
   await insole.stopNotify('SENSOR_VALUES');
   assert.equal(client.isMonitoring, false);
   await insole.startNotify('SENSOR_VALUES');
   assert.equal(client.isMonitoring, true);
   assert.equal(client.calls.filter((c) => c === 'startMonitor').length, 2);
+  const lostBefore = events.lost.length;
+  client.emitFrames(frames(0, 20));
+  assert.equal(events.lost.length, lostBefore, 'monitor restart does not fire a spurious lostData');
+  assert.equal(insole.serial_number, 9);
   await assert.rejects(insole.startNotify('STEP_ANALYSIS'), (e) => e.code === 'INSOLE15_UNSUPPORTED');
+
+  // ユーザの gotPress が throw しても onError に届き、以降のフレームは配信され続ける
+  const reported = [];
+  insole.onError = (e) => reported.push(e);
+  let pressCalls = 0;
+  insole.gotPress = () => { pressCalls++; if (pressCalls === 2) throw new Error('user gotPress failed'); };
+  client.emitFrames(frames(20, 20));
+  assert.equal(reported.length, 1);
+  assert.match(String(reported[0]), /user gotPress failed/);
+  assert.equal(pressCalls, 20, 'all 20 samples still reach gotPress');
+  insole.gotPress = (press) => events.press.push(press);
+  insole.onError = () => {};
 
   // stop(): ループ停止 → GATT 切断 → onDisconnect 1 回。世代は次のデバイス選択まで保持
   insole.stop();

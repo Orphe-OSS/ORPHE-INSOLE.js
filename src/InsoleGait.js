@@ -758,6 +758,14 @@
         try { client.stopGaitMonitor(); } catch { /* noop */ }
         return false;
       }
+      if (!client.isGaitMonitoring) {
+        // startGaitMonitor() が no-op で返った（直前の start がまだ最初のポーリング待ちだった等）。
+        // 「購読済み」と偽らず失敗として返し、Toolkit 側のリトライ/エラー表示に委ねる。
+        const error = new Error('OrpheInsoleGait.start(): INSOLE 1.5 gait polling did not start');
+        error.code = 'GAIT_START_FAILED';
+        this._reportError(error);
+        return false;
+      }
       this._subscribed = true;
       this._emitDiagnostic('subscribed', { transport: 'insole15-poll', pollMs: this._insole15PollMs });
       return true;
