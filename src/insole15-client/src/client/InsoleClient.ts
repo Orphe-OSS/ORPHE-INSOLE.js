@@ -139,7 +139,9 @@ export interface InsoleClientOptions {
  * For an `ok` window it is reported after that window's frames were emitted.
  */
 export interface InsoleWindowInfo {
-  status: 'ok' | 'too_old' | 'too_new' | 'time_not_set' | 'error';
+  // 'aligning' = too_old before any window was delivered (start-up: the cache
+  // holds nothing stamped with the clock we just set), so nothing was lost.
+  status: 'ok' | 'too_old' | 'too_new' | 'time_not_set' | 'error' | 'aligning';
   startMs: number; // requested window start (insole clock, epoch ms)
   rttMs: number; // get_window round trip (request → decoded response)
   samples: number; // frames emitted for this window (0 unless ok)
@@ -336,6 +338,10 @@ export class InsoleClient extends BlerpcClient {
     // samples with no loss at all, and a time-based slot count would report
     // phantom gaps there.
     let serial = 0;
+    // Until the first window has been delivered, a too_old answer is only the
+    // loop aligning itself with the cache (the samples before set_time took
+    // effect were never stamped with this clock), not data that was lost.
+    let delivered = false;
 
     while (this._monitoring) {
       const started = now();
@@ -351,6 +357,7 @@ export class InsoleClient extends BlerpcClient {
           const frames = this.framesFromWindow(resp, t, serial);
           for (const f of frames) onFrame(f);
           serial += frames.length;
+          delivered = delivered || frames.length > 0;
           t += WINDOW_MS;
           opts.onWindow?.({ status: 'ok', startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
         } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
@@ -359,11 +366,11 @@ export class InsoleClient extends BlerpcClient {
         } else if (status === WS.WINDOW_STATUS_TOO_OLD) {
           const newest = newestMs ?? t + WINDOW_MS;
           const next = Math.max(t + WINDOW_MS, newest - WINDOW_MS); // fell behind — skip ahead
-          const skippedMs = next - t;
+          const skippedMs = delivered ? next - t : 0;
           const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
           serial += skippedSamples; // evicted windows: unrecoverable, leave the hole in the serials
           t = next;
-          opts.onWindow?.({ status: 'too_old', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
+          opts.onWindow?.({ status: delivered ? 'too_old' : 'aligning', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
         } else {
           // TIME_NOT_SET (or unspecified) — re-sync the clock. Both clocks are
           // host epoch ms (set_time), so the samples between the window we were

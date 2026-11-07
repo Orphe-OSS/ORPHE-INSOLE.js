@@ -263,6 +263,10 @@ async function testBeginAndDispatch() {
   assert.equal(diag.samples, 20 + 20 + 19 + 21 + 19 + 20);
   assert.equal(diag.config.foot, 'right');
 
+  // 開始直後の位置合わせ（aligning）は欠損に数えない
+  client.windowCb({ status: 'aligning', startMs: 0, rttMs: 50, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null });
+  assert.equal(insole.insole15Diagnostics().tooOld, 0);
+  assert.equal(insole.insole15Diagnostics().gaps, 0);
   // too_old → skippedSamples・gaps・lossRate
   client.windowCb({ status: 'too_old', startMs: 0, rttMs: 130, samples: 0, skippedMs: 1500, skippedSamples: 300, oldestMs: null, newestMs: null });
   const diag2 = insole.insole15Diagnostics();

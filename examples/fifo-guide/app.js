@@ -624,10 +624,15 @@
   function finalizeDeviceResult(id, result) {
     const entry = device(id);
     const samples = Array.isArray(result.raw && result.raw.samples) ? result.raw.samples : [];
-    const analysis = C.analyzeSerials(samples.map((sample) => sample.serial_number));
+    // INSOLE 1.5: FIFO が無く Toolkit が Realtime へ退避して記録する。1 packet = 2 sample / 10 ms、
+    // 100 packet/s なので受信順の積み上げ（ordered）で serial を数える（6 分で uint16 半周を超える）。
+    const insole15 = result.insole15 === true || result.generation === 2;
+    const packetIntervalMs = insole15 ? 10 : C.PACKET_INTERVAL_MS;
+    const analysis = C.analyzeSerials(samples.map((sample) => sample.serial_number), { ordered: insole15 });
     // dropped は「収録中に回復不能と判定された累計」。onStopped(info.dropped) が正。
     // result.fifo.dropped は checkpoint 区間の再集計値なので定義が異なる。
-    const dropped = entry.droppedTotal !== null
+    // INSOLE 1.5 では FIFO の dropped は無い（欠損は serial の穴 = missing にそのまま出る）。
+    const dropped = insole15 ? 0 : entry.droppedTotal !== null
       ? entry.droppedTotal
       : Math.max(0, Number(result.fifo && result.fifo.dropped) || 0);
     const verdict = C.evaluateRecording({
@@ -635,16 +640,18 @@
       missing: analysis.missing,
       dropped,
       durationMs: result.durationMs,
-      maxLag: entry.maxLag
+      maxLag: entry.maxLag,
+      ignoreBuffer: insole15
     });
     // CSVが実際に覆う時間。停止時点で未要求だった分は収録スパンに入らない（missing ではない）
-    const coverage = C.spanCoverage(analysis.expected, state.plannedMs);
+    const coverage = C.spanCoverage(analysis.expected, state.plannedMs, { packetIntervalMs });
 
     entry.result = result;
     entry.analysis = analysis;
     entry.verdict = verdict;
     entry.coverage = coverage;
     entry.dropped = dropped;
+    entry.insole15 = insole15;
     entry.csv = samples.length > 0 ? root.insoleToolkitMeasurementToCSV(result, "raw") : "";
 
     // continuity.js の注意は言語非依存の code。表示時に i18n キーへ写す。
@@ -652,6 +659,19 @@
       key: CAUTION_KEYS[caution.code] || "cautionUnknown",
       params: caution.params
     }));
+    if (insole15) {
+      // 1.5 の通信診断（コア SDK）: get_window の RTT と too_old（FW キャッシュ約 1.7 秒を追い越した回数）
+      const insole = root.insoles && root.insoles[id];
+      const diag = insole && typeof insole.insole15Diagnostics === "function" ? insole.insole15Diagnostics() : null;
+      entry.cautions.push({
+        key: "cautionInsole15Realtime",
+        params: {
+          rtt50: diag && diag.rttMs && diag.rttMs.p50 !== null ? Math.round(diag.rttMs.p50) : "-",
+          rtt90: diag && diag.rttMs && diag.rttMs.p90 !== null ? Math.round(diag.rttMs.p90) : "-",
+          tooOld: diag ? diag.tooOld : "-"
+        }
+      });
+    }
     if (result.raw.truncated) {
       entry.cautions.push({ key: "cautionTruncated", params: { max: MAX_SAMPLES } });
     }
@@ -666,7 +686,7 @@
         }
       });
     }
-    if (dropped !== analysis.missing) {
+    if (!insole15 && dropped !== analysis.missing) {
       entry.cautions.push({
         key: "cautionDroppedMismatch",
         params: { dropped, missing: analysis.missing }
@@ -687,7 +707,7 @@
     }
     // 保存するCSVから数え直した欠損数と画面表示が一致することを確認する
     if (entry.csv) {
-      const fromCsv = C.analyzeSerials(C.extractSerialsFromCsv(entry.csv));
+      const fromCsv = C.analyzeSerials(C.extractSerialsFromCsv(entry.csv), { ordered: insole15 });
       const matched = fromCsv.missing === analysis.missing && fromCsv.expected === analysis.expected;
       log(matched ? "success" : "error", "logCsvCrossCheckDevice", {
         device: deviceLabel(id),
@@ -808,9 +828,17 @@
     const verdict = entry.verdict;
     const coverage = entry.coverage || C.spanCoverage(analysis.expected, state.plannedMs);
     const samples = Array.isArray(result.raw.samples) ? result.raw.samples.length : 0;
+    const insole15 = !!entry.insole15;
 
     setMetric(id, "m_duration", `${(result.durationMs / 1000).toFixed(1)} s`,
       verdict.buffer.withinWindow ? "ok" : "warn");
+    if (insole15) {
+      // INSOLE 1.5（Realtime 退避）: FIFO 固有の指標は無い
+      setMetric(id, "m_dropped", t("valueEmpty"));
+      setMetric(id, "m_drain_recovered", t("valueEmpty"));
+      setMetric(id, "m_drain_ms", t("valueEmpty"));
+      setMetric(id, "m_max_lag", t("valueEmpty"));
+    }
     setMetric(id, "m_samples", String(samples), samples > 0 ? "ok" : "bad");
     setMetric(id, "m_first", analysis.first === null ? t("valueEmpty") : String(analysis.first));
     setMetric(id, "m_last", analysis.last === null ? t("valueEmpty") : String(analysis.last));
@@ -822,12 +850,14 @@
     setMetric(id, "m_span",
       `${(coverage.spanMs / 1000).toFixed(1)} s (${Math.round(coverage.ratio * 100)} %)`,
       coverage.level);
-    setMetric(id, "m_dropped", String(entry.dropped), entry.dropped === 0 ? "ok" : "bad");
-    setMetric(id, "m_drain_recovered", String(entry.drainRecovered));
-    setMetric(id, "m_drain_ms", entry.drainMs === null ? t("valueEmpty") : `${entry.drainMs} ms`);
-    setMetric(id, "m_max_lag", `${entry.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
-      verdict.buffer.lagOverCapacity ? "bad"
-        : verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
+    if (!insole15) {
+      setMetric(id, "m_dropped", String(entry.dropped), entry.dropped === 0 ? "ok" : "bad");
+      setMetric(id, "m_drain_recovered", String(entry.drainRecovered));
+      setMetric(id, "m_drain_ms", entry.drainMs === null ? t("valueEmpty") : `${entry.drainMs} ms`);
+      setMetric(id, "m_max_lag", `${entry.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
+        verdict.buffer.lagOverCapacity ? "bad"
+          : verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
+    }
     setMetric(id, "m_csv", samples > 0 ? t("csvAvailable") : t("csvUnavailable"),
       samples > 0 ? "ok" : "bad");
 

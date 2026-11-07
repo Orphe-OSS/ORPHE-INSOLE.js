@@ -1219,6 +1219,10 @@ class OrpheInsole {
       s.tooNew++;
     } else if (info.status === 'time_not_set') {
       s.timeNotSet++;
+      s.skippedSamples += info.skippedSamples || 0;
+      if (info.skippedSamples > 0) s.gaps++;
+    } else if (info.status === 'aligning') {
+      s.aligning = (s.aligning || 0) + 1; // 開始直後の位置合わせ（欠損ではない）
     } else {
       s.errors++;
     }

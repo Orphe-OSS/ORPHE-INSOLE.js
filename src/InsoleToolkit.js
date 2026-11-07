@@ -1097,6 +1097,9 @@ class InsoleToolkitSession {
             durationMs: measurement.durationMs,
             profileId: measurement.profileId,
             metadata: { ...measurement.metadata },
+            // 接続中デバイスの世代（1 = 製品版、2 = INSOLE 1.5）。1.5 は Realtime が 1 packet = 2 sample / 10 ms。
+            generation: this.insole && this.insole.generation === 2 ? 2 : 1,
+            insole15: this._isInsole15(),
             raw: {
                 packets: measurement.raw.packets,
                 samples: measurement.raw.samples.length,

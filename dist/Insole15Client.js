@@ -10755,6 +10755,7 @@ var Insole15 = (() => {
       await this.setTime({ epochMs: base });
       let t = base;
       let serial = 0;
+      let delivered = false;
       while (this._monitoring) {
         const started = now();
         const requestedT = t;
@@ -10769,6 +10770,7 @@ var Insole15 = (() => {
             const frames = this.framesFromWindow(resp, t, serial);
             for (const f of frames) onFrame(f);
             serial += frames.length;
+            delivered = delivered || frames.length > 0;
             t += WINDOW_MS;
             opts.onWindow?.({ status: "ok", startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
           } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
@@ -10777,11 +10779,11 @@ var Insole15 = (() => {
           } else if (status === WS.WINDOW_STATUS_TOO_OLD) {
             const newest = newestMs ?? t + WINDOW_MS;
             const next = Math.max(t + WINDOW_MS, newest - WINDOW_MS);
-            const skippedMs = next - t;
+            const skippedMs = delivered ? next - t : 0;
             const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
             serial += skippedSamples;
             t = next;
-            opts.onWindow?.({ status: "too_old", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
+            opts.onWindow?.({ status: delivered ? "too_old" : "aligning", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
           } else {
             base = Date.now();
             await this.setTime({ epochMs: base });
