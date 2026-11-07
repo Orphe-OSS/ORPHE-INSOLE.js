@@ -43,6 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- showcase: INSOLE 1.5 の独自接続経路（`installUnifiedToggle` / `connectInsole15` / 専用の歩容計測器
+  `createInsole15GaitSource`）を撤去し、製品版と同じ Toolkit 経路（コア SDK の INS2 自動判別・
+  `OrpheInsoleGait` の get_gait_live ポーリング）に統一した。`examples/showcase/lib/` は
+  `src/insole15-client/`（ソース）と `src/Insole15Client.js`（バンドル）へ移動。INSOLE 1.5 接続中は
+  「ロスレス収録（FIFO）」トグルを無効にし、FIFO 不要の旨を表示する。
 - Gait Report starts without synthetic data by default; automatic demo is now opt-in via `?demo=1` (or the existing Play demo button).
 - Gait Report CG: once the 20-step report is finalized, the animation holds the same mean as the report (`gait-report:cg-complete` → `Feed.hold`) instead of continuing to follow later steps and pausing 8 s after the last one. Start recording / Clear release the hold. The status line reads "Replaying the finalized report mean".
 

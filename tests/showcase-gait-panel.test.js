@@ -74,26 +74,34 @@ const addActiveDeviceId = new Function(`${helper[0]}\nreturn addActiveDeviceId;`
     assert.deepEqual(addActiveDeviceId([0], 1), [0, 1], '別IDは追加する');
 }
 
-// ── 3b. INSOLE 1.5 の分岐も gaitStarting ガードの中にあること ─────────────
-// INSOLE 1.5 の startGaitMonitor() は最初の get_gait_live が返った時点で active になり、
-// その後 start() が resolve するまでに追従処理が走りうる（Toolkit と同じ窓）。
-// 2台（1.5×2 / 製品版＋1.5）で Step カードが二重に出ないよう、分岐はガードの内側に置く。
+// ── 3b. INSOLE 1.5 も Toolkit の gait 1 本で扱うこと（showcase 側に専用経路を持たない） ─────
+// 以前は showcase が INSOLE 1.5 専用の計測器（insole15GaitSources / isInsole15GaitSlot）を持ち、
+// その開始分岐を gaitStarting ガードの内側に置く必要があった。現在は 1.5 の判別・get_gait_live
+// ポーリングをコア SDK（ORPHE-INSOLE.js / InsoleGait.js）が担い、startGait() は製品版・1.5 とも
+// session.setOutputs({ stepAnalysis: true }) だけを呼ぶ。専用経路の再導入（二重実装・Step カード
+// 二重表示の温床）を検出する。
 {
     const body = app.match(/async function startGait\(\)[\s\S]*?\n {4}\}\n/);
     assert.ok(body, 'startGait() が見つからない');
     const src = body[0];
+    assert.ok(!/isInsole15GaitSlot|insole15GaitSources|startGaitMonitor\(/.test(src),
+        'startGait() に showcase 独自の INSOLE 1.5 経路が残っている（SDK の OrpheInsoleGait に任せる）');
+    assert.match(src, /session\.setOutputs\(\{[\s\S]*?stepAnalysis: true/,
+        'startGait() が Toolkit の session.setOutputs({ stepAnalysis: true }) で開始していない');
     const guardOn = src.indexOf('gaitStarting = true');
-    const branch = src.indexOf('isInsole15GaitSlot(id)');
+    const start = src.indexOf('session.setOutputs(');
     const guardOff = src.indexOf('finally {');
-    assert.ok(branch > 0, 'startGait() に INSOLE 1.5 の分岐（isInsole15GaitSlot）が無い');
-    assert.ok(guardOn > 0 && guardOn < branch && branch < guardOff,
-        'INSOLE 1.5 の開始分岐が gaitStarting = true 〜 finally の外にある');
+    assert.ok(guardOn > 0 && guardOn < start && start < guardOff,
+        'Step 開始が gaitStarting = true 〜 finally の外にある');
 
-    // 追従処理も INSOLE 1.5 のスロットを対象にする（製品版の session.gaitActive だけを見ない）
+    // 追従処理は Toolkit の session.gaitActive だけを見る（1.5 でも同じ）
     const sync = app.match(/function syncGaitSessionState\(connectedIds\) \{[\s\S]*?\n {4}\}\n/);
     assert.ok(sync, 'syncGaitSessionState() が見つからない');
-    assert.match(sync[0], /isInsole15GaitSlot\(id\)/,
-        'syncGaitSessionState() が INSOLE 1.5 のスロット（isInsole15GaitSlot）を見ていない');
+    assert.ok(!/isInsole15GaitSlot|insole15GaitSources/.test(sync[0]),
+        'syncGaitSessionState() に showcase 独自の INSOLE 1.5 経路が残っている');
+    assert.match(sync[0], /session\.gaitActive/, 'syncGaitSessionState() が session.gaitActive を見ていない');
+    assert.ok(!/deviceKind|insole15Clients|installUnifiedToggle|adaptInsole15Frame/.test(app),
+        'showcase に INSOLE 1.5 の独自接続経路が残っている');
 }
 
 // ── 4. 開始中の割り込みシナリオ（描画ループ 5ms × 開始処理 40ms） ─────────────
