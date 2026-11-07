@@ -128,6 +128,13 @@ export interface InsoleClientOptions {
   namePrefix?: string;
   requireEncryption?: boolean;
   pinIdentity?: boolean;
+  /**
+   * Response timeout for get_window [ms] (default 1000; 0 = use the bleRPC
+   * default, i.e. the peripheral's negotiated timeout, typically 5000). The
+   * firmware keeps only ~1.7 s of samples, so waiting the full 5 s for a lost
+   * notification guarantees a hole; retrying within the cache does not.
+   */
+  windowTimeoutMs?: number;
 }
 
 /**
@@ -229,12 +236,31 @@ export class InsoleClient extends BlerpcClient {
   // link), so every RPC — the 100 ms window loop, gait polling, config reads —
   // is queued on one promise chain. A failed call never blocks the next one.
   private _rpcChain: Promise<unknown> = Promise.resolve();
+  // Name of the RPC currently on the wire (calls are serialized, so at most one).
+  private _activeCmd: string | null = null;
+  private readonly _windowTimeoutMs: number;
 
   protected override call(cmdName: string, requestData: Uint8Array): Promise<Uint8Array> {
-    const run = () => super.call(cmdName, requestData);
+    const run = () => {
+      this._activeCmd = cmdName;
+      return super.call(cmdName, requestData).finally(() => {
+        if (this._activeCmd === cmdName) this._activeCmd = null;
+      });
+    };
     const p = this._rpcChain.then(run, run);
     this._rpcChain = p.catch(() => undefined);
     return p;
+  }
+
+  // get_window answers within one connection interval or so (30–120 ms
+  // measured); a response that is still missing after `windowTimeoutMs` was
+  // lost on the air. Failing fast lets the monitor loop re-request the same
+  // window while the firmware still has it (~1.7 s cache) instead of waiting
+  // the peripheral's 5 s timeout and then finding the window evicted.
+  protected override _readTimeout(firstRead: boolean): number {
+    const base = super._readTimeout(firstRead);
+    if (this._activeCmd === 'get_window' && this._windowTimeoutMs > 0) return Math.min(base, this._windowTimeoutMs);
+    return base;
   }
 
   constructor(options: InsoleClientOptions = {}) {
@@ -243,6 +269,8 @@ export class InsoleClient extends BlerpcClient {
       options.requireEncryption ?? true,
       options.pinIdentity ?? true,
     );
+    const wt = Number(options.windowTimeoutMs);
+    this._windowTimeoutMs = Number.isFinite(wt) && wt >= 0 ? wt : 1000;
   }
 
   /** Read the persisted device configuration into a friendly shape. */

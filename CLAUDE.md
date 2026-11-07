@@ -302,7 +302,8 @@ INSOLE 1.5（BLE 名 `INS2`、FW 0.1.7 以降）は製品版と BLE プロトコ
 ```javascript
 // 製品版とまったく同じ書き方。INS2 を選ぶと内部で 1.5 経路に分岐する
 await insole.begin('SENSOR_VALUES', { streamingMode: 4, autoReconnect: true,
-  insole15: { pressureScale: 10 /* 既定 */, requireEncryption: true, pinIdentity: true } });
+  insole15: { pressureScale: 10 /* 既定 */, requireEncryption: true, pinIdentity: true,
+              windowTimeoutMs: 1000 /* get_window 応答待ち上限。FW キャッシュ 1.7 秒内に再要求できる値 */ } });
 insole.generation;            // 1 = 製品版, 2 = INSOLE 1.5
 insole.isInsole15;            // true
 insole.insole15Diagnostics(); // { windows, ok, tooOld, tooNew, errors, samples, skippedSamples, gaps,
@@ -337,9 +338,13 @@ acc m/s² → G（±16 G = index 3）、gyro dps（±2000 dps = index 3、感度
   （診断 `insole15-fifo-unavailable`、`snapshot().insole15 === true`、設定モーダルでは FIFO とモードが無効表示）。
   通常ストリーミングがプル型なので **リンクが追従できている限り**ロスレス。
 - **2 台同時の制約**: 100 ms 窓 1 回の往復（RTT）が 100 ms を超えると追従できず、FW キャッシュ（1.7 秒）を
-  超えた分が `too_old` で失われる。片足ずつは RTT 40〜60 ms でロスレスだが、ホスト（Mac の Bluetooth）
-  によっては 2 台目のリンクが 120 ms 超になり片側だけ 25〜40% 欠落する実測がある（2026-11-08、Mac17,3）。
-  `insole15Diagnostics().lossRate / rttMs` と Toolkit の計測結果 `missing` で必ず確認する。
+  超えた分が `too_old` で失われる。片足ずつは RTT 30〜60 ms でロスレス。2 台同時では**先に接続した側の
+  リンクが遅くなる**（Mac17,3 実測: 先 90 ms / 後 30 ms）が、100 ms 未満なら追従でき、軽いページ
+  （fifo-guide）で両足 6 分間 missing 0 を確認済み（2026-11-08）。描画の重いページで RTT が 120 ms 超に
+  なると片側だけ 25〜40% 欠落する。もう一つの欠損源は**通知の取りこぼし**で、bleRPC の応答待ち（端末既定
+  5 秒）がキャッシュを超えるため、SDK は get_window だけ `windowTimeoutMs`（既定 1000 ms）で打ち切って
+  同じ窓を再要求する。`insole15Diagnostics().lossRate / rttMs / tooOld / errors` と Toolkit の計測結果
+  `missing` で必ず確認する。
 
 公開範囲: クライアントの proto は `set_time / get_window / get_config / get_gait_live` のサブセットのみ
 （OTA・ログ消去・ID 書換は含めない）。ビルド: `cd src/insole15-client && npm ci && npm run build`

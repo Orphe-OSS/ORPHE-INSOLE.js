@@ -10676,12 +10676,31 @@ var Insole15 = (() => {
       // link), so every RPC — the 100 ms window loop, gait polling, config reads —
       // is queued on one promise chain. A failed call never blocks the next one.
       this._rpcChain = Promise.resolve();
+      // Name of the RPC currently on the wire (calls are serialized, so at most one).
+      this._activeCmd = null;
+      const wt = Number(options.windowTimeoutMs);
+      this._windowTimeoutMs = Number.isFinite(wt) && wt >= 0 ? wt : 1e3;
     }
     call(cmdName, requestData) {
-      const run = () => super.call(cmdName, requestData);
+      const run = () => {
+        this._activeCmd = cmdName;
+        return super.call(cmdName, requestData).finally(() => {
+          if (this._activeCmd === cmdName) this._activeCmd = null;
+        });
+      };
       const p = this._rpcChain.then(run, run);
       this._rpcChain = p.catch(() => void 0);
       return p;
+    }
+    // get_window answers within one connection interval or so (30–120 ms
+    // measured); a response that is still missing after `windowTimeoutMs` was
+    // lost on the air. Failing fast lets the monitor loop re-request the same
+    // window while the firmware still has it (~1.7 s cache) instead of waiting
+    // the peripheral's 5 s timeout and then finding the window evicted.
+    _readTimeout(firstRead) {
+      const base = super._readTimeout(firstRead);
+      if (this._activeCmd === "get_window" && this._windowTimeoutMs > 0) return Math.min(base, this._windowTimeoutMs);
+      return base;
     }
     /** Read the persisted device configuration into a friendly shape. */
     async getConfigInfo() {

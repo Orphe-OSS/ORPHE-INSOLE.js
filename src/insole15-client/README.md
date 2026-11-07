@@ -62,7 +62,11 @@ go run ./tools/generate-handlers --root /tmp/gen \
 ## API (`window.Insole15`)
 
 ```js
-const client = new Insole15.InsoleClient(); // encryption + TOFU pinning on by default
+const client = new Insole15.InsoleClient(); // encryption + TOFU pinning on by default;
+                                            // { windowTimeoutMs: 1000 } caps the get_window response
+                                            // wait (the peripheral default is 5 s, longer than its
+                                            // ~1.7 s sample cache) so a lost notification is retried
+                                            // while the window still exists
 const [dev] = await client.scan();               // opens the browser device chooser (user gesture)
 await client.connect(dev);                        // negotiation + X25519/Ed25519 key exchange
 const cfg = await client.getConfigInfo();         // { deviceIdHex, foot, firmwareVersion, ... }

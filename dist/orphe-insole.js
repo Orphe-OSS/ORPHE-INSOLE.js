@@ -2305,6 +2305,8 @@ class OrpheInsole {
     const client = new Insole15.InsoleClient({
       requireEncryption: userOptions.requireEncryption ?? true,
       pinIdentity: userOptions.pinIdentity ?? true,
+      // get_window の応答待ち上限。FW キャッシュ（約 1.7 秒）内に再要求できるよう既定 1000 ms
+      windowTimeoutMs: Number.isFinite(Number(userOptions.windowTimeoutMs)) ? Number(userOptions.windowTimeoutMs) : 1000,
     });
     this._insole15 = client;
     try {

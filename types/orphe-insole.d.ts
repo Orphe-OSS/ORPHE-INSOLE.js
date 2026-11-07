@@ -149,6 +149,11 @@ export interface InsoleInsole15Options {
     requireEncryption?: boolean;
     /** TOFU で端末鍵を固定する（既定 true）。 */
     pinIdentity?: boolean;
+    /**
+     * get_window の応答待ち上限 [ms]（既定 1000、0 = bleRPC 既定＝端末の 5000）。
+     * 通知が 1 つ落ちたとき FW キャッシュ（約 1.7 秒）内に再要求できるよう短くしてある。
+     */
+    windowTimeoutMs?: number;
 }
 
 /** INSOLE 1.5 の定数（OrpheInsole.INSOLE15）。 */
