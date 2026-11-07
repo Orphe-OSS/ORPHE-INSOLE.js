@@ -252,6 +252,56 @@
     ].map(csvCell).join(',');
   }
 
+  // ── INSOLE 1.5（get_gait_live ポーリング）────────────────────────────
+  // INSOLE 1.5 の FW は STEP_ANALYSIS notify を持たず、bleRPC の get_gait_live を 150〜250 ms ごとに
+  // ポーリングすると FW が暗黙のライブ解析セッションを開き、完了ストライドごとの指標を返す
+  // （計測セッションは開かず端末には何も記録されない。最終ポーリングの約 3 秒後に FW が終了）。
+  // コア SDK（OrpheInsole）が INSOLE 1.5 に接続している場合、start() はこの経路を使う。
+  // FW の FootStrike enum（0 none / 1 heel / 2 midfoot / 3 forefoot）
+  const INSOLE15_FOOT_STRIKES = ['none', 'heelStrike', 'midfoot', 'forefoot'];
+
+  /**
+   * FW の完了ストライド（get_gait_live の last）→ 製品版 buildGaitRow と同じ row。
+   * 非負量は負値・非有限を欠損(null)に、派生値（duration/swing）は入力が有限かつ正のときだけ計算する。
+   * get_gait_live に無い項目（ストライド方向・X/Y 成分・pronation_z・カロリー）は null（CSV では空欄）。
+   * @param {object} s Insole15 クライアントの InsoleGaitStride
+   * @returns {object} row
+   */
+  function insole15StrideToRow(s) {
+    const num = (v) => (Number.isFinite(v) ? v : null);
+    const nonNeg = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
+    const pos = (v) => (Number.isFinite(v) && v > 0 ? v : null);
+    const cadence = pos(s.cadence);
+    const duration = cadence ? 1 / cadence : null;
+    const stance = pos(s.contactTime);
+    const swing = (duration !== null && stance !== null && duration > stance) ? duration - stance : null;
+    const pronation = num(s.pronation);
+    return {
+      step_number: Number.isInteger(s.strideSeq) ? s.strideSeq : (Number(s.strideSeq) || 0),
+      gait_type: gaitTypeToStr(s.gaitType),
+      stride_direction: null,
+      distance_m: nonNeg(s.distanceM),
+      stance_phase_s: stance,
+      swing_phase_s: swing,
+      duration_s: duration,
+      cadence_hz: cadence,
+      speed_mps: nonNeg(s.speed),
+      foot_angle_deg: num(s.strikeAngle),   // FW の strike_angle は着地時の足角度
+      stride_x_m: null,
+      stride_y_m: null,
+      stride_z_m: nonNeg(s.strideHeight),
+      stride_norm_m: nonNeg(s.strideLength),
+      landing_force: nonNeg(s.landingForce),
+      strike_angle_deg: num(s.strikeAngle),
+      foot_strike: INSOLE15_FOOT_STRIKES[s.footStrike] ?? 'unknown',   // FW（GaitAnalysisCore）の判定をそのまま使う
+      // 生の符号のまま（製品版の pronation_y と同じ GaitAnalysisCore の値）。分類しきい値も製品版と共通
+      pronation_deg: pronation,
+      pronation_type: pronationToStr(pronation),
+      pronation_z_deg: null,
+      calorie: null,
+    };
+  }
+
   // ── step 集約 ────────────────────────────────────────────────────────
   // 各サブパケットを step_number 単位に集約し、overview/stride/pronation が揃った歩を返す。
   // サブパケットは取りこぼし対策で複数回送られるため、同じ歩は一度だけ出力する。
@@ -439,6 +489,12 @@
       this._lastTransport = null;
       this._packetWaiters = new Set();
       this._reportedInvalidSignatures = new Set();
+      // INSOLE 1.5: get_gait_live ポーリング中のクライアント（insole._insole15）と統計
+      this._insole15Client = null;
+      this._insole15Polls = 0;
+      this._lastInsole15Poll = null;
+      this._insole15PollMs = Number.isFinite(Number(options.pollMs)) && Number(options.pollMs) >= 100
+        ? Number(options.pollMs) : 250;
 
       // コールバック（ユーザが上書き）
       this.onGait = null;     // (deviceId, row) 1歩ごとの歩容パラメーター（overview+stride+pronation 集約後）
@@ -473,7 +529,18 @@
         // step単位の損失統計。incompleteSteps は一部サブパケットのみ到着（BLE欠損の疑い）、
         // gapSteps は1つも到着しなかった歩（FW未送信 or 全欠損）、jumps は採番リセット。
         stepLoss: this.aggregator.stats(),
+        // INSOLE 1.5: get_gait_live ポーリング（validPackets / transportNotifications は応答数）
+        insole15: this._isInsole15() ? {
+          polling: !!(this._insole15Client && this._insole15Client.isGaitMonitoring),
+          polls: this._insole15Polls,
+          pollMs: this._insole15PollMs,
+          lastPoll: this._lastInsole15Poll ? { ...this._lastInsole15Poll } : null,
+        } : null,
       };
+    }
+
+    _isInsole15() {
+      return !!(this.insole && this.insole.isInsole15);
     }
 
     /**
@@ -532,6 +599,7 @@
     }
 
     async _doStart() {
+      if (this._isInsole15()) return this._doStart15();
       if (!this._canStart()) return false;
       if (!this._claimOwner()) return false;
       const continuing = this._running;
@@ -581,6 +649,14 @@
       if (!this._running || !this._canStart() || this.insole._gaitNotifyOwner !== this) return false;
       if (this._startPromise) { try { await this._startPromise; } catch { /* noop */ } }
       if (this._subscribePromise) { try { await this._subscribePromise; } catch { /* noop */ } }
+      if (this._isInsole15()) {
+        // INSOLE 1.5: ポーリングを止めて同じクライアントで張り直す（rows は維持）
+        const client = this.insole._insole15;
+        this._subscribed = false;
+        this._stopInsole15Polling();
+        if (!this._running || !client) return false;
+        return this._subscribe15(client, this._lifecycleGeneration);
+      }
 
       const lifecycleGeneration = this._lifecycleGeneration;
       const connectionGeneration = this._connectionGeneration;
@@ -609,6 +685,121 @@
       if (this.insole && this.insole.isConnected && this.insole.isConnected()) return true;
       this._reportError(new Error('OrpheInsoleGait.start(): insole is not connected'));
       return false;
+    }
+
+    // ── INSOLE 1.5: get_gait_live ポーリング ──
+    async _doStart15() {
+      if (!this._canStart()) return false;
+      const client = this.insole._insole15;
+      if (!client || typeof client.startGaitMonitor !== 'function') {
+        const error = new Error('OrpheInsoleGait.start(): INSOLE 1.5 client is not connected');
+        error.code = 'GAIT_NOT_CONNECTED';
+        this._reportError(error);
+        return false;
+      }
+      if (!this._claimOwner()) return false;
+      const continuing = this._running;
+      if (!continuing) {
+        this.aggregator = new GaitAggregator();
+        this._attachAggregatorHooks();
+        this.rows = [];
+        this._lifecycleGeneration++;
+        this._insole15Polls = 0;
+        this._lastInsole15Poll = null;
+      }
+      const lifecycleGeneration = this._lifecycleGeneration;
+      this._running = true;
+      this._installReconnectHook();
+      this._installDisconnectHook();
+      if (this._subscribed && this._insole15Client === client && client.isGaitMonitoring) return true;
+      const ok = await this._subscribe15(client, lifecycleGeneration);
+      if (!ok && !continuing && lifecycleGeneration === this._lifecycleGeneration && !this._subscribed) {
+        this._running = false;
+        this._removeReconnectHook();
+        this._removeDisconnectHook();
+        this._releaseOwner();
+      }
+      return ok;
+    }
+
+    // get_gait_live のポーリングを開始する（初回・再接続・refresh 共通）。成功で true。
+    async _subscribe15(client, lifecycleGeneration) {
+      const generation = ++this._connectionGeneration; // この購読の世代（古い callback を無視する）
+      const alive = () => this._running && this._insole15Client === client
+        && lifecycleGeneration === this._lifecycleGeneration && generation === this._connectionGeneration;
+      this._insole15Client = client;
+      this._emitDiagnostic('subscribe-attempt', { attempt: 1, transport: 'insole15-poll' });
+      try {
+        await client.startGaitMonitor((stride) => {
+          if (!alive()) return;
+          this._onInsole15Stride(stride);
+        }, {
+          pollMs: this._insole15PollMs,
+          onPoll: (info) => { if (alive()) this._onInsole15Poll(info); },
+          onError: (error) => {
+            if (!alive()) return;
+            this._emitDiagnostic('poll-error', { message: error && error.message ? error.message : String(error) });
+          },
+        });
+      } catch (error) {
+        if (!alive() && lifecycleGeneration !== this._lifecycleGeneration) return false; // stop() 済み
+        if (error && error.code === 'INSOLE15_GAIT_UNSUPPORTED') {
+          const unsupported = new Error('OrpheInsoleGait.start(): this INSOLE 1.5 firmware does not support live gait analysis (get_gait_live)');
+          unsupported.code = 'INSOLE15_GAIT_UNSUPPORTED';
+          this._emitDiagnostic('fw-gait-live-unsupported', { message: error.message });
+          this._reportError(unsupported);
+        } else {
+          this._reportError(error);
+        }
+        return false;
+      }
+      if (!alive()) {
+        // 開始待ちの間に stop()/再接続が起きた: このクライアントのポーリングは止めておく
+        try { client.stopGaitMonitor(); } catch { /* noop */ }
+        return false;
+      }
+      this._subscribed = true;
+      this._emitDiagnostic('subscribed', { transport: 'insole15-poll', pollMs: this._insole15PollMs });
+      return true;
+    }
+
+    _onInsole15Poll(info) {
+      const receivedAt = Date.now();
+      this._insole15Polls++;
+      this._transportNotifications++;
+      this._lastTransportAt = receivedAt;
+      this._validPackets++;
+      this._lastValidPacketAt = receivedAt;
+      this._lastInsole15Poll = { receivedAt, ...info };
+      const transport = {
+        receivedAt,
+        byteLength: null,
+        header: null,
+        subheader: 'insole15-poll',
+        valid: true,
+        transportNotifications: this._transportNotifications,
+        validPackets: this._validPackets,
+        invalidPackets: this._invalidPackets,
+        poll: { ...info },
+      };
+      this._lastTransport = transport;
+      if (typeof this.onTransport === 'function') this._safe(() => this.onTransport(this.deviceId, { ...transport }));
+      if (this._validPackets === 1) this._emitDiagnostic('first-valid-packet', { packetType: 'insole15-poll', measuring: info.measuring });
+      this._resolvePacketWaiters(true);
+    }
+
+    _onInsole15Stride(stride) {
+      const row = insole15StrideToRow(stride);
+      const packet = { type: 'insole15-stride', step_number: row.step_number, stride: { ...stride } };
+      if (typeof this.onRaw === 'function') this._safe(() => this.onRaw(this.deviceId, packet));
+      this.rows.push(row);
+      if (typeof this.onGait === 'function') this._safe(() => this.onGait(this.deviceId, row));
+    }
+
+    _stopInsole15Polling() {
+      const client = this._insole15Client;
+      this._insole15Client = null;
+      if (client) { try { client.stopGaitMonitor(); } catch { /* noop */ } }
     }
 
     // STEP_ANALYSIS は1 characteristic / 1 sink なので、同一 insole の active Gait は1つに限定する。
@@ -744,6 +935,7 @@
       this._removeReconnectHook();
       this._removeDisconnectHook();
       this._clearSink();
+      this._stopInsole15Polling();
       this._resolvePacketWaiters(false);
       if (!needsStop) return;
       const promise = this._doStop(shouldStopNotify);
@@ -799,6 +991,12 @@
       // 実際の物理切断では _disconnectHandler が先に _subscribed=false にする。
       if (!this._running || this._subscribed) return;
       this._installDisconnectHook();
+      if (this._isInsole15()) {
+        // 再接続後は新しいクライアント（insole._insole15）でポーリングし直す
+        const client = this.insole._insole15;
+        if (client) await this._subscribe15(client, this._lifecycleGeneration);
+        return;
+      }
       // 古い接続世代の未完了 Promise は待たない。現在世代の購読だけを共有する。
       await this._requestSubscribe(this._lifecycleGeneration);
     }
@@ -819,6 +1017,7 @@
       this._subscribePromise = null;
       this._currentSubscribeAttempt = null;
       this._clearSink();
+      this._insole15Client = null; // 切断で死んだクライアント（コア SDK 側で停止済み）
       this._resolvePacketWaiters(false);
       this._emitDiagnostic('physical-disconnect');
     }
@@ -978,6 +1177,8 @@
   OrpheInsoleGait.stepDistance = stepDistance;
   OrpheInsoleGait.STALE_STEP_DISTANCE = STALE_STEP_DISTANCE;
   OrpheInsoleGait.GAP_COUNT_LIMIT = GAP_COUNT_LIMIT;
+  OrpheInsoleGait.INSOLE15_FOOT_STRIKES = INSOLE15_FOOT_STRIKES;
+  OrpheInsoleGait.insole15StrideToRow = insole15StrideToRow;
 
   if (typeof global.OrpheInsoleGait === 'undefined') {
     global.OrpheInsoleGait = OrpheInsoleGait;

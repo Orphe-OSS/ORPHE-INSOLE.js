@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **コア SDK 全体で INSOLE 1.5（INS2）に対応**。`OrpheInsole.begin()` がデバイス選択ダイアログで選ばれた
+  INS2 を自動判別し、専用クライアント `src/Insole15Client.js`（global `Insole15`、`src/insole15-client/` の
+  TypeScript からビルド。旧 `examples/showcase/lib/insole-1.5.web.js` を移動・改名）を**自身の URL 基準で
+  遅延ロード**して接続する（`dist/Insole15Client(.min).js` も同梱。`<script>` で先に読み込めば遅延ロードなし）。
+  受け取った 200 Hz フレームを製品版 SENSOR_VALUES パケット（header 56）に再エンコード
+  （`OrpheInsole.encodeInsole15Packet`）して同じ `onRead()` に流すため、got* コールバック・
+  `addSensorDataListener`・`lostData`・`gotBLEFrequency`（実効サンプルレート）・自動再接続・Toolkit の
+  計測記録・`OrpheInsoleGait`（FW `get_gait_live` のポーリング）・examples が製品版と同じコードで動く。
+  新 API: `insole.generation`（1/2）、`insole.isInsole15`、`insole.insole15Diagnostics()`（窓数・`too_old`
+  欠損・RTT・foot/firmware）、`insole.lastInsole15Frame`、`OrpheInsole.INSOLE15`（定数・左右別圧力チャネル
+  並び替え）、`OrpheInsole.isInsole15Device()` / `insole15ClientAvailable()` / `loadInsole15Client()`、
+  `begin({ insole15: { pressureScale, pressureChannelMap, requireEncryption, pinIdentity } })`、
+  `OrpheInsoleGait.insole15StrideToRow()`、`new OrpheInsoleGait(insole, { pollMs })`、Toolkit
+  `snapshot().generation / insole15 / insole15Diagnostics`。1.5 では `setDataStreamingMode()` は no-op、
+  `read/write/getDateTime` は `INSOLE15_UNSUPPORTED`、FIFO は Toolkit が Realtime へ退避する
+  （診断 `insole15-fifo-unavailable`）。回帰テスト `tests/insole15-core.test.js` / `insole15-gait.test.js` /
+  `insole15-toolkit.test.js`。
+- INSOLE 1.5 クライアント: `startMonitor()` のフレーム `serial` が欠損（`too_old` / 時計再同期）の分だけ飛ぶ
+  ようになり、ホスト側で `serial !== prev + 1` の欠損検出ができる（従来は連番のまま穴が見えなかった）。
+  `onWindow`（窓ごとの status / RTT / skippedSamples）と `startGaitMonitor()` の `onPoll` を追加。
 - showcase: ORPHE INSOLE 1.5 を製品版と**同じトグル・同じ手順**で接続できるようにした。1回のデバイス選択で種別（`INS…` / `Orphe_Insole…`）を自動判別し、製品版は従来の Toolkit 接続（`session.connect()`）、INSOLE 1.5 は同梱の専用クライアント `examples/showcase/lib/insole-1.5.web.js`（グローバル `Insole15`。Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得、IMU からの Madgwick 姿勢推定）へ振り分け、どちらも同じ `dispatchFrame()` で可視化する。INSOLE 1.5 は加速度 m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（右足は基板上のセンサ配置が異なるため専用テーブル）。pitch/roll の表示補正は既存の「pitch / roll を入れ替えて表示」スイッチを両者共通で使う。クライアントのソース（TypeScript）と再ビルド手順は `examples/showcase/lib/README.md`（ESLint 対象外。`.gitignore` の `proto/` は root 限定の `/proto/` に変更）。INSOLE 1.5 は通常のストリーミングがプル型でロスレスなため FIFO 収録が不要である旨を「ロスレス収録（FIFO）」カードと README に記載し、INSOLE 1.5 のみ接続中はカードのステータスにも表示する。歩容解析も INSOLE 1.5 で動作: クライアントに `startGaitMonitor()` / `stopGaitMonitor()`（FW の `get_gait_live` をポーリングするだけ。計測セッションは開かず、端末には何も記録されない）と RPC 直列化（bleRPC は再入不可）を追加し、showcase は完了ストライドを `OrpheInsoleGait` 互換 row に変換して同じパネル・CSV で扱う（ストライド方向・X/Y 成分・カロリーは取得できないため空欄）。
 - 圧力校正値を `begin()` 時に自動取得し、`pressure_calibration` に6ch分を保持。`getPressureCalibration({ timeoutMs })` で再取得可能。非対応・失敗時はエラーを通知せずnullで継続する。
 - 校正式（指数関数・4次多項式）とPythonクライアントの6ch既定係数による荷重[N]を `converted_press` / `gotConvertedPress` で提供。既存の `press` / `gotPress` はADC生値を維持する。

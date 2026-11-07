@@ -2,7 +2,7 @@
   "name": "insole-1.5-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Browser (Web Bluetooth) client for ORPHE INSOLE 1.5. Bundled to insole-1.5.web.js (global Insole15).",
+  "description": "Browser (Web Bluetooth) client for ORPHE INSOLE 1.5. Bundled to ../Insole15Client.js (global Insole15).",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

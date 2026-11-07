@@ -1,5 +1,5 @@
 // Browser (Web Bluetooth) client for ORPHE INSOLE 1.5.
-// Bundled to ../insole-1.5.web.js (global `Insole15`).
+// Bundled to ../../Insole15Client.js (global `Insole15`).
 //
 // The transport + protocol client are vendored from the bleRPC `central_web`
 // central; only InsoleClient and the insole proto are device-specific.
@@ -19,6 +19,9 @@ export type {
   InsoleConfig,
   InsoleClientOptions,
   InsoleGaitStride,
+  InsoleWindowInfo,
+  InsoleMonitorOptions,
+  InsoleGaitPollInfo,
 } from './client/InsoleClient';
 export {
   BlerpcClient,

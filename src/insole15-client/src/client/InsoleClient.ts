@@ -131,6 +131,41 @@ export interface InsoleClientOptions {
 }
 
 /**
+ * Outcome of one get_window round trip inside the monitor loop, reported via
+ * `startMonitor()`'s `onWindow` so a host can account for every window: how
+ * many were delivered, how many the firmware had already evicted (`too_old`,
+ * with the number of 200 Hz samples that were skipped and are unrecoverable),
+ * how often the loop was caught up (`too_new`), and the BLE round-trip time.
+ * For an `ok` window it is reported after that window's frames were emitted.
+ */
+export interface InsoleWindowInfo {
+  status: 'ok' | 'too_old' | 'too_new' | 'time_not_set' | 'error';
+  startMs: number; // requested window start (insole clock, epoch ms)
+  rttMs: number; // get_window round trip (request → decoded response)
+  samples: number; // frames emitted for this window (0 unless ok)
+  skippedMs: number; // time jumped over because the cache no longer held it (too_old only)
+  skippedSamples: number; // skippedMs / SAMPLE_PERIOD_MS — samples lost for good
+  oldestMs: number | null; // firmware cache bounds as reported with the response
+  newestMs: number | null;
+  error?: unknown; // the RPC/BLE error (status 'error' only)
+}
+
+export interface InsoleMonitorOptions {
+  onError?: (e: unknown) => void;
+  onWindow?: (info: InsoleWindowInfo) => void;
+}
+
+/** Running counters of one get_gait_live poll, reported via `startGaitMonitor()`'s `onPoll`. */
+export interface InsoleGaitPollInfo {
+  measuring: boolean;
+  sessionId: number;
+  steps: number;
+  distanceM: number;
+  strideSeq: number;
+  rttMs: number;
+}
+
+/**
  * One completed stride from the firmware gait analyzer (GaitAnalysisCore), as
  * polled from get_gait_live. Physical units, raw values (no presentation sign
  * flip): `pronation` is the analyzer's pronation Euler Y in degrees — the same
@@ -281,40 +316,69 @@ export class InsoleClient extends BlerpcClient {
    */
   async startMonitor(
     onFrame: (frame: InsoleFrame) => void,
-    opts: { onError?: (e: unknown) => void } = {},
+    opts: InsoleMonitorOptions = {},
   ): Promise<void> {
     if (this._monitoring) return;
     this._monitoring = true;
     this._q = [1, 0, 0, 0]; // reset orientation estimate
 
     const WS = insole.WindowStatus;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     let base = Date.now();
     await this.setTime({ epochMs: base });
     let t = base;
+    // `serial` counts delivered samples plus the ones the loop had to skip
+    // (too_old / clock re-sync), so a gap in the frame serials is a gap in the
+    // data and a host can detect loss with `serial !== previous + 1` just like
+    // the product insole's packet serials. Within a run of consecutive OK
+    // windows it is purely a sample count: the firmware bins the 200 Hz stream
+    // into 100 ms windows by its own clock, so a window may carry 19 or 21
+    // samples with no loss at all, and a time-based slot count would report
+    // phantom gaps there.
     let serial = 0;
 
     while (this._monitoring) {
+      const started = now();
+      const requestedT = t;
       try {
         const resp = await this.getWindow({ startMs: t });
+        const rttMs = now() - started;
         const status = resp.status as number;
+        const oldestMs = Number.isFinite(Number(resp.oldestMs)) && Number(resp.oldestMs) > 0 ? Number(resp.oldestMs) : null;
+        const newestMs = Number.isFinite(Number(resp.newestMs)) && Number(resp.newestMs) > 0 ? Number(resp.newestMs) : null;
+        if (!this._monitoring) break; // stopMonitor() during the round trip: do not emit
         if (status === WS.WINDOW_STATUS_OK) {
           const frames = this.framesFromWindow(resp, t, serial);
           for (const f of frames) onFrame(f);
           serial += frames.length;
           t += WINDOW_MS;
+          opts.onWindow?.({ status: 'ok', startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
         } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
+          opts.onWindow?.({ status: 'too_new', startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
           await sleep(WINDOW_MS); // caught up to live — wait for capture
         } else if (status === WS.WINDOW_STATUS_TOO_OLD) {
-          const newest = Number(resp.newestMs) || t + WINDOW_MS;
-          t = Math.max(t + WINDOW_MS, newest - WINDOW_MS); // fell behind — skip ahead
+          const newest = newestMs ?? t + WINDOW_MS;
+          const next = Math.max(t + WINDOW_MS, newest - WINDOW_MS); // fell behind — skip ahead
+          const skippedMs = next - t;
+          const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+          serial += skippedSamples; // evicted windows: unrecoverable, leave the hole in the serials
+          t = next;
+          opts.onWindow?.({ status: 'too_old', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
         } else {
-          // TIME_NOT_SET (or unspecified) — re-sync the clock.
+          // TIME_NOT_SET (or unspecified) — re-sync the clock. Both clocks are
+          // host epoch ms (set_time), so the samples between the window we were
+          // about to read and the new base are lost: skip their serials too.
           base = Date.now();
           await this.setTime({ epochMs: base });
+          const skippedMs = Math.max(0, base - t);
+          const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+          serial += skippedSamples;
           t = base;
+          opts.onWindow?.({ status: 'time_not_set', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
         }
       } catch (e) {
         opts.onError?.(e);
+        opts.onWindow?.({ status: 'error', startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, error: e });
         await sleep(20); // transient BLE/RPC error — keep going
       }
     }
@@ -351,12 +415,22 @@ export class InsoleClient extends BlerpcClient {
    */
   async startGaitMonitor(
     onStride: (stride: InsoleGaitStride) => void,
-    opts: { pollMs?: number; onError?: (e: unknown) => void } = {},
+    opts: { pollMs?: number; onError?: (e: unknown) => void; onPoll?: (info: InsoleGaitPollInfo) => void } = {},
   ): Promise<void> {
     if (this._gaitMonitoring || this._gaitStarting) return;
     this._gaitStarting = true;
     const generation = ++this._gaitGeneration;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const pollInfo = (live: insole.GetGaitLiveResponse, rttMs: number): InsoleGaitPollInfo => ({
+      measuring: !!live.measuring,
+      sessionId: live.sessionId ?? 0,
+      steps: live.steps ?? 0,
+      distanceM: live.distanceM ?? 0,
+      strideSeq: live.strideSeq ?? 0,
+      rttMs,
+    });
     let first: insole.GetGaitLiveResponse;
+    const firstStarted = now();
     try {
       first = await this.getGaitLive();
     } finally {
@@ -365,6 +439,7 @@ export class InsoleClient extends BlerpcClient {
     // stopGaitMonitor() / disconnect() ran while the first
     // poll was in flight: do not start polling.
     if (generation !== this._gaitGeneration) return;
+    opts.onPoll?.(pollInfo(first, now() - firstStarted));
     if (!first.measuring) throw new GaitLiveUnsupportedError();
     this._gaitMonitoring = true;
     const pollMs = opts.pollMs ?? 250;
@@ -402,8 +477,10 @@ export class InsoleClient extends BlerpcClient {
         await sleep(pollMs);
         if (!alive()) break;
         try {
+          const pollStarted = now();
           const live = await this.getGaitLive();
           if (!alive()) break; // stopped (or restarted) while this poll was in flight
+          opts.onPoll?.(pollInfo(live, now() - pollStarted));
           emit(live);
         } catch (e) {
           if (alive()) opts.onError?.(e); // transient BLE/RPC error — keep polling

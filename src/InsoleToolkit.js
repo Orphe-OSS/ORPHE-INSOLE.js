@@ -321,7 +321,17 @@ class InsoleToolkitSession {
             supportsStepAnalysis: this.supportsStepAnalysis,
             gaitDiagnostics: this._gaitDiagnostics(),
             lastError: this.lastError,
+            // 接続中デバイスの世代（1 = 製品版、2 = INSOLE 1.5）。1.5 では FIFO とストリーミングモード選択は
+            // 使えず（常に 200 Hz の全データ）、Step Analysis は get_gait_live ポーリングで動く。
+            generation: this.insole && this.insole.generation === 2 ? 2 : 1,
+            insole15: this._isInsole15(),
+            insole15Diagnostics: this._isInsole15() && typeof this.insole.insole15Diagnostics === 'function'
+                ? this.insole.insole15Diagnostics() : null,
         };
+    }
+
+    _isInsole15() {
+        return !!(this.insole && this.insole.isInsole15);
     }
 
     setFifoCallbacks(callbacks = {}) {
@@ -613,6 +623,15 @@ class InsoleToolkitSession {
 
     async _applyDesiredState() {
         if (!this.connected) return;
+        // INSOLE 1.5 に FIFO は無い（通常ストリーミング自体がプル型でロスレス）。FIFO が選ばれていても
+        // 接続は失敗させず Realtime へ退避し、状態表示と console で知らせる（fifo-guide 等の既定 FIFO ページ対策）。
+        if (this._isInsole15() && this.sensorDataMode === 'fifo') {
+            this.sensorDataMode = 'realtime';
+            this.profileId = insoleToolkitProfileIdFor(this._configuration());
+            this._syncOptions();
+            console.warn('InsoleToolkit: FIFO is not available on INSOLE 1.5; using Realtime (pull-based, already lossless while the link keeps up).');
+            this._emitGaitDiagnostic('insole15-fifo-unavailable', { fallback: 'realtime' });
+        }
         const desired = this._configuration();
         this._validateCapabilities(desired);
 
@@ -1719,13 +1738,16 @@ function syncInsoleToolkitControls(no) {
         if (!state.transitioning) sensorDataMode.value = state.sensorDataMode;
         sensorDataMode.disabled = state.transitioning
             || state.measurementPhase !== 'idle'
-            || !state.outputs.sensorValues;
+            || !state.outputs.sensorValues
+            || state.insole15;
         const fifoOption = Array.from(sensorDataMode.options).find((option) => option.value === 'fifo');
         if (fifoOption) {
-            fifoOption.disabled = !state.supportsFifo || state.outputs.stepAnalysis;
-            fifoOption.title = state.outputs.stepAnalysis
-                ? 'Turn off Step Analysis before selecting FIFO.'
-                : '';
+            fifoOption.disabled = !state.supportsFifo || state.outputs.stepAnalysis || state.insole15;
+            fifoOption.title = state.insole15
+                ? 'INSOLE 1.5 has no FIFO mode: Realtime is already a lossless pull stream.'
+                : state.outputs.stepAnalysis
+                    ? 'Turn off Step Analysis before selecting FIFO.'
+                    : '';
         }
     }
     if (streamingMode) {
@@ -1733,7 +1755,11 @@ function syncInsoleToolkitControls(no) {
         streamingMode.disabled = state.transitioning
             || state.measurementPhase !== 'idle'
             || !state.outputs.sensorValues
-            || state.sensorDataMode === 'fifo';
+            || state.sensorDataMode === 'fifo'
+            || state.insole15;
+        streamingMode.title = state.insole15
+            ? 'INSOLE 1.5 always streams quat + gyro + acc + press at 200 Hz.'
+            : '';
     }
 
     if (status) {
@@ -1753,6 +1779,10 @@ function syncInsoleToolkitControls(no) {
             status.innerText = 'Active: Step Analysis only';
         } else if (state.sensorDataMode === 'fifo' && !state.fifoActive) {
             status.innerText = 'FIFO stopped. Select Realtime, then FIFO, to restart.';
+        } else if (state.insole15) {
+            const d = state.insole15Diagnostics;
+            const loss = d && d.lossRate > 0 ? ` — loss ${(d.lossRate * 100).toFixed(1)}%` : '';
+            status.innerText = `Active: INSOLE 1.5 Realtime 200 Hz${state.outputs.stepAnalysis ? ' + Step Analysis (polling)' : ''}${loss}`;
         } else {
             const raw = state.sensorDataMode === 'fifo' ? 'FIFO Raw Data' : 'Realtime Raw Data';
             status.innerText = `Active: ${raw}${state.outputs.stepAnalysis ? ' + Step Analysis' : ''}`;
@@ -1762,9 +1792,11 @@ function syncInsoleToolkitControls(no) {
         const unavailable = [];
         if (!state.supportsFifo) unavailable.push('Load InsoleFifo.js for FIFO.');
         if (!state.supportsStepAnalysis) unavailable.push('Load InsoleGait.js for Step Analysis.');
-        note.innerText = unavailable.length
-            ? unavailable.join(' ')
-            : 'Realtime Raw and Step Analysis can run together. FIFO is lossless Raw recording and runs alone.';
+        note.innerText = state.insole15
+            ? 'INSOLE 1.5: Realtime streams quat + gyro + acc + press at 200 Hz (pull-based, lossless while the link keeps up). FIFO and streaming format do not apply. Step Analysis polls the firmware gait analyzer.'
+            : unavailable.length
+                ? unavailable.join(' ')
+                : 'Realtime Raw and Step Analysis can run together. FIFO is lossless Raw recording and runs alone.';
     }
 }
 
@@ -1824,6 +1856,7 @@ async function updateInsoleBatteryInfo(dom) {
     if (obj.battery == 0) str_battery_status = 'empty';
     else if (obj.battery == 1) str_battery_status = 'normal';
     else if (obj.battery == 2) str_battery_status = 'full';
+    else str_battery_status = 'unknown (INSOLE 1.5 reports battery only in advertisements)';
     const el = document.querySelector(`#icon_battery${number}`);
     el.setAttribute('title', `${str_battery_status}`);
 

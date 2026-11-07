@@ -10750,31 +10750,50 @@ var Insole15 = (() => {
       this._monitoring = true;
       this._q = [1, 0, 0, 0];
       const WS = insole.WindowStatus;
+      const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
       let base = Date.now();
       await this.setTime({ epochMs: base });
       let t = base;
       let serial = 0;
       while (this._monitoring) {
+        const started = now();
+        const requestedT = t;
         try {
           const resp = await this.getWindow({ startMs: t });
+          const rttMs = now() - started;
           const status = resp.status;
+          const oldestMs = Number.isFinite(Number(resp.oldestMs)) && Number(resp.oldestMs) > 0 ? Number(resp.oldestMs) : null;
+          const newestMs = Number.isFinite(Number(resp.newestMs)) && Number(resp.newestMs) > 0 ? Number(resp.newestMs) : null;
+          if (!this._monitoring) break;
           if (status === WS.WINDOW_STATUS_OK) {
             const frames = this.framesFromWindow(resp, t, serial);
             for (const f of frames) onFrame(f);
             serial += frames.length;
             t += WINDOW_MS;
+            opts.onWindow?.({ status: "ok", startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
           } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
+            opts.onWindow?.({ status: "too_new", startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
             await sleep(WINDOW_MS);
           } else if (status === WS.WINDOW_STATUS_TOO_OLD) {
-            const newest = Number(resp.newestMs) || t + WINDOW_MS;
-            t = Math.max(t + WINDOW_MS, newest - WINDOW_MS);
+            const newest = newestMs ?? t + WINDOW_MS;
+            const next = Math.max(t + WINDOW_MS, newest - WINDOW_MS);
+            const skippedMs = next - t;
+            const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+            serial += skippedSamples;
+            t = next;
+            opts.onWindow?.({ status: "too_old", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
           } else {
             base = Date.now();
             await this.setTime({ epochMs: base });
+            const skippedMs = Math.max(0, base - t);
+            const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+            serial += skippedSamples;
             t = base;
+            opts.onWindow?.({ status: "time_not_set", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
           }
         } catch (e) {
           opts.onError?.(e);
+          opts.onWindow?.({ status: "error", startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, error: e });
           await sleep(20);
         }
       }
@@ -10810,13 +10829,24 @@ var Insole15 = (() => {
       if (this._gaitMonitoring || this._gaitStarting) return;
       this._gaitStarting = true;
       const generation = ++this._gaitGeneration;
+      const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
+      const pollInfo = (live, rttMs) => ({
+        measuring: !!live.measuring,
+        sessionId: live.sessionId ?? 0,
+        steps: live.steps ?? 0,
+        distanceM: live.distanceM ?? 0,
+        strideSeq: live.strideSeq ?? 0,
+        rttMs
+      });
       let first;
+      const firstStarted = now();
       try {
         first = await this.getGaitLive();
       } finally {
         this._gaitStarting = false;
       }
       if (generation !== this._gaitGeneration) return;
+      opts.onPoll?.(pollInfo(first, now() - firstStarted));
       if (!first.measuring) throw new GaitLiveUnsupportedError();
       this._gaitMonitoring = true;
       const pollMs = opts.pollMs ?? 250;
@@ -10851,8 +10881,10 @@ var Insole15 = (() => {
           await sleep(pollMs);
           if (!alive()) break;
           try {
+            const pollStarted = now();
             const live = await this.getGaitLive();
             if (!alive()) break;
+            opts.onPoll?.(pollInfo(live, now() - pollStarted));
             emit(live);
           } catch (e) {
             if (alive()) opts.onError?.(e);

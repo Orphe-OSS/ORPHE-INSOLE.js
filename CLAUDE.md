@@ -30,11 +30,14 @@ ORPHE-INSOLE.js/
 │   ├── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
 │   ├── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
 │   ├── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
-│   └── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
+│   ├── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
+│   ├── Insole15Client.js      # INSOLE 1.5（INS2）用 bleRPC クライアント（ビルド済み IIFE、global Insole15。コア SDK が INS2 選択時に遅延ロード）
+│   ├── insole15-client/       # ↑ の TypeScript ソース・サブセット proto・ビルド手順（README.md）
 │   └── vendor/quaternion.js   # 同梱 Quaternion.js（MIT）。dist に同梱、src 直読みでは相対ロード（src/vendor/README.md）
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
-│   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
+│   ├── orphe-insole.min.js    # ビルド済み（CDN配信対象）
+│   └── Insole15Client(.min).js # INSOLE 1.5 クライアントのコピー（dist からの遅延ロード用）
 ├── types/
 │   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
@@ -283,6 +286,65 @@ gait.download('gait.csv');   // 参照実装互換CSV（1歩1行）
 - 派生指標: `duration_s=stance+swing`, `stride_norm_m=|stride|`, `cadence_hz=1/duration`, `speed_mps=norm/duration`。
 - 半精度(float16)フィールド（calorie / quat / delta）は内蔵の `f16be` でデコード（外部依存なし）。
 - showcase の「歩容解析（Gait Analysis）」パネルが利用例。
+- **INSOLE 1.5 では STEP_ANALYSIS notify が無く、同じ `OrpheInsoleGait` が FW の `get_gait_live` を
+  ポーリング（既定 250 ms）して row を作る**（後述の「INSOLE 1.5 対応」）。`diagnostics().insole15` に
+  ポーリング状態が入り、`validPackets` はポーリング応答数。ストライド方向・X/Y 成分・カロリーは null。
+
+## INSOLE 1.5（INS2）対応 — コア SDK 全体で製品版と同じコードが動く
+
+INSOLE 1.5（BLE 名 `INS2`、FW 0.1.7 以降）は製品版と BLE プロトコルが異なる（GATT notify の固定長
+パケットではなく、暗号化 bleRPC（protobuf）で **100 ms 窓を要求して受け取るプル型**。姿勢は送らない）。
+コア SDK は **1 回のデバイス選択で種別を自動判別**し、INS2 なら専用クライアント
+`src/Insole15Client.js`（global `Insole15`、`src/insole15-client/` の TypeScript からビルド）を
+**自身の URL 基準で遅延ロード**して接続する。examples の HTML は変更不要（`<script src=".../Insole15Client.js">`
+を先に読み込んでおけば遅延ロードは起きない。CDN の dist からは `dist/Insole15Client(.min).js` を読む）。
+
+```javascript
+// 製品版とまったく同じ書き方。INS2 を選ぶと内部で 1.5 経路に分岐する
+await insole.begin('SENSOR_VALUES', { streamingMode: 4, autoReconnect: true,
+  insole15: { pressureScale: 10 /* 既定 */, requireEncryption: true, pinIdentity: true } });
+insole.generation;            // 1 = 製品版, 2 = INSOLE 1.5
+insole.isInsole15;            // true
+insole.insole15Diagnostics(); // { windows, ok, tooOld, tooNew, errors, samples, skippedSamples, gaps,
+                              //   lossRate, rttMs: {p50, p90, max, last}, config: {foot, firmwareVersion, deviceId} }
+insole.lastInsole15Frame;     // 直近の生フレーム { t, serial, press[6] mV, acc m/s², gyro dps, quat(推定) }
+```
+
+**同じ口で動くもの**: `gotPress / gotAcc / gotConvertedAcc / gotGyro / gotConvertedGyro / gotQuat / gotEuler /
+gotConvertedPress`、`history_sensor_values`、`addSensorDataListener`（Toolkit の計測記録）、`lostData`、
+`gotBLEFrequency`、`onConnect / onDisconnect`、自動再接続（切断で get_window ループを止め、再接続後に
+新しいクライアントで再開）、`getDeviceInformation()`（`mount_position` bit0 = get_config の foot、
+`range = {acc: 3, gyro: 3}`、`battery` は null）、`getFirmwareVersion()`（get_config の firmware_version）、
+`OrpheInsoleGait`（get_gait_live ポーリング）、Toolkit（L/R・FW バッジ・実測 Hz・設定モーダル）。
+
+**仕組み**: 受け取った 200 Hz フレームを 2 個ずつ製品版 SENSOR_VALUES パケット（header 56、104 byte）に
+再エンコード（`OrpheInsole.encodeInsole15Packet`）して `onRead()` に流す。単位は
+acc m/s² → G（±16 G = index 3）、gyro dps（±2000 dps = index 3、感度 70 mdps/LSB）、quat Q14、
+**圧力 `values[i] = mV × pressureScale(10)` を左右別チャネル並び替え後に公式番号順**
+（`OrpheInsole.INSOLE15.PRESSURE_CHANNEL_MAP.left/right`、showcase の実機確認値）。
+パケット serial = floor(frame serial / 2) の uint16。**frame serial は欠損した分だけ飛ぶ**
+（FW キャッシュ約 1.7 秒を追い越した `too_old` と時計再同期）ので、`lostData` と Toolkit の `missing` に
+欠損がそのまま出る。1 窓が 19/21 サンプルになる FW 側の時計ジッタは欠損ではない（serial は連続）。
+
+**製品版と違う点（アプリ側の注意）**:
+- `press.values` は ADC 生値ではなく **mV × 10**（無負荷 ≈ 590、`press.mv` 相当は `lastInsole15Frame.press`）。
+  しきい値は相対値（ベースライン差分）で設計する（udon・InsoleUtils の自動ベースラインは有効）。
+  `converted_press`[N] は 1.5 では未校正（既定係数の推定値）。
+- quat/euler はクライアントの Madgwick 推定（FW は姿勢を送らない）。yaw は基準なし。
+- `setDataStreamingMode()` は no-op（常に全データ 200 Hz）。`read/write/getDateTime` は
+  `INSOLE15_UNSUPPORTED`、`syncCoreTime` は 0、`resetAnalysisLogs` は警告のみ（保守系 RPC は公開しない）。
+- **FIFO は無い**。Toolkit は FIFO が選ばれていても接続を失敗させず Realtime へ退避する
+  （診断 `insole15-fifo-unavailable`、`snapshot().insole15 === true`、設定モーダルでは FIFO とモードが無効表示）。
+  通常ストリーミングがプル型なので **リンクが追従できている限り**ロスレス。
+- **2 台同時の制約**: 100 ms 窓 1 回の往復（RTT）が 100 ms を超えると追従できず、FW キャッシュ（1.7 秒）を
+  超えた分が `too_old` で失われる。片足ずつは RTT 40〜60 ms でロスレスだが、ホスト（Mac の Bluetooth）
+  によっては 2 台目のリンクが 120 ms 超になり片側だけ 25〜40% 欠落する実測がある（2026-11-08、Mac17,3）。
+  `insole15Diagnostics().lossRate / rttMs` と Toolkit の計測結果 `missing` で必ず確認する。
+
+公開範囲: クライアントの proto は `set_time / get_window / get_config / get_gait_live` のサブセットのみ
+（OTA・ログ消去・ID 書換は含めない）。ビルド: `cd src/insole15-client && npm ci && npm run build`
+→ `npm run build`（dist へコピー・minify）。回帰テスト: `tests/insole15-core.test.js`（再エンコード・
+分岐・欠損・再接続・遅延ロード）、`tests/insole15-gait.test.js`、`tests/insole15-toolkit.test.js`。
 
 ## 通信・バイナリプロトコル実装のチェックリスト（境界値・エッジケース）
 

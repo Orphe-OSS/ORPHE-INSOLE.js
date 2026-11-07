@@ -49,7 +49,7 @@ Step Analysisの開始・復元時は実packet到着まで確認し、無通知�
 
 ## INSOLE 1.5 の接続
 
-製品版と同じヘッダの接続トグルから、1回のデバイス選択で製品版／INSOLE 1.5 を自動判別して接続します（INSOLE 1.5 は選択ダイアログに `INS2` として表示。FW 0.1.7 以降が必要）。INSOLE 1.5 は `lib/insole-1.5.web.js`（Web Bluetooth + 暗号化 bleRPC クライアント、グローバル `Insole15`）で通信し、姿勢を送らないため IMU から Madgwick で quat/euler を推定します。加速度は m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（左右で基板上のセンサ配置が異なるため、接続時に取得した foot で選択）をして、製品版と同じ `dispatchFrame()` パイプラインで可視化します。pitch/roll の表示補正は「pitch / roll を入れ替えて表示」スイッチが製品版・INSOLE 1.5共通で効きます。歩容解析も同じ「計測開始」ボタンで動きます（FW の `get_gait_live` を約 250 ms ごとにポーリングし、完了ストライドごとに `OrpheInsoleGait` と同じ row 形式に変換して表示・CSV 保存。計測セッションは開かず、端末には何も記録されない。ストライド方向・X/Y 成分・カロリーは取得できないため空欄）。クライアントのソース（TypeScript）と再ビルド手順は [`lib/README.md`](./lib/README.md) を参照してください。
+製品版と同じヘッダの接続トグルから、1回のデバイス選択で製品版／INSOLE 1.5 を自動判別して接続します（INSOLE 1.5 は選択ダイアログに `INS2` として表示。FW 0.1.7 以降が必要）。INSOLE 1.5 は `../../src/Insole15Client.js`（Web Bluetooth + 暗号化 bleRPC クライアント、グローバル `Insole15`。コア SDK 全体で共用）で通信し、姿勢を送らないため IMU から Madgwick で quat/euler を推定します。加速度は m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（左右で基板上のセンサ配置が異なるため、接続時に取得した foot で選択）をして、製品版と同じ `dispatchFrame()` パイプラインで可視化します。pitch/roll の表示補正は「pitch / roll を入れ替えて表示」スイッチが製品版・INSOLE 1.5共通で効きます。歩容解析も同じ「計測開始」ボタンで動きます（FW の `get_gait_live` を約 250 ms ごとにポーリングし、完了ストライドごとに `OrpheInsoleGait` と同じ row 形式に変換して表示・CSV 保存。計測セッションは開かず、端末には何も記録されない。ストライド方向・X/Y 成分・カロリーは取得できないため空欄）。クライアントのソース（TypeScript）と再ビルド手順は [`src/insole15-client/README.md`](../../src/insole15-client/README.md) を参照してください。コア SDK 単体でも INS2 を選べば同じクライアントを遅延ロードして接続できます（`CLAUDE.md` の「INSOLE 1.5（INS2）対応」）。
 
 ## デモ用歩行データの差し替え
 
@@ -78,5 +78,5 @@ Step Analysisの開始・復元時は実packet到着まで確認し、無通知�
 | `assets/models/*.stl` | 靴3Dモデル（ORPHE-CORE.js から流用） |
 | `assets/*.png` | 足型画像（hula-motion-sonifier から流用） |
 | `assets/thumbs/*.svg` | 「次のステップ」用サムネイル |
-| `lib/` | INSOLE 1.5 用ブラウザクライアント。ビルド済みの `lib/insole-1.5.web.js`（グローバル `Insole15`）を `index.html` が読み込む。ソースと再ビルド手順は `lib/README.md` |
+| `../../src/Insole15Client.js` | INSOLE 1.5 用ブラウザクライアント（グローバル `Insole15`）。`index.html` が先に読み込む（無ければコア SDK が遅延ロードする）。ソースと再ビルド手順は `src/insole15-client/README.md` |
 | `SPEC.md` | 企画書 / 仕様書 |

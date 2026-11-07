@@ -1,14 +1,24 @@
-# `lib/` — browser client for ORPHE INSOLE 1.5
+# `src/insole15-client/` — browser client for ORPHE INSOLE 1.5
 
-This folder builds the single committed file the showcase loads at runtime:
+This folder builds the single committed file the SDK uses for INSOLE 1.5 (BLE name `INS2`):
 
 ```
-lib/insole-1.5.web.js   # IIFE bundle, exposes window.Insole15 (committed)
+src/Insole15Client.js        # IIFE bundle, exposes window.Insole15 (committed)
+dist/Insole15Client.js       # copy made by `npm run build` (scripts/build-dist.js)
+dist/Insole15Client.min.js   # terser output of the same
 ```
 
-The showcase page (`../index.html`) loads that file with a plain `<script>` — like
-the SDK's `dist/`, the showcase itself needs **no build step**. You only rebuild the
-bundle when the client or proto changes.
+`src/ORPHE-INSOLE.js` lazy-loads `Insole15Client.js` from its own directory the first
+time an INS2 device is picked in the chooser (`OrpheInsole.loadInsole15Client()`), so
+pages need **no build step and no extra `<script>`**. Loading it explicitly with a
+`<script>` before the SDK (as the showcase does) skips the lazy load. You only rebuild
+the bundle when the client or proto changes; `tests/insole-dist-bundle.test.js` fails
+if `dist/` is stale.
+
+What the SDK does with the client (see `CLAUDE.md`, "INSOLE 1.5（INS2）対応"): it
+re-encodes every pair of 200 Hz frames into the product insole's SENSOR_VALUES packet
+(header 56) and feeds the normal dispatch, so `gotPress` & co., Toolkit recording and
+`OrpheInsoleGait` (which polls `get_gait_live` through this client) work unchanged.
 
 ## What's inside
 
@@ -28,12 +38,16 @@ unmodified in a browser (only `@noble/*` WebCrypto + `TextEncoder`/`DataView`).
 ## Rebuild
 
 ```bash
-cd lib
-npm install
+cd src/insole15-client
+npm ci
 npm run proto      # regenerate src/proto/insole.* from insole.proto (only if the proto changed)
 npm run typecheck
-npm run build      # -> ./insole-1.5.web.js
+npm run build      # -> ../Insole15Client.js
+cd ../.. && npm run build   # copy + minify into dist/
 ```
+
+The bundle is deterministic: rebuilding unchanged sources reproduces the committed
+file byte for byte (esbuild 0.24, see package-lock.json).
 
 If `insole.proto` changes, also regenerate `src/client/GeneratedClient.ts` from the
 bleRPC repo:
@@ -52,10 +66,16 @@ const client = new Insole15.InsoleClient(); // encryption + TOFU pinning on by d
 const [dev] = await client.scan();               // opens the browser device chooser (user gesture)
 await client.connect(dev);                        // negotiation + X25519/Ed25519 key exchange
 const cfg = await client.getConfigInfo();         // { deviceIdHex, foot, firmwareVersion, ... }
-await client.startMonitor((frame) => { ... });    // { t, serial, press[6], acc{xyz}, gyro{xyz},
-                                                   //   quat{wxyz}, euler{pitch,roll,yaw} }
+await client.startMonitor((frame) => { ... }, {   // { t, serial, press[6], acc{xyz}, gyro{xyz},
+  onWindow(info) { ... },                          //   quat{wxyz}, euler{pitch,roll,yaw} }
+});
 // quat/euler are ESTIMATED on the client (Madgwick IMU fusion) — the device
-// streams no orientation.
+// streams no orientation. `serial` counts delivered + skipped samples, so a gap
+// in consecutive serials is data the firmware had already evicted (status
+// 'too_old' in onWindow, with skippedSamples) — never a phantom gap: windows
+// may legitimately carry 19 or 21 samples. onWindow also reports the BLE
+// round-trip time per get_window; when it stays above 100 ms the loop cannot
+// keep up and too_old losses follow.
 client.stopMonitor();
 // Gait analysis (firmware GaitAnalysisCore): polls get_gait_live; one callback per
 // completed stride. No measurement session is opened and nothing is recorded on
@@ -63,8 +83,8 @@ client.stopMonitor();
 // the last poll (firmware with live-analysis support; older firmware throws
 // GaitLiveUnsupportedError). Runs alongside the sensor monitor — every RPC is
 // serialized inside the client (bleRPC is not re-entrant).
-await client.startGaitMonitor((stride) => { ... }); // { strideSeq, strideLength, strideHeight, speed,
-                                                   //   cadence, contactTime, pronation, strikeAngle,
+await client.startGaitMonitor((stride) => { ... }, // { strideSeq, strideLength, strideHeight, speed,
+  { pollMs: 250, onPoll(info) { ... } });          //   cadence, contactTime, pronation, strikeAngle,
                                                    //   landingForce, gaitType, footStrike, steps, distanceM }
 client.stopGaitMonitor();                           // just stops polling
 client.disconnect();
