@@ -704,16 +704,27 @@ insole.gotPress = function(press) {
 };
 
 // CORRECT - データはバッファに溜め、描画は rAF で 30fps に間引く
+const HISTORY = 200;  // チャートに表示する件数
 const buffer = [];
-insole.gotPress = function(press) { buffer.push(press.values); };
+insole.gotPress = function(press) {
+  buffer.push(press.values);
+  // rAF はタブ非表示・ウィンドウの完全遮蔽で止まるがコールバックは止まらない。
+  // 表示に要る件数で上限を切る（溜めた分を復帰時に 1 件ずつ shift すると O(n²) で数十分固まる）
+  if (buffer.length > HISTORY * 2) buffer.splice(0, buffer.length - HISTORY);
+};
 (function render() {
   if (buffer.length) {
     for (const v of buffer.splice(0)) pushToChart(v);
+    trimChart(HISTORY);   // 余剰は splice(0, excess) で一括削除。while (len > N) shift() は不可
     chart.update();
   }
   requestAnimationFrame(render);
 })();
 ```
+
+バッファやチャート配列を `while (arr.length > N) arr.shift()` で詰めると、タブが隠れていた間に
+溜まった数十万件に対して 1 件ずつ shift する O(n²) の処理になり、復帰時にタブが固まる
+（展示ページで実際に発生。再現は `tests/example-render-buffer-backlog.test.js`）。
 
 ## Common Mistakes to Avoid
 

@@ -87,18 +87,27 @@ class ChartFeed {
     }
     push(values) {
         this.pending.push(values);
+        this.count++; // 受信の通し番号（表示に乗らない分も進む）
+        // 描画ループ（rAF）はタブ非表示・ウィンドウの完全遮蔽で止まるが、コールバックは 200Hz で
+        // 来続ける。表示できるのは直近 HISTORY 件だけなので、それ以上は溜めない（溜めた分を復帰時に
+        // 1 件ずつ shift すると O(n²) になり、数十分タブが固まる）
+        if (this.pending.length > HISTORY * 2) this.pending.splice(0, this.pending.length - HISTORY);
     }
     flush() {
         if (this.pending.length === 0) return false;
         const data = this.chart.data;
-        for (const values of this.pending) {
-            data.labels.push(this.count++);
+        const skipped = Math.max(0, this.pending.length - HISTORY);
+        const base = this.count - this.pending.length; // pending[0] の通し番号
+        for (let k = skipped; k < this.pending.length; k++) {
+            const values = this.pending[k];
+            data.labels.push(base + k);
             values.forEach((v, i) => data.datasets[i].data.push(v));
         }
         this.pending.length = 0;
-        while (data.labels.length > HISTORY) {
-            data.labels.shift();
-            data.datasets.forEach(ds => ds.data.shift());
+        const excess = data.labels.length - HISTORY;
+        if (excess > 0) { // 余剰は一括で切り落とす（while + shift() は使わない）
+            data.labels.splice(0, excess);
+            data.datasets.forEach(ds => ds.data.splice(0, excess));
         }
         return true;
     }

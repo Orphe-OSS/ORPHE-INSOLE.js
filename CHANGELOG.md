@@ -66,6 +66,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- examples: 描画用の受信バッファに上限が無く、タブ非表示・ウィンドウの完全遮蔽で描画ループ（rAF）が止まっている間に
+  200 Hz の受信が溜まり続け（約 80 分で 1 本あたり数十万件・RSS 750 MB）、復帰時の flush が「全件 push → 表示件数まで
+  1 件ずつ shift」の O(n²) となってレンダラが数十分 CPU 99% で固まっていた（展示ページで実機接続中に発生。
+  Node でも 2 万件 171 ms → 4 万件 710 ms と 4 倍ずつ増える）。exhibition / showcase / VISUALIZE / insole-core-combo の
+  `ChartFeed` は pending を表示件数の 2 倍で打ち切り、flush は直近の表示件数ぶんだけ流して余剰を `splice` で一括削除。
+  calibrated-pressure は pending に上限、data-modes / fifo-vs-realtime は時間窓外の点を push 時に捨てる。
+  CLAUDE.md Pattern 5 にバッファ上限の指針を追記。回帰テスト `tests/example-render-buffer-backlog.test.js`。
 - showcase: INSOLE 1.5 の FW 0.1.7 以降はデバイス名が `Orphe_Insole` から `INS2` に変わったため、名前の接頭辞だけで判別していた統合トグルが製品版と取り違え、Toolkit 接続に失敗していた。INSOLE 1.5 は `INS2` との完全一致で判別するようにし、旧ファームの `Orphe_Insole` 名による判別と chooser の `namePrefix: 'Orphe_Insole'` フィルタは削除した（FW 0.1.7 以降が必要）。選択ダイアログ上の表示名の案内（index.html / i18n.js）と SPEC.md も更新。
 
 ## [1.3.4] - 2026-09-06

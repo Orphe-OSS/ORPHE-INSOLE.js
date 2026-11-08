@@ -99,6 +99,9 @@ let lastArrivalGlobal = null;
 function pushPoint(id, total, mode) {
     lastArrivalGlobal = performance.now();
     points.push({ t: lastArrivalGlobal, v: total, mode, id });
+    // 描画ループ（rAF）はタブ非表示・ウィンドウの完全遮蔽で止まるが、受信は続く。表示窓より古い点は
+    // push 時に捨て、復帰時に巨大配列を 1 件ずつ shift して固まるのを防ぐ
+    while (points.length && points[0].t < lastArrivalGlobal - WINDOW_MS) points.shift();
 }
 
 function drawChart() {
