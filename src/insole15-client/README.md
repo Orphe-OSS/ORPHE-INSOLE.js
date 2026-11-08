@@ -72,6 +72,7 @@ await client.connect(dev);                        // negotiation + X25519/Ed2551
 const cfg = await client.getConfigInfo();         // { deviceIdHex, foot, firmwareVersion, ... }
 await client.startMonitor((frame) => { ... }, {   // { t, serial, press[6], acc{xyz}, gyro{xyz},
   onWindow(info) { ... },                          //   quat{wxyz}, euler{pitch,roll,yaw} }
+  maxLagMs: 0,                                     // readout latency cap; 0 = lossless (see below)
 });
 // quat/euler are ESTIMATED on the client (Madgwick IMU fusion) — the device
 // streams no orientation. `serial` counts delivered + skipped samples, so a gap
@@ -80,6 +81,16 @@ await client.startMonitor((frame) => { ... }, {   // { t, serial, press[6], acc{
 // may legitimately carry 19 or 21 samples. onWindow also reports the BLE
 // round-trip time per get_window; when it stays above 100 ms the loop cannot
 // keep up and too_old losses follow.
+// Latency: frames arrive one 100 ms window at a time. onWindow's `lagMs` is
+// how far the delivered window's end was behind the insole's newest sample
+// (insole clock on both sides) — the floor of the readout latency. When the
+// loop is caught up (too_new) it waits for the window to complete using
+// newest_ms, not a blind 100 ms, so a window is delivered ~RTT + 10 ms after
+// it completes. On a link whose round trip is at or above 100 ms the loop
+// cannot catch up and lagMs settles near the cache depth (~1 s measured on a
+// 90–120 ms link); a live display can pass `maxLagMs` (e.g. 300) to jump to the
+// newest window instead — reported as a 'lag' window with skippedSamples and a
+// serial gap, so never for recording.
 client.stopMonitor();
 // Gait analysis (firmware GaitAnalysisCore): polls get_gait_live; one callback per
 // completed stride. No measurement session is opened and nothing is recorded on

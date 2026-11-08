@@ -131,6 +131,14 @@ Raw（SENSOR_VALUES）は正常なのに `GAIT_NO_NOTIFICATIONS` で失敗する
   として失われる（`lostData` も呼ばれる）。描画の重いページ（3D・高頻度 chart）やホストの Bluetooth 負荷で RTT が
   伸びる。軽いページ（fifo-guide など）で収録する、片足ずつ収録する、`gotBLEFrequency` の実効レートが 200 Hz に
   張り付いているか見る。実測: 軽いページで両足 6 分間 missing 0（RTT 30〜90 ms）、重いページで片側 25〜40% 欠損（RTT 123 ms）。
+- **動きが画面に出るまで遅い・速く動かすと止まって見える**: 1.5 はプル型で、データは 100 ms 窓単位（10 Hz）で届く。
+  1 台では窓の遅れ 40〜60 ms（製品版 20〜40 ms）に描画が乗る。SDK は既定で窓内のパケットを 10 ms 間隔に
+  並べ直して流す（`pacing: 'smooth'`）ので、100 ms ごとの飛び飛びにはならない。それでも 1 秒前後遅れるなら
+  `insoles[i].insole15Diagnostics().lagMs.last`（Toolkit の設定モーダルの状態表示 `lag x.x s`）を見る。往復（RTT）が
+  100 ms に近いリンク（2 台同時の先に接続した側、実測 90〜120 ms）ではループが追いつけず、遅れが FW キャッシュ
+  上限（約 1.7 秒）近くまで溜まる（実測 1.1 秒）。表示用途なら `begin({ insole15: { maxLagMs: 300 } })` で最新の窓へ
+  飛ばす（exhibition が指定。飛ばした分は `lagSkips` / `lostData` に欠損として出るので収録では使わない）。
+  片足だけなら RTT 30 ms で遅れは溜まらない。
 - **Step Analysis が `INSOLE15_GAIT_UNSUPPORTED`**: FW が `get_gait_live` のライブ解析に未対応（0.1.7 未満）。FW 更新。
 - **FIFO を選んだのに Realtime になる**: 仕様。1.5 に FIFO は無く、Toolkit が Realtime へ退避する
   （診断 `insole15-fifo-unavailable`）。Realtime 自体がプル型でリンクが追従できている限りロスレス。

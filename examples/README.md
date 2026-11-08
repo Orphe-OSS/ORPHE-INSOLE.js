@@ -40,6 +40,11 @@
   （fifo-guide / fifo-vs-realtime / lab-recorder / insole-core-combo）は Toolkit が Realtime へ退避して記録する。
 - 2 台同時はホストの Bluetooth 次第で片側が欠損することがある。Toolkit の設定モーダルの状態表示と
   `insoles[i].insole15Diagnostics()` の `lossRate` / `rttMs` で確認する。
+- データは 100 ms 窓単位で届くので表示の遅れは 1 台で 40〜60 ms（SDK 既定の `pacing: 'smooth'` が窓内の
+  パケットを 10 ms 間隔に並べ直す）。2 台同時で先に接続した側は往復が 100 ms に近づいてループが追いつけず、
+  遅れが 1 秒以上に溜まることがある（状態表示 `lag x.x s`）。表示だけのサンプルは
+  `buildInsoleToolkit(..., { insole15: { maxLagMs: 300 } })` で最新の窓へ飛ばす（exhibition が指定。
+  飛ばした分は欠損になるので収録系では指定しない）。
 
 ## FIFO（ロスレス収録）を使いたいとき
 

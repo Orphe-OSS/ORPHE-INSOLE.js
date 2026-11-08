@@ -457,7 +457,19 @@ const ORPHE_INSOLE15 = Object.freeze({
     unspecified: Object.freeze([3, 4, 2, 5, 1, 0]),
   }),
   DEFAULT_GAIT_POLL_MS: 250,
+  // 配信ペーシング（begin({ insole15: { pacing } })）。FW は 100 ms 窓（20 サンプル = 10 パケット）を
+  // まとめて返すので、そのまま流すと got* が 10 Hz のバーストになり、画面の動きが 100 ms ごとの飛び飛びに
+  // 見える。'smooth'（既定）は窓を受け取ったらパケットを 10 ms 間隔（製品版の配信に近い連続性）で流す。
+  // 代わりに最大 1 窓分（100 ms）遅れる。'burst' は届いた瞬間に全部流す（最小遅延・従来動作）。
+  DEFAULT_PACING: 'smooth',
+  PACKET_PERIOD_MS: 10,          // 2 サンプル/パケット × 5 ms
+  PACER_MAX_QUEUE: 15,           // これを超えて滞留したパケットは即時に流す（追加遅延の上限 ≈ 150 ms）
+  DEFAULT_MAX_LAG_MS: 0,         // 0 = 追従遅れで飛ばさない（ロスレス）。表示用途は 300 程度
 });
+
+function _orpheInsole15Now() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
 
 function _orpheInsole15IsDevice(device) {
   return !!device && typeof device.name === 'string' && device.name === ORPHE_INSOLE15.NAME;
@@ -650,6 +662,7 @@ class OrpheInsole {
     this._insole15Options = {};     // begin(options.insole15) で与えた設定
     this._insole15Stats = null;     // insole15Diagnostics() 用のカウンタ
     this._insole15Pending = [];     // 製品版パケット（2 サンプル）にまとめる前のフレーム
+    this._insole15Pacer = null;     // pacing 'smooth' の送出キュー { queue, timer, due, session }
     this._insole15Rate = { count: 0, since: 0 };
     this._insole15Session = 0;      // begin/stop ごとに増やし、古いループの callback を無視する
     OrpheInsole._instances = OrpheInsole._instances || [];
@@ -1171,14 +1184,25 @@ class OrpheInsole {
     return Number.isFinite(s) && s > 0 ? s : ORPHE_INSOLE15.DEFAULT_PRESSURE_SCALE;
   }
 
+  _insole15Pacing() {
+    const p = this._insole15Options && this._insole15Options.pacing;
+    return p === 'burst' || p === 'smooth' ? p : ORPHE_INSOLE15.DEFAULT_PACING;
+  }
+
+  _insole15MaxLagMs() {
+    const v = Number(this._insole15Options && this._insole15Options.maxLagMs);
+    return Number.isFinite(v) && v > 0 ? v : ORPHE_INSOLE15.DEFAULT_MAX_LAG_MS;
+  }
+
   _startInsole15Monitor(client, session) {
     this._insole15Stats = {
-      windows: 0, ok: 0, tooOld: 0, tooNew: 0, timeNotSet: 0, errors: 0,
+      windows: 0, ok: 0, tooOld: 0, tooNew: 0, timeNotSet: 0, errors: 0, lagSkips: 0,
       samples: 0, skippedSamples: 0, droppedOddFrames: 0, gaps: 0,
-      rtt: [], lastRttMs: null, lastWindowAt: null, lastError: null, startedAt: Date.now(),
+      rtt: [], lastRttMs: null, lag: [], lastLagMs: null, lastWindowAt: null, lastError: null, startedAt: Date.now(),
     };
     this._insole15Pending = [];
-    this._insole15Rate = { count: 0, since: (typeof performance !== 'undefined' ? performance.now() : Date.now()) };
+    this._resetInsole15Pacer();
+    this._insole15Rate = { count: 0, since: _orpheInsole15Now() };
     // モニタ再開（stopNotify → startNotify）でクライアントの serial は 0 から振り直されるので、
     // 直前の serial との差分で lostData を出さないようにする
     this._serialInitialized = false;
@@ -1196,6 +1220,7 @@ class OrpheInsole {
           this._log('INSOLE 1.5 monitor error', { message: error && error.message ? error.message : String(error) });
         },
         onWindow: (info) => { if (alive()) this._onInsole15Window(info); },
+        maxLagMs: this._insole15MaxLagMs(),
       },
     ).catch((error) => { if (alive()) this._safeReportError(error, 'insole15Monitor'); });
   }
@@ -1216,7 +1241,49 @@ class OrpheInsole {
       pressureScale: this._insole15PressureScale(),
       channelMap: this._insole15ChannelMap(),
     });
-    this.onRead(dv, 'SENSOR_VALUES');
+    this._emitInsole15Packet(dv);
+  }
+
+  // 再エンコード済みパケットを onRead へ。pacing 'smooth' では 10 ms 間隔に並べ直す（窓単位のバースト解消）。
+  _emitInsole15Packet(dv) {
+    if (this._insole15Pacing() !== 'smooth') {
+      this.onRead(dv, 'SENSOR_VALUES');
+      return;
+    }
+    let p = this._insole15Pacer;
+    if (!p || p.session !== this._insole15Session) {
+      this._resetInsole15Pacer();
+      p = this._insole15Pacer = { queue: [], timer: null, due: 0, session: this._insole15Session };
+    }
+    p.queue.push(dv);
+    // 窓が溜まって滞留が 1.5 窓分を超えたら古い分を即時に流し、追加遅延を上限で抑える
+    // （非表示タブで timer が 1 秒に丸められたときも、ここでバースト配信に落ちる）
+    while (p.queue.length > ORPHE_INSOLE15.PACER_MAX_QUEUE) this.onRead(p.queue.shift(), 'SENSOR_VALUES');
+    if (p.timer === null) {
+      // 前の送出から 10 ms 経っていれば今すぐ、まだなら次の送出時刻（due）まで待つ。空いた時間は持ち越さない
+      const now = _orpheInsole15Now();
+      if (p.due < now) p.due = now;
+      this._drainInsole15Pacer();
+    }
+  }
+
+  _drainInsole15Pacer() {
+    const p = this._insole15Pacer;
+    if (!p || p.session !== this._insole15Session) return;
+    p.timer = null;
+    const now = _orpheInsole15Now();
+    while (p.queue.length && p.due <= now) {
+      p.due += ORPHE_INSOLE15.PACKET_PERIOD_MS;
+      this.onRead(p.queue.shift(), 'SENSOR_VALUES');
+    }
+    if (!p.queue.length) return; // due は次の送出時刻として残す（同じ窓の続きが同期的に届く）
+    p.timer = setTimeout(() => this._drainInsole15Pacer(), Math.max(1, p.due - _orpheInsole15Now()));
+  }
+
+  _resetInsole15Pacer() {
+    const p = this._insole15Pacer;
+    if (p && p.timer !== null) clearTimeout(p.timer);
+    this._insole15Pacer = null;
   }
 
   // get_window 1 回ごとの結果（診断・実効レート）
@@ -1225,10 +1292,15 @@ class OrpheInsole {
     if (!s) return;
     s.windows++;
     s.lastWindowAt = Date.now();
-    if (Number.isFinite(info.rttMs)) {
+    if (info.status !== 'lag' && Number.isFinite(info.rttMs)) {
       s.lastRttMs = info.rttMs;
       s.rtt.push(info.rttMs);
       if (s.rtt.length > 600) s.rtt.splice(0, s.rtt.length - 600);
+    }
+    if (info.status === 'ok' && Number.isFinite(info.lagMs)) {
+      s.lastLagMs = info.lagMs;
+      s.lag.push(info.lagMs);
+      if (s.lag.length > 600) s.lag.splice(0, s.lag.length - 600);
     }
     if (info.status === 'ok') {
       s.ok++;
@@ -1236,6 +1308,10 @@ class OrpheInsole {
       this._insole15Rate.count += info.samples || 0;
     } else if (info.status === 'too_old') {
       s.tooOld++;
+      s.gaps++;
+      s.skippedSamples += info.skippedSamples || 0;
+    } else if (info.status === 'lag') {
+      s.lagSkips++;          // maxLagMs で意図的に飛ばした（表示用途のみ。欠損として計上する）
       s.gaps++;
       s.skippedSamples += info.skippedSamples || 0;
     } else if (info.status === 'too_new') {
@@ -1250,7 +1326,7 @@ class OrpheInsole {
       s.errors++;
     }
     // 実効サンプルレート（frames/s）を約 1 秒ごとに gotBLEFrequency へ（製品版の実測 Hz 表示と同じ口）
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const now = _orpheInsole15Now();
     const elapsed = now - this._insole15Rate.since;
     if (elapsed >= 1000) {
       const hz = this._insole15Rate.count * 1000 / elapsed;
@@ -1261,8 +1337,9 @@ class OrpheInsole {
 
   /**
    * INSOLE 1.5 の通信診断。製品版では null。
-   * @returns {?object} { windows, ok, tooOld, tooNew, timeNotSet, errors, samples, skippedSamples, gaps,
-   *   lossRate, rttMs: {p50, p90, max, last}, config: {foot, firmwareVersion, deviceId}, monitoring }
+   * @returns {?object} { windows, ok, tooOld, tooNew, timeNotSet, errors, lagSkips, samples, skippedSamples, gaps,
+   *   lossRate, rttMs: {p50, p90, max, last}, lagMs: {p50, p90, max, last}（配信した窓の末尾が端末の最新サンプルから
+   *   どれだけ遅れていたか = 表示遅延の下限）, pacing, maxLagMs, config: {foot, firmwareVersion, deviceId}, monitoring }
    */
   insole15Diagnostics() {
     if (!this.isInsole15) return null;
@@ -1281,12 +1358,16 @@ class OrpheInsole {
       tooNew: s ? s.tooNew : 0,
       timeNotSet: s ? s.timeNotSet : 0,
       errors: s ? s.errors : 0,
+      lagSkips: s ? s.lagSkips : 0,
       samples: delivered,
       skippedSamples: s ? s.skippedSamples : 0,
       droppedOddFrames: s ? s.droppedOddFrames : 0,
       gaps: s ? s.gaps : 0,
       lossRate: delivered + lost > 0 ? lost / (delivered + lost) : 0,
       rttMs: s ? { p50: pct(s.rtt, 0.5), p90: pct(s.rtt, 0.9), max: pct(s.rtt, 1), last: s.lastRttMs } : null,
+      lagMs: s ? { p50: pct(s.lag, 0.5), p90: pct(s.lag, 0.9), max: pct(s.lag, 1), last: s.lastLagMs } : null,
+      pacing: this._insole15Pacing(),
+      maxLagMs: this._insole15MaxLagMs(),
       lastWindowAt: s ? s.lastWindowAt : null,
       lastError: s ? s.lastError : null,
       monitoring: !!(this._insole15 && this._insole15.isMonitoring),
@@ -1304,6 +1385,7 @@ class OrpheInsole {
     const client = this._insole15;
     this._insole15Session++;
     this._insole15Pending = [];
+    this._resetInsole15Pacer();
     if (!client) return;
     this._insole15 = null;
     try { client.stopGaitMonitor(); } catch { /* noop */ }
@@ -2066,6 +2148,7 @@ class OrpheInsole {
       const client = this._insole15;
       if (client) { try { client.stopMonitor(); } catch { /* noop */ } }
       this._insole15Pending = [];
+      this._resetInsole15Pacer();
       this.onStopNotify(uuid);
       return Promise.resolve();
     }

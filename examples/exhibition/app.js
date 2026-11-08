@@ -493,6 +493,10 @@ window.onload = function () {
                 streamingMode: 4,          // press + acc + gyro + quat（この画面は全部使う）
                 autoReconnect: true,
                 sensorDataMode: 'realtime',
+                // INSOLE 1.5（プル型 100 ms 窓）: 展示表示なので欠損より遅延を嫌う。追従遅れが 300 ms を超えたら
+                // 最新の窓へ飛ぶ（飛ばした分は lostData / lagSkips に出る）。pacing は SDK 既定の 'smooth'
+                // （パケットを 10 ms 間隔で配信し、100 ms ごとのバーストで動きが飛び飛びにならない）
+                insole15: { maxLagMs: 300 },
                 // 接続はRawだけで確立し、Step Analysisは接続後に追加する
                 // （enableStepAnalysisWhenReady。最終形は realtime-full-step 相当）
                 outputs: { sensorValues: true, stepAnalysis: false },

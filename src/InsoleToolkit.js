@@ -1800,7 +1800,9 @@ function syncInsoleToolkitControls(no) {
         } else if (state.insole15) {
             const d = state.insole15Diagnostics;
             const loss = d && d.lossRate > 0 ? ` — loss ${(d.lossRate * 100).toFixed(1)}%` : '';
-            status.innerText = `Active: INSOLE 1.5 Realtime 200 Hz${state.outputs.stepAnalysis ? ' + Step Analysis (polling)' : ''}${loss}`;
+            // 追従遅れ（配信した窓の末尾が端末の最新からどれだけ遅れているか）。往復が窓長 100 ms に近いと 1 秒以上に溜まる
+            const lag = d && d.lagMs && d.lagMs.last !== null && d.lagMs.last >= 300 ? ` — lag ${(d.lagMs.last / 1000).toFixed(1)} s` : '';
+            status.innerText = `Active: INSOLE 1.5 Realtime 200 Hz${state.outputs.stepAnalysis ? ' + Step Analysis (polling)' : ''}${loss}${lag}`;
         } else {
             const raw = state.sensorDataMode === 'fifo' ? 'FIFO Raw Data' : 'Realtime Raw Data';
             status.innerText = `Active: ${raw}${state.outputs.stepAnalysis ? ' + Step Analysis' : ''}`;

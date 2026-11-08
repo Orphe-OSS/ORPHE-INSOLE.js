@@ -172,7 +172,11 @@ insole.insole15Diagnostics();  // 窓数・欠損（too_old）・RTT・foot / fi
 `begin({ insole15: { pressureScale } })` で変更可）、quat/euler はクライアント側の IMU 融合推定、
 ストリーミングモード指定と FIFO は無効（常に全データ 200 Hz。Toolkit は FIFO 選択時も Realtime へ退避）。
 2 台同時はホストの Bluetooth 次第で片側のリンクが 100 ms 窓に追いつけず欠損することがあるため、
-`insole15Diagnostics().lossRate` と計測結果の `missing` を確認してください。詳細は `CLAUDE.md` の
+`insole15Diagnostics().lossRate` と計測結果の `missing` を確認してください。
+データは 100 ms 窓単位で届くプル型なので、表示の遅れは 1 台で 40〜60 ms（製品版 20〜40 ms）。SDK は既定で
+窓内のパケットを 10 ms 間隔に並べ直して流します（`insole15: { pacing: 'smooth' | 'burst' }`）。往復が 100 ms に
+近いリンクでは遅れが 1 秒以上に溜まるので（`insole15Diagnostics().lagMs`）、表示用途では
+`insole15: { maxLagMs: 300 }` で最新へ飛ばせます（欠損になるため収録では指定しない）。詳細は `CLAUDE.md` の
 「INSOLE 1.5（INS2）対応」と `src/insole15-client/README.md`。
 
 ### Tutorial

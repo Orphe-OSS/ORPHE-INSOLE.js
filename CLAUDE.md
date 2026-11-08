@@ -303,11 +303,14 @@ INSOLE 1.5（BLE 名 `INS2`、FW 0.1.7 以降）は製品版と BLE プロトコ
 // 製品版とまったく同じ書き方。INS2 を選ぶと内部で 1.5 経路に分岐する
 await insole.begin('SENSOR_VALUES', { streamingMode: 4, autoReconnect: true,
   insole15: { pressureScale: 10 /* 既定 */, requireEncryption: true, pinIdentity: true,
-              windowTimeoutMs: 1000 /* get_window 応答待ち上限。FW キャッシュ 1.7 秒内に再要求できる値 */ } });
+              windowTimeoutMs: 1000, /* get_window 応答待ち上限。FW キャッシュ 1.7 秒内に再要求できる値 */
+              pacing: 'smooth',      /* 既定。窓内の 10 パケットを 10 ms 間隔で配信（'burst' = 届いた瞬間に全部） */
+              maxLagMs: 0 } });      /* 既定 0 = ロスレス。表示用途は 300（追従遅れが溜まったら最新の窓へ飛ぶ） */
 insole.generation;            // 1 = 製品版, 2 = INSOLE 1.5
 insole.isInsole15;            // true
-insole.insole15Diagnostics(); // { windows, ok, tooOld, tooNew, errors, samples, skippedSamples, gaps,
-                              //   lossRate, rttMs: {p50, p90, max, last}, config: {foot, firmwareVersion, deviceId} }
+insole.insole15Diagnostics(); // { windows, ok, tooOld, tooNew, errors, lagSkips, samples, skippedSamples, gaps,
+                              //   lossRate, rttMs: {p50, p90, max, last}, lagMs: {同}（表示遅延の下限）,
+                              //   pacing, maxLagMs, config: {foot, firmwareVersion, deviceId} }
 insole.lastInsole15Frame;     // 直近の生フレーム { t, serial, press[6] mV, acc m/s², gyro dps, quat(推定) }
 ```
 
@@ -345,6 +348,16 @@ acc m/s² → G（±16 G = index 3）、gyro dps（±2000 dps = index 3、感度
   5 秒）がキャッシュを超えるため、SDK は get_window だけ `windowTimeoutMs`（既定 1000 ms）で打ち切って
   同じ窓を再要求する。`insole15Diagnostics().lossRate / rttMs / tooOld / errors` と Toolkit の計測結果
   `missing` で必ず確認する。
+- **レイテンシー（プル型の宿命）**: FW は要求された 100 ms 窓を返すので、データは **10 Hz の窓単位**で届く。
+  窓の遅れは最短で RTT ＋ 窓完成待ち（1 台・RTT 30 ms で実測 40〜60 ms。製品版の push は 20〜40 ms）。
+  追いついたとき（`too_new`）の再要求は `newest_ms` から窓の残り時間を計算して待つ（盲目的な 100 ms 待ちは廃止）。
+  SDK 既定の **`pacing: 'smooth'`** は窓内の 10 パケットを 10 ms 間隔で流し、画面の動きが 100 ms ごとの
+  飛び飛びになるのを防ぐ（最大 +100 ms。serial・値は不変）。最小遅延が要るゲーム・可聴化は `pacing: 'burst'`。
+  **RTT が窓長 100 ms に近いリンク**（このMacの 2 台同時の 1 本目: 90〜120 ms）ではループが追いつけず、
+  追従遅れが FW キャッシュ上限（約 1.7 秒）近くまで溜まって**表示が 1 秒以上遅れる**（実測 1.06〜1.17 秒。
+  `insole15Diagnostics().lagMs`、Toolkit の状態表示に `lag 1.1 s`）。表示用途は **`maxLagMs: 300`** で最新の窓へ
+  飛ばす（exhibition が指定。飛ばした分は `lagSkips` / `skippedSamples` / `lostData` に欠損として出るので
+  **収録では指定しない**）。
 
 公開範囲: クライアントの proto は `set_time / get_window / get_config / get_gait_live` のサブセットのみ
 （OTA・ログ消去・ID 書換は含めない）。ビルド: `cd src/insole15-client && npm ci && npm run build`

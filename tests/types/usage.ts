@@ -283,7 +283,10 @@ if (insole.isInsole15) {
         const lossRate: number = diag.lossRate;
         const rttP90: number | null = diag.rttMs ? diag.rttMs.p90 : null;
         const foot: 'left' | 'right' | 'unspecified' | undefined = diag.config?.foot;
-        void lossRate; void rttP90; void foot;
+        const lagP50: number | null = diag.lagMs ? diag.lagMs.p50 : null;
+        const pacing: 'burst' | 'smooth' = diag.pacing;
+        const lagSkips: number = diag.lagSkips + diag.maxLagMs;
+        void lossRate; void rttP90; void foot; void lagP50; void pacing; void lagSkips;
     }
     const frame = insole.lastInsole15Frame;
     if (frame && frame.press) { const mv: number = frame.press[0]; void mv; }
@@ -296,8 +299,10 @@ void OrpheInsole.insole15ClientAvailable();
 void OrpheInsole.loadInsole15Client();
 void insole.begin('SENSOR_VALUES', {
     streamingMode: 4,
-    insole15: { pressureScale: 10, pressureChannelMap: { left: [3, 4, 2, 5, 1, 0] }, requireEncryption: true, pinIdentity: true },
+    insole15: { pressureScale: 10, pressureChannelMap: { left: [3, 4, 2, 5, 1, 0] }, requireEncryption: true, pinIdentity: true, pacing: 'smooth', maxLagMs: 300 },
 });
+const packetPeriod: number = OrpheInsole.INSOLE15.PACKET_PERIOD_MS;
+void packetPeriod;
 const packet: DataView = OrpheInsole.encodeInsole15Packet([
     { t: 0, serial: 0, press: [0, 0, 0, 0, 0, 0], acc: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0 }, quat: { w: 1, x: 0, y: 0, z: 0 }, euler: null },
     { t: 5, serial: 1, press: null, acc: null, gyro: null, quat: null, euler: null },

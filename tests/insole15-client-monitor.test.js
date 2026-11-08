@@ -167,11 +167,105 @@ async function testAligningThenTooOld() {
   console.log('  ok  aligning is not loss; too_old after delivery skips serials');
 }
 
+function okWindow(startMs, newestMs) {
+  return {
+    status: WS.WINDOW_STATUS_OK, startMs, oldestMs: startMs - 1000, newestMs,
+    imu: Array.from({ length: 20 }, sample).map((s) => s.imu),
+    pressure: Array.from({ length: 20 }, sample).map((s) => s.pressure),
+  };
+}
+
+async function testTooNewDeadlineWait() {
+  // 追いついた（too_new）あとの再要求は newest_ms から窓の残り時間を計算して待つ。盲目的に 100 ms 待たない。
+  // newest_ms が無い応答では従来どおり 100 ms 待つ。
+  const client = new Insole15.InsoleClient({ requireEncryption: false, pinIdentity: false });
+  const requestAt = [];
+  let withNewest = true;
+  let n = 0;
+  fakeFirmware(client, {
+    rttMs: 2,
+    respond: (startMs) => {
+      n++;
+      requestAt.push(Date.now());
+      if (n % 2 === 1) {
+        // 奇数回目: まだ 30 ms 分が未取得（newest = start + 70）
+        return { status: WS.WINDOW_STATUS_TOO_NEW, startMs, oldestMs: startMs - 500, newestMs: withNewest ? startMs + 70 : 0, imu: [], pressure: [] };
+      }
+      return okWindow(startMs, startMs + 105); // 窓末尾から 5 ms 先まで取得済み
+    },
+  });
+  const windows = [];
+  const p = client.startMonitor(() => {}, { onWindow: (w) => windows.push(w) });
+  await sleep(300);
+  withNewest = false;
+  const switchAt = requestAt.length;
+  await sleep(350);
+  client.stopMonitor();
+  await p;
+  // too_new の次の要求までの間隔（応答時刻 → 次の要求）: 残り 30 ms − RTT 2 + margin 10 ≈ 38 ms
+  const waits = (from, to) => {
+    const out = [];
+    for (let i = Math.max(1, from); i < Math.min(to, windows.length + 1, requestAt.length); i++) {
+      if (windows[i - 1] && windows[i - 1].status === 'too_new') out.push(requestAt[i] - requestAt[i - 1]);
+    }
+    return out;
+  };
+  const deadlineWaits = waits(1, switchAt);
+  assert.ok(deadlineWaits.length >= 2, `enough too_new round trips (${deadlineWaits.length})`);
+  for (const w of deadlineWaits) assert.ok(w >= 25 && w <= 80, `too_new with newest_ms waits for the remainder, not 100 ms (got ${w} ms)`);
+  const blindWaits = waits(switchAt + 1, requestAt.length);
+  assert.ok(blindWaits.length >= 1, `enough too_new round trips without newest_ms (${blindWaits.length})`);
+  for (const w of blindWaits) assert.ok(w >= 95, `too_new without newest_ms falls back to 100 ms (got ${w} ms)`);
+  // ok 窓の lagMs = newest − 窓末尾 = 5
+  const oks = windows.filter((w) => w.status === 'ok');
+  assert.ok(oks.length >= 3);
+  for (const w of oks) assert.equal(w.lagMs, 5);
+  for (const w of windows.filter((x) => x.status === 'too_new')) assert.equal(w.lagMs, null);
+  console.log('  ok  too_new waits for the window to complete (newest_ms), not a blind 100 ms');
+}
+
+async function testMaxLagJump() {
+  // 追従遅れ: FW の最新が常に窓末尾より 1.2 秒先。maxLagMs 未指定なら 1 窓ずつ歩いてロスレス、
+  // maxLagMs: 300 なら 'lag' で最新の窓へ飛び、飛ばした分が skippedSamples / serial の飛びに出る。
+  async function run(maxLagMs) {
+    const client = new Insole15.InsoleClient({ requireEncryption: false, pinIdentity: false });
+    const fw = fakeFirmware(client, { rttMs: 2, respond: (startMs) => okWindow(startMs, startMs + 100 + 1200) });
+    const windows = [];
+    const frames = [];
+    const p = client.startMonitor((f) => frames.push(f), { onWindow: (w) => windows.push(w), maxLagMs });
+    await sleep(60);
+    client.stopMonitor();
+    await p;
+    return { fw, windows, frames };
+  }
+  const lossless = await run(0);
+  assert.ok(lossless.windows.length >= 5);
+  assert.ok(lossless.windows.every((w) => w.status === 'ok'), 'without maxLagMs the loop never jumps');
+  for (const w of lossless.windows) assert.equal(w.lagMs, 1200);
+  for (let i = 1; i < lossless.fw.requests.length; i++) assert.equal(lossless.fw.requests[i] - lossless.fw.requests[i - 1], 100, 'walks one window at a time');
+  lossless.frames.forEach((f, i) => assert.equal(f.serial, i));
+
+  const live = await run(300);
+  assert.ok(live.windows.length >= 4);
+  assert.equal(live.windows[0].status, 'ok');
+  assert.equal(live.windows[1].status, 'lag');
+  assert.equal(live.windows[1].startMs, live.windows[0].startMs + 100, 'lag reports the first window given up');
+  assert.equal(live.windows[1].skippedMs, 1100, 'jumps to the newest complete window (newest − 100)');
+  assert.equal(live.windows[1].skippedSamples, 220);
+  assert.equal(live.windows[1].rttMs, 0);
+  assert.equal(live.fw.requests[1] - live.fw.requests[0], 1200, 'next request is the newest complete window');
+  assert.equal(live.frames[19].serial, 19);
+  assert.equal(live.frames[20].serial, 240, 'serial skips the samples given up');
+  console.log('  ok  maxLagMs jumps to live and reports the samples given up');
+}
+
 async function main() {
   await testSingleLoopAfterQuickRestart();
   await testThrowingHostCallback();
   await testSetTimeFailure();
   await testAligningThenTooOld();
+  await testTooNewDeadlineWait();
+  await testMaxLagJump();
   console.log('insole15-client-monitor.test.js passed');
 }
 

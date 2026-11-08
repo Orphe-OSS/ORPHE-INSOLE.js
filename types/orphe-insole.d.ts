@@ -154,6 +154,20 @@ export interface InsoleInsole15Options {
      * 通知が 1 つ落ちたとき FW キャッシュ（約 1.7 秒）内に再要求できるよう短くしてある。
      */
     windowTimeoutMs?: number;
+    /**
+     * 配信ペーシング（既定 'smooth'）。FW は 100 ms 窓（20 サンプル = 10 パケット）をまとめて返す。
+     * 'burst' は届いた瞬間に全部流す（最小遅延、got* が 10 Hz のバーストになる）。'smooth' はパケットを
+     * 10 ms 間隔に並べ直して流す（画面の動きが 100 ms ごとの飛び飛びにならない。最大 1 窓分 = 100 ms 遅れる）。
+     * 記録される内容（serial・値）はどちらも同じ。
+     */
+    pacing?: 'burst' | 'smooth';
+    /**
+     * 表示遅延の上限 [ms]（既定 0 = 無制限・ロスレス）。配信した窓の末尾が端末の最新サンプルよりこれ以上
+     * 遅れていたら最新の窓まで飛ぶ。飛ばした分は `insole15Diagnostics().lagSkips / skippedSamples` と
+     * `lostData` に欠損として出る。往復（RTT）が窓長 100 ms に近いリンクでは追従遅れが 1 秒以上に溜まるので、
+     * 表示用途では 300 程度を指定する。収録では指定しない。
+     */
+    maxLagMs?: number;
 }
 
 /** INSOLE 1.5 の定数（OrpheInsole.INSOLE15）。 */
@@ -174,6 +188,10 @@ export interface InsoleInsole15Constants {
     readonly DEFAULT_PRESSURE_SCALE: number;
     readonly PRESSURE_CHANNEL_MAP: { readonly left: readonly number[]; readonly right: readonly number[]; readonly unspecified: readonly number[] };
     readonly DEFAULT_GAIT_POLL_MS: number;
+    readonly DEFAULT_PACING: 'smooth';
+    readonly PACKET_PERIOD_MS: number;
+    readonly PACER_MAX_QUEUE: number;
+    readonly DEFAULT_MAX_LAG_MS: number;
 }
 
 /** INSOLE 1.5 クライアント（Insole15Client.js）の 200 Hz フレーム。 */
@@ -195,12 +213,18 @@ export interface InsoleInsole15Diagnostics {
     tooNew: number;
     timeNotSet: number;
     errors: number;
+    /** maxLagMs で意図的に飛ばした回数（skippedSamples / gaps / lossRate にも含まれる）。 */
+    lagSkips: number;
     samples: number;
     skippedSamples: number;
     droppedOddFrames: number;
     gaps: number;
     lossRate: number;
     rttMs: { p50: number | null; p90: number | null; max: number | null; last: number | null } | null;
+    /** 配信した窓の末尾が端末の最新サンプルからどれだけ遅れていたか [ms]（表示遅延の下限。追従できていれば 0〜30）。 */
+    lagMs: { p50: number | null; p90: number | null; max: number | null; last: number | null } | null;
+    pacing: 'burst' | 'smooth';
+    maxLagMs: number;
     lastWindowAt: number | null;
     lastError: unknown;
     monitoring: boolean;

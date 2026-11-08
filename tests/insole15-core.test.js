@@ -51,6 +51,7 @@ class FakeInsole15Client {
   startMonitor(onFrame, opts = {}) {
     this.calls.push('startMonitor');
     this._monitoring = true;
+    this.monitorOpts = opts;
     this.frameCb = onFrame;
     this.windowCb = opts.onWindow;
     this.errorCb = opts.onError;
@@ -205,7 +206,8 @@ async function testBeginAndDispatch() {
   assert.equal(insole.generation, 1);
   assert.equal(OrpheInsole.isInsole15Device(device), true);
   assert.equal(OrpheInsole.isInsole15Device({ name: 'INS0' }), false);
-  const result = await insole.begin('SENSOR_VALUES', { streamingMode: 4 });
+  // pacing 'burst' でパケットを同期配信にして、以下の件数・順序を決定的に確認する（既定 'smooth' は testPacingAndLag）
+  const result = await insole.begin('SENSOR_VALUES', { streamingMode: 4, insole15: { pacing: 'burst' } });
   assert.match(result, /INSOLE 1\.5/);
   assert.equal(insole.generation, 2);
   assert.equal(insole.isInsole15, true);
@@ -215,6 +217,8 @@ async function testBeginAndDispatch() {
   assert.deepEqual(client.calls, ['connect', 'getConfigInfo', 'startMonitor']);
   assert.equal(client.options.requireEncryption, true);
   assert.equal(client.options.pinIdentity, true);
+  assert.equal(client.monitorOpts.maxLagMs, 0, 'lossless by default: the loop never jumps ahead on its own');
+  assert.equal(insole.insole15Diagnostics().pacing, 'burst');
   assert.deepEqual(events.connect, ['SENSOR_VALUES']);
   assert.deepEqual(events.startNotify, ['SENSOR_VALUES']);
   assert.equal(insole.device_information.mount_position, 1, 'right foot → mount_position bit0 = 1');
@@ -458,9 +462,77 @@ async function testLazyLoad() {
   console.log('  ok  Insole15Client lazy load (src / dist.min / no base)');
 }
 
+async function testPacingAndLag() {
+  // 既定 pacing 'smooth': 1 窓（10 パケット）は届いた瞬間のバーストではなく 10 ms 間隔で流れる。
+  // 滞留が PACER_MAX_QUEUE を超えた分は即時に流れ、stop() 後は何も流れない。
+  // maxLagMs は startMonitor に渡り、'lag' 窓は lagSkips / gaps / skippedSamples に欠損として計上される。
+  FakeInsole15Client.instances.length = 0;
+  const device = fakeDevice('INS2', 'dev-pacing');
+  chooserDevice = device;
+  const insole = new OrpheInsole(1);
+  insole.setup();
+  insole.onError = (e) => { throw e; };
+  const arrivals = [];
+  insole.addSensorDataListener((e) => arrivals.push({ serial: e.packet.serial_number, at: performance.now() }));
+  await insole.begin('SENSOR_VALUES', { insole15: { maxLagMs: 300 } });
+  const client = FakeInsole15Client.instances[0];
+  assert.equal(client.monitorOpts.maxLagMs, 300, 'maxLagMs reaches the client loop');
+  assert.equal(insole.insole15Diagnostics().pacing, 'smooth');
+  assert.equal(insole.insole15Diagnostics().maxLagMs, 300);
+
+  client.emitFrames(frames(0, 20));
+  assert.equal(arrivals.length, 1, 'the first packet of a window goes out immediately');
+  await waitFor(() => arrivals.length === 10, 'the window drains', { timeoutMs: 1000 });
+  const span = arrivals[9].at - arrivals[0].at;
+  assert.ok(span >= 70 && span <= 250, `10 packets are paced over ~90 ms (got ${span.toFixed(0)} ms)`);
+  assert.deepEqual(arrivals.map((a) => a.serial), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(arrivals.length, 10, 'nothing more without new frames');
+
+  // 3 窓分（30 パケット）が一度に届く（停滞後の追いつき）: 上限 15 を超えた分は即時、残りはペース配信
+  client.emitFrames(frames(20, 60));
+  assert.ok(arrivals.length >= 10 + 15 && arrivals.length <= 10 + 17, `backlog above the cap is flushed immediately (got ${arrivals.length - 10})`);
+  await waitFor(() => arrivals.length === 40, 'the backlog drains', { timeoutMs: 1000 });
+  for (let i = 1; i < arrivals.length; i++) assert.equal(arrivals[i].serial, arrivals[i - 1].serial + 1, 'order is kept');
+
+  // 診断: ok 窓の lagMs、'lag' 窓（maxLagMs で飛ばした分）は欠損として計上。lag には往復が無い
+  client.windowCb({ status: 'ok', startMs: 0, rttMs: 95, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, lagMs: 1100 });
+  client.windowCb({ status: 'lag', startMs: 100, rttMs: 0, samples: 0, skippedMs: 1000, skippedSamples: 200, oldestMs: null, newestMs: null, lagMs: 1100 });
+  const diag = insole.insole15Diagnostics();
+  assert.equal(diag.lagMs.last, 1100);
+  assert.equal(diag.lagMs.max, 1100);
+  assert.equal(diag.lagSkips, 1);
+  assert.equal(diag.gaps, 1);
+  assert.equal(diag.skippedSamples, 200);
+  assert.equal(diag.rttMs.max, 95, 'a lag entry carries no round trip');
+  assert.ok(diag.lossRate > 0.7, 'samples given up count as loss');
+
+  // stop() 直後: キューに残っていた分は流れない
+  client.emitFrames(frames(80, 20));
+  insole.stop();
+  const afterStop = arrivals.length;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(arrivals.length, afterStop, 'nothing is emitted after stop()');
+  assert.equal(insole._insole15Pacer, null);
+
+  // 'burst' は全部同期
+  FakeInsole15Client.instances.length = 0;
+  const burst = new OrpheInsole(0);
+  burst.setup();
+  chooserDevice = fakeDevice('INS2', 'dev-burst');
+  const packets = [];
+  burst.addSensorDataListener((e) => packets.push(e.packet.serial_number));
+  await burst.begin('SENSOR_VALUES', { insole15: { pacing: 'burst' } });
+  FakeInsole15Client.instances[0].emitFrames(frames(0, 20));
+  assert.equal(packets.length, 10, 'burst pacing emits the whole window synchronously');
+  burst.stop();
+  console.log('  ok  smooth pacing spreads a window over 100 ms; maxLagMs / lag diagnostics');
+}
+
 async function main() {
   testEncode();
   await testBeginAndDispatch();
+  await testPacingAndLag();
   await testPhysicalDisconnectAndReconnect();
   await testBeginFailureCleansUp();
   await testLazyLoad();

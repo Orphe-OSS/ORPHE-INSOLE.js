@@ -10581,6 +10581,8 @@ var Insole15 = (() => {
   // src/client/InsoleClient.ts
   var WINDOW_MS = 100;
   var SAMPLE_PERIOD_MS = 5;
+  var TOO_NEW_MARGIN_MS = 10;
+  var MIN_POLL_WAIT_MS = 10;
   var FOOT_NAME = {
     0: "unspecified",
     1: "left",
@@ -10772,6 +10774,7 @@ var Insole15 = (() => {
       const generation = ++this._monitorGeneration;
       const alive = () => this._monitoring && generation === this._monitorGeneration;
       this._q = [1, 0, 0, 0];
+      const maxLagMs = Number.isFinite(Number(opts.maxLagMs)) && Number(opts.maxLagMs) > 0 ? Number(opts.maxLagMs) : 0;
       const WS = insole.WindowStatus;
       const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
       let base = Date.now();
@@ -10805,10 +10808,20 @@ var Insole15 = (() => {
             } catch (e) {
               opts.onError?.(e);
             }
-            opts.onWindow?.({ status: "ok", startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
+            const lagMs = newestMs !== null ? Math.max(0, newestMs - t) : null;
+            opts.onWindow?.({ status: "ok", startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs, lagMs });
+            if (maxLagMs > 0 && lagMs !== null && newestMs !== null && lagMs > maxLagMs) {
+              const next = newestMs - WINDOW_MS;
+              const skippedMs = next - t;
+              const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+              serial += skippedSamples;
+              t = next;
+              opts.onWindow?.({ status: "lag", startMs: requestedT + WINDOW_MS, rttMs: 0, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs, lagMs });
+            }
           } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
-            opts.onWindow?.({ status: "too_new", startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs });
-            await sleep(WINDOW_MS);
+            opts.onWindow?.({ status: "too_new", startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs, lagMs: null });
+            const wait = newestMs !== null ? Math.min(WINDOW_MS, Math.max(MIN_POLL_WAIT_MS, Math.round(t + WINDOW_MS - newestMs - rttMs + TOO_NEW_MARGIN_MS))) : WINDOW_MS;
+            await sleep(wait);
           } else if (status === WS.WINDOW_STATUS_TOO_OLD) {
             const newest = newestMs ?? t + WINDOW_MS;
             const next = Math.max(t + WINDOW_MS, newest - WINDOW_MS);
@@ -10816,7 +10829,7 @@ var Insole15 = (() => {
             const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
             serial += skippedSamples;
             t = next;
-            opts.onWindow?.({ status: delivered ? "too_old" : "aligning", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
+            opts.onWindow?.({ status: delivered ? "too_old" : "aligning", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs, lagMs: null });
           } else {
             base = Date.now();
             await this.setTime({ epochMs: base });
@@ -10825,12 +10838,12 @@ var Insole15 = (() => {
             const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
             serial += skippedSamples;
             t = base;
-            opts.onWindow?.({ status: "time_not_set", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs });
+            opts.onWindow?.({ status: "time_not_set", startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs, lagMs: null });
           }
         } catch (e) {
           if (!alive()) break;
           opts.onError?.(e);
-          opts.onWindow?.({ status: "error", startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, error: e });
+          opts.onWindow?.({ status: "error", startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, lagMs: null, error: e });
           await sleep(20);
         }
       }
