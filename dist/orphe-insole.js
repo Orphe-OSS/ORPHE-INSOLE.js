@@ -1634,7 +1634,7 @@ function pressureInNewtons(x, calibration, index) {
 //   press [mV]  → values[i] = mV[channelMap[i]] × pressureScale（uint16）。製品版の ADC 生値とは
 //                 由来が異なるので、しきい値は相対値（ベースライン差分）で設計すること。
 // 1.5 の FW は姿勢（quat）を送らないため、quat/euler はクライアント側の IMU 融合（Madgwick）推定。
-// 保守系 RPC（OTA・ログ消去・ID 書換）はクライアントに含めない（公開範囲は set_time /
+// 保守系 RPC はクライアントに含めない（公開範囲は set_time /
 // get_window / get_config / get_gait_live のみ）。
 const ORPHE_INSOLE15 = Object.freeze({
   NAME: 'INS2',                                            // FW 0.1.7 以降の BLE 名（完全一致で判別）
@@ -2937,7 +2937,7 @@ class OrpheInsole {
    */
   resetAnalysisLogs() {
     if (this.isInsole15) {
-      // 1.5 のログ消去は保守系 RPC（公開クライアントには含めない）。
+      // 1.5 では該当する操作は保守系 RPC（公開クライアントには含めない）。
       console.warn('OrpheInsole.resetAnalysisLogs() is not available on INSOLE 1.5.');
       return;
     }

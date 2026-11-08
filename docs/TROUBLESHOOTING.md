@@ -143,4 +143,4 @@ Raw（SENSOR_VALUES）は正常なのに `GAIT_NO_NOTIFICATIONS` で失敗する
 - **FIFO を選んだのに Realtime になる**: 仕様。1.5 に FIFO は無く、Toolkit が Realtime へ退避する
   （診断 `insole15-fifo-unavailable`）。Realtime 自体がプル型でリンクが追従できている限りロスレス。
 - **`setDataStreamingMode` / `read` / `write` / `getDateTime` が効かない・`INSOLE15_UNSUPPORTED`**: 仕様。
-  1.5 は常に全データ 200 Hz。保守系 RPC（ログ消去・OTA・ID 書換）は公開クライアントに含めていない。
+  1.5 は常に全データ 200 Hz。保守系 RPC は公開クライアントに含めていない。

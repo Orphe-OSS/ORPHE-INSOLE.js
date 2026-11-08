@@ -360,7 +360,7 @@ acc m/s² → G（±16 G = index 3）、gyro dps（±2000 dps = index 3、感度
   **収録では指定しない**）。
 
 公開範囲: クライアントの proto は `set_time / get_window / get_config / get_gait_live` のサブセットのみ
-（OTA・ログ消去・ID 書換は含めない）。ビルド: `cd src/insole15-client && npm ci && npm run build`
+（保守系コマンドは含めない）。ビルド: `cd src/insole15-client && npm ci && npm run build`
 → `npm run build`（dist へコピー・minify）。回帰テスト: `tests/insole15-core.test.js`（再エンコード・
 分岐・欠損・再接続・遅延ロード）、`tests/insole15-gait.test.js`、`tests/insole15-toolkit.test.js`。
 
