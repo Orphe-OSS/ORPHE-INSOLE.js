@@ -563,6 +563,17 @@ window.onload = function () {
             applyMountPositionWhenReady(this);
             enableStepAnalysisWhenReady(this.id);
         };
+        // 切断時は次の接続に備えて Raw のみへ戻す（同じスロットに別個体が繋がることもある）。
+        // Step を含んだ状態のまま接続すると、Step 出力の無い個体（旧 FW）では接続自体が
+        // GAIT_NO_NOTIFICATIONS で失敗して切断される。Step は接続後に enableStepAnalysisWhenReady が足す。
+        // Toolkit も onDisconnect を包んでいる（markDisconnected）ので、上書きせずに連鎖させる
+        const toolkitOnDisconnect = insole.onDisconnect;
+        insole.onDisconnect = function (...args) {
+            if (typeof toolkitOnDisconnect === 'function') toolkitOnDisconnect.apply(this, args);
+            stepUnavailable[this.id] = null;
+            const session = getInsoleToolkitSession(this.id);
+            if (session) session.setOutputs({ sensorValues: true, stepAnalysis: false }).catch(() => {});
+        };
     }
 
     applySide(0, 'L');

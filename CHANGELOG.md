@@ -73,6 +73,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ChartFeed` は pending を表示件数の 2 倍で打ち切り、flush は直近の表示件数ぶんだけ流して余剰を `splice` で一括削除。
   calibrated-pressure は pending に上限、data-modes / fifo-vs-realtime は時間窓外の点を push 時に捨てる。
   CLAUDE.md Pattern 5 にバッファ上限の指針を追記。回帰テスト `tests/example-render-buffer-backlog.test.js`。
+- exhibition: 同じスロットで Step Analysis を有効化したあとの再接続（別個体を含む）が、Step を含んだ設定のまま
+  接続されるため、Step 出力の無い個体（旧 FW）では接続自体が `GAIT_NO_NOTIFICATIONS` で失敗して切断されていた。
+  切断時に Raw のみへ戻し、「Raw で接続してから Step を足す」順を 2 回目以降も保つ（製品版 INSOLE で実機確認）。
 - showcase: INSOLE 1.5 の FW 0.1.7 以降はデバイス名が `Orphe_Insole` から `INS2` に変わったため、名前の接頭辞だけで判別していた統合トグルが製品版と取り違え、Toolkit 接続に失敗していた。INSOLE 1.5 は `INS2` との完全一致で判別するようにし、旧ファームの `Orphe_Insole` 名による判別と chooser の `namePrefix: 'Orphe_Insole'` フィルタは削除した（FW 0.1.7 以降が必要）。選択ダイアログ上の表示名の案内（index.html / i18n.js）と SPEC.md も更新。
 
 ## [1.3.4] - 2026-09-06
