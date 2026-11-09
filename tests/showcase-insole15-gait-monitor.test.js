@@ -1,8 +1,8 @@
 /**
- * INSOLE 1.5 クライアント（examples/showcase/lib）の歩容ポーリング
+ * INSOLE 1.5 クライアント（src/insole15-client）の歩容ポーリング
  * startGaitMonitor() / stopGaitMonitor() のライフサイクル回帰テスト。
  *
- * 事前ビルド済みバンドル insole-1.5.web.js（グローバル Insole15）を vm で読み込み、
+ * 事前ビルド済みバンドル src/Insole15Client.js（グローバル Insole15）を vm で読み込み、
  * get_gait_live を模擬 FW に差し替えて検証する（BLE は使わない）。
  *
  * 模擬 FW の挙動（lib/insole.proto の GetGaitLive の説明どおり）:
@@ -25,7 +25,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const bundlePath = path.join(root, 'examples/showcase/lib/insole-1.5.web.js');
+const bundlePath = path.join(root, 'src/Insole15Client.js');
 
 function loadInsole15() {
     const code = fs.readFileSync(bundlePath, 'utf8');
@@ -36,7 +36,7 @@ function loadInsole15() {
     sandbox.globalThis = sandbox;
     sandbox.self = sandbox;
     vm.createContext(sandbox);
-    vm.runInContext(`${code}\n;globalThis.__Insole15 = Insole15;`, sandbox, { filename: 'insole-1.5.web.js' });
+    vm.runInContext(`${code}\n;globalThis.__Insole15 = Insole15;`, sandbox, { filename: 'Insole15Client.js' });
     return sandbox.__Insole15;
 }
 

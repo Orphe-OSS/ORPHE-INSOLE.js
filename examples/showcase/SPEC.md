@@ -182,14 +182,14 @@ examples/showcase/
 ├── assets/
 │   ├── orphe-insole-left.png / -right.png   # hula-motion-sonifier から流用
 │   └── models/orphe_shoeL3.stl / orphe_shoeR3.stl  # ORPHE-CORE.js から流用
-├── lib/              # INSOLE 1.5 用クライアント（ビルド済み insole-1.5.web.js を同梱。lib/README.md）
+├── (../../src/Insole15Client.js)  # INSOLE 1.5 用クライアント（コア SDK 共用。src/insole15-client/README.md）
 ├── SPEC.md           # 本書
 └── README.md         # 起動方法
 ```
 
 データフロー: ライブ（`got*` コールバック）とデモ（再生プレイヤー）はどちらも同じ `dispatchFrame()` に1サンプル分のフレームを渡し、可視化モジュールはデータ源を区別しない。
 
-接続（統合トグル）: ヘッダの接続トグルは製品版・INSOLE 1.5 の両方を1つのデバイス選択ダイアログで受け付け、名前（`INS2` との完全一致。FW 0.1.7 以降）で INSOLE 1.5 を判別して `lib/` のクライアント（Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得）へ振り分ける（`app.js` の `installUnifiedToggle()`）。製品版は従来どおり Toolkit の `session.connect()` → `begin()` で接続する。INSOLE 1.5 は姿勢を送らないためクライアント側で Madgwick により quat/euler を推定し、加速度は m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（`INSOLE15_PRESSURE_MAP_LEFT/RIGHT`。接続時に取得した foot で選択）をして同じ `dispatchFrame()` に流す。pitch/roll の表示補正は上記スイッチが両者共通で担う。歩容解析は INSOLE 1.5 用の計測器（`createInsole15GaitSource()`: FW の `get_gait_live` をポーリング → `OrpheInsoleGait` 互換 row。計測セッションは開かない）を `gaits[id]` に差し込み、パネルの表示・CSV 保存を製品版と共通にする。bleRPC は再入不可のため、クライアント（`lib/src/client/InsoleClient.ts`）が全 RPC を 1 本の promise chain で直列化し、センサのウィンドウ取得と歩容ポーリングを同時に走らせる。
+接続（統合トグル）: ヘッダの接続トグルは製品版・INSOLE 1.5 の両方を1つのデバイス選択ダイアログで受け付ける。判別（名前 `INS2` との完全一致。FW 0.1.7 以降）・暗号化 bleRPC 接続・100 ms ウィンドウのライブ取得・単位変換（加速度 m/s²→G、圧力[mV]×10＋左右別チャネル並び替え）・Madgwick による quat/euler 推定・歩容解析（FW の `get_gait_live` ポーリング → `OrpheInsoleGait` と同じ row）は**すべてコア SDK（`src/ORPHE-INSOLE.js` / `src/InsoleGait.js`）が担う**ため、showcase 側に INSOLE 1.5 専用コードは無い（製品版と同じ Toolkit の `session.connect()` → `begin()`）。pitch/roll の表示補正は上記スイッチが両者共通で担う。INSOLE 1.5 接続中は FIFO トグルを無効化し、Realtime 自体がプル型でロスレスである旨を表示する。
 
 ## 6. 非機能要件
 

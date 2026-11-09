@@ -94,7 +94,7 @@ export class BlerpcClient extends GeneratedClient {
     return this._maxRequestPayloadSize;
   }
 
-  private _readTimeout(firstRead: boolean): number {
+  protected _readTimeout(firstRead: boolean): number {
     if (!firstRead) return this._timeout;
     return this._timeout > 2000 ? this._timeout : 2000;
   }

@@ -132,7 +132,112 @@ export interface InsoleBeginOptions {
     reconnectIntervalMs?: number;
     reconnectMaxAttempts?: number;
     forceDeviceSelection?: boolean;
+    /** INSOLE 1.5（INS2）を選んだときだけ使われる設定。製品版では無視される。 */
+    insole15?: InsoleInsole15Options;
 }
+
+/** INSOLE 1.5 固有の begin() オプション。 */
+export interface InsoleInsole15Options {
+    /** 圧力 [mV] → press.values の倍率（既定 10）。 */
+    pressureScale?: number;
+    /**
+     * 圧力チャネルの並び替え（公式番号順 values[0..5] に対応する元チャネル index）。
+     * 配列なら左右共通、{ left, right } なら get_config の foot で選ぶ。既定は OrpheInsole.INSOLE15.PRESSURE_CHANNEL_MAP。
+     */
+    pressureChannelMap?: number[] | { left?: number[]; right?: number[]; unspecified?: number[] };
+    /** bleRPC の暗号化を必須にする（既定 true）。 */
+    requireEncryption?: boolean;
+    /** TOFU で端末鍵を固定する（既定 true）。 */
+    pinIdentity?: boolean;
+    /**
+     * get_window の応答待ち上限 [ms]（既定 1000、0 = bleRPC 既定＝端末の 5000）。
+     * 通知が 1 つ落ちたとき FW キャッシュ（約 1.7 秒）内に再要求できるよう短くしてある。
+     */
+    windowTimeoutMs?: number;
+    /**
+     * 配信ペーシング（既定 'smooth'）。FW は 100 ms 窓（20 サンプル = 10 パケット）をまとめて返す。
+     * 'burst' は届いた瞬間に全部流す（最小遅延、got* が 10 Hz のバーストになる）。'smooth' はパケットを
+     * 10 ms 間隔に並べ直して流す（画面の動きが 100 ms ごとの飛び飛びにならない。最大 1 窓分 = 100 ms 遅れる）。
+     * 記録される内容（serial・値）はどちらも同じ。
+     */
+    pacing?: 'burst' | 'smooth';
+    /**
+     * 表示遅延の上限 [ms]（既定 0 = 無制限・ロスレス）。配信した窓の末尾が端末の最新サンプルよりこれ以上
+     * 遅れていたら最新の窓まで飛ぶ。飛ばした分は `insole15Diagnostics().lagSkips / skippedSamples` と
+     * `lostData` に欠損として出る。往復（RTT）が窓長 100 ms に近いリンクでは追従遅れが 1 秒以上に溜まるので、
+     * 表示用途では 300 程度を指定する。収録では指定しない。
+     */
+    maxLagMs?: number;
+}
+
+/** INSOLE 1.5 の定数（OrpheInsole.INSOLE15）。 */
+export interface InsoleInsole15Constants {
+    readonly NAME: 'INS2';
+    readonly SERVICE_UUID: string;
+    readonly CLIENT_FILE: string;
+    readonly CLIENT_MIN_FILE: string;
+    readonly G: number;
+    readonly ACC_RANGE_G: number;
+    readonly ACC_RANGE_INDEX: number;
+    readonly GYRO_RANGE_DPS: number;
+    readonly GYRO_RANGE_INDEX: number;
+    readonly SAMPLE_HZ: number;
+    readonly SAMPLE_PERIOD_MS: number;
+    readonly PACKET_HEADER: number;
+    readonly SAMPLES_PER_PACKET: number;
+    readonly DEFAULT_PRESSURE_SCALE: number;
+    readonly PRESSURE_CHANNEL_MAP: { readonly left: readonly number[]; readonly right: readonly number[]; readonly unspecified: readonly number[] };
+    readonly DEFAULT_GAIT_POLL_MS: number;
+    readonly DEFAULT_PACING: 'smooth';
+    readonly PACKET_PERIOD_MS: number;
+    readonly PACER_MAX_QUEUE: number;
+    readonly DEFAULT_MAX_LAG_MS: number;
+}
+
+/** INSOLE 1.5 クライアント（Insole15Client.js）の 200 Hz フレーム。 */
+export interface InsoleInsole15Frame {
+    t: number;
+    serial: number;
+    press: number[] | null;
+    acc: InsoleVector3 | null;
+    gyro: InsoleVector3 | null;
+    quat: InsoleQuatSampleBase | null;
+    euler: InsoleEuler | null;
+}
+
+/** insole15Diagnostics() の戻り値（製品版では null）。 */
+export interface InsoleInsole15Diagnostics {
+    windows: number;
+    ok: number;
+    tooOld: number;
+    tooNew: number;
+    timeNotSet: number;
+    errors: number;
+    /** maxLagMs で意図的に飛ばした回数（skippedSamples / gaps / lossRate にも含まれる）。 */
+    lagSkips: number;
+    samples: number;
+    skippedSamples: number;
+    droppedOddFrames: number;
+    gaps: number;
+    lossRate: number;
+    rttMs: { p50: number | null; p90: number | null; max: number | null; last: number | null } | null;
+    /** 配信した窓の末尾が端末の最新サンプルからどれだけ遅れていたか [ms]（表示遅延の下限。追従できていれば 0〜30）。 */
+    lagMs: { p50: number | null; p90: number | null; max: number | null; last: number | null } | null;
+    pacing: 'burst' | 'smooth';
+    maxLagMs: number;
+    lastWindowAt: number | null;
+    lastError: unknown;
+    monitoring: boolean;
+    gaitMonitoring: boolean;
+    config: { foot: 'left' | 'right' | 'unspecified'; firmwareVersion: string; deviceId: string } | null;
+}
+
+export const ORPHE_INSOLE15: InsoleInsole15Constants;
+/** INSOLE 1.5 のフレーム 2 個を製品版 SENSOR_VALUES パケット（header 56、104 byte）に再エンコードする。 */
+export function encodeInsole15Packet(
+    frames: InsoleInsole15Frame[],
+    options?: { serial?: number; pressureScale?: number; channelMap?: readonly number[] }
+): DataView;
 
 export interface InsoleSetupOptions {
     /**
@@ -244,6 +349,15 @@ export class OrpheInsole {
     static readonly STREAMING_MODES: typeof ORPHE_INSOLE_STREAMING_MODES;
     /** この SDK のバージョン（package.json の version と同じ、例 "1.3.4"）。記録データの来歴に残す用途。 */
     static readonly SDK_VERSION: string;
+    /** INSOLE 1.5 の定数（BLE 名・service UUID・レンジ・圧力チャネル並び替え）。 */
+    static readonly INSOLE15: InsoleInsole15Constants;
+    static encodeInsole15Packet: typeof encodeInsole15Packet;
+    /** BluetoothDevice が INSOLE 1.5（BLE 名 INS2）なら true。 */
+    static isInsole15Device(device: { name?: string | null } | null | undefined): boolean;
+    /** INSOLE 1.5 クライアント（グローバル Insole15）が読み込み済みなら true。 */
+    static insole15ClientAvailable(): boolean;
+    /** INSOLE 1.5 クライアントを自身の URL 基準で遅延ロードする（読み込み済みなら即 resolve）。 */
+    static loadInsole15Client(): Promise<unknown>;
 
     readonly ORPHE_INFORMATION: string;
     readonly ORPHE_DEVICE_INFORMATION: string;
@@ -346,6 +460,14 @@ export class OrpheInsole {
      * lastStatus.version の順で解決し、取得できない場合は null（例外は投げない）。
      */
     getFirmwareVersion(): Promise<string | null>;
+    /** 接続中（または最後に選択した）デバイスの世代。1 = 製品版、2 = INSOLE 1.5（INS2）。 */
+    generation: 1 | 2;
+    /** generation === 2 */
+    readonly isInsole15: boolean;
+    /** INSOLE 1.5 の通信診断（窓・欠損・RTT・設定）。製品版では null。 */
+    insole15Diagnostics(): InsoleInsole15Diagnostics | null;
+    /** INSOLE 1.5 で最後に受け取った生フレーム（mV・m/s²・dps・推定 quat）。 */
+    lastInsole15Frame?: InsoleInsole15Frame;
     /** 最後に受信した advertisement のステータス（未受信なら null）。 */
     lastStatus: InsoleStatus | null;
     /** getFirmwareVersion() が解決したバージョン文字列のキャッシュ（未取得なら null）。 */
@@ -730,6 +852,13 @@ export interface InsoleGaitDiagnostics {
     connectionGeneration: number;
     lifecycleGeneration: number;
     stepLoss: InsoleGaitStepLossStats;
+    /** INSOLE 1.5（get_gait_live ポーリング）のときだけ。製品版では null。 */
+    insole15: {
+        polling: boolean;
+        polls: number;
+        pollMs: number;
+        lastPoll: { receivedAt: number; measuring: boolean; sessionId: number; steps: number; distanceM: number; strideSeq: number; rttMs: number } | null;
+    } | null;
 }
 
 export interface InsoleGaitDiagnosticEvent {
@@ -773,7 +902,27 @@ export interface InsoleGaitRow {
     calorie: number | null;
 }
 
+/** INSOLE 1.5 クライアントが get_gait_live から返す完了ストライド（物理単位・生の符号）。 */
+export interface InsoleInsole15GaitStride {
+    strideSeq: number;
+    sessionId?: number;
+    steps?: number;
+    distanceM?: number;
+    strideLength?: number;
+    strideHeight?: number;
+    speed?: number;
+    pronation?: number;
+    strikeAngle?: number;
+    cadence?: number;
+    landingForce?: number;
+    contactTime?: number;
+    gaitType?: number;
+    footStrike?: number;
+}
+
 export interface InsoleGaitOptions {
+    /** INSOLE 1.5: get_gait_live のポーリング間隔 [ms]（既定 250、最小 100）。 */
+    pollMs?: number;
     /** STEP_ANALYSIS の service UUID（既定は insole.ORPHE_OTHER_SERVICE） */
     serviceUUID?: string;
     /** STEP_ANALYSIS の characteristic UUID（既定は insole.ORPHE_STEP_ANALYSIS） */
@@ -823,6 +972,9 @@ export declare class OrpheInsoleGait {
     static strideDirectionToStr(value: number): StrideDirection;
     static f16be(dv: DataView, offset: number): number;
     static gaitRowToCsv(row: InsoleGaitRow): string;
+    /** INSOLE 1.5: FW の完了ストライド（get_gait_live）→ 製品版と同じ row。無い項目は null。 */
+    static insole15StrideToRow(stride: InsoleInsole15GaitStride): InsoleGaitRow;
+    static readonly INSOLE15_FOOT_STRIKES: readonly string[];
 }
 
 type OrpheInsoleGaitConstructor = typeof OrpheInsoleGait;
@@ -970,6 +1122,12 @@ export interface InsoleToolkitSessionState {
     supportsFifo: boolean;
     supportsStepAnalysis: boolean;
     gaitDiagnostics: InsoleGaitDiagnostics | null;
+    /** 接続中デバイスの世代（1 = 製品版、2 = INSOLE 1.5）。 */
+    generation: 1 | 2;
+    /** INSOLE 1.5 に接続中（FIFO・ストリーミングモード選択は使えない）。 */
+    insole15: boolean;
+    /** INSOLE 1.5 の通信診断（製品版では null）。 */
+    insole15Diagnostics: InsoleInsole15Diagnostics | null;
     lastError: unknown | null;
 }
 

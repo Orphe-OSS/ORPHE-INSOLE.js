@@ -1271,6 +1271,11 @@ var _orpheInsoleScriptBase = (function () {
   if (typeof document === 'undefined' || !document.currentScript || !document.currentScript.src) return null;
   return String(document.currentScript.src).replace(/[?#].*$/, '').replace(/[^/]*$/, '');
 })();
+// 自身のファイル名（orphe-insole.min.js なら INSOLE 1.5 クライアントも .min.js を選ぶ）
+var _orpheInsoleScriptFile = (function () {
+  if (typeof document === 'undefined' || !document.currentScript || !document.currentScript.src) return null;
+  return String(document.currentScript.src).replace(/[?#].*$/, '').split('/').pop() || null;
+})();
 
 function _orpheInsoleAutoLoadOptionalLibs() {
   if (typeof Quaternion !== 'undefined') return;
@@ -1612,6 +1617,136 @@ function pressureInNewtons(x, calibration, index) {
   return Math.max(0, Number.isFinite(y) ? y : 0);
 }
 
+// ── INSOLE 1.5（BLE 名 INS2、bleRPC + 暗号化）対応 ─────────────────────────
+//
+// INSOLE 1.5 は製品版と BLE プロトコルが異なる（GATT notify の固定長パケットではなく、
+// bleRPC（protobuf）で「100 ms 窓」を要求して受け取るプル型）。コア SDK は 1.5 を選んだときだけ
+// 専用クライアント（src/Insole15Client.js、グローバル Insole15。src/insole15-client/ から
+// ビルド）を自身の URL 基準で遅延ロードし、受け取った 200 Hz フレームを製品版の
+// SENSOR_VALUES パケット形式（header 56: quat + gyro + acc + press、2 サンプル/パケット）に
+// 再エンコードして onRead() に流す。got* コールバック・history・addSensorDataListener・
+// lostData（serial gap）・Toolkit の計測記録は製品版とまったく同じ経路で動く。
+//
+// 単位の対応（1.5 → 製品版形式）:
+//   acc  [m/s²] → G = a / 9.80665 → raw int16 = G / 16 × 32768（レンジ ±16 G = index 3）
+//   gyro [dps]  → raw int16 = dps / (2000 × 0.000035)（レンジ ±2000 dps = index 3、感度 70 mdps/LSB）
+//   quat        → クライアントの Madgwick 推定値を Q14（1.0 = 16384）
+//   press [mV]  → values[i] = mV[channelMap[i]] × pressureScale（uint16）。製品版の ADC 生値とは
+//                 由来が異なるので、しきい値は相対値（ベースライン差分）で設計すること。
+// 1.5 の FW は姿勢（quat）を送らないため、quat/euler はクライアント側の IMU 融合（Madgwick）推定。
+// 保守系 RPC はクライアントに含めない（公開範囲は set_time /
+// get_window / get_config / get_gait_live のみ）。
+const ORPHE_INSOLE15 = Object.freeze({
+  NAME: 'INS2',                                            // FW 0.1.7 以降の BLE 名（完全一致で判別）
+  SERVICE_UUID: '12340001-0000-1000-8000-00805f9b34fb',    // bleRPC service（requestDevice の optionalServices に追加）
+  CLIENT_FILE: 'Insole15Client.js',
+  CLIENT_MIN_FILE: 'Insole15Client.min.js',
+  G: 9.80665,
+  ACC_RANGE_G: 16,
+  ACC_RANGE_INDEX: 3,
+  GYRO_RANGE_DPS: 2000,
+  GYRO_RANGE_INDEX: 3,
+  SAMPLE_HZ: 200,
+  SAMPLE_PERIOD_MS: 5,
+  PACKET_HEADER: 56,
+  SAMPLES_PER_PACKET: 2,
+  DEFAULT_PRESSURE_SCALE: 10,
+  // 圧力チャネル並び替え（公式番号順 values[0..5] に対応する 1.5 の元チャネル）。左右で基板上の
+  // センサ配置が異なる。showcase（PR #88）の実機確認値。get_config の foot で選ぶ。
+  PRESSURE_CHANNEL_MAP: Object.freeze({
+    left: Object.freeze([3, 4, 2, 5, 1, 0]),
+    right: Object.freeze([2, 1, 3, 0, 4, 5]),
+    unspecified: Object.freeze([3, 4, 2, 5, 1, 0]),
+  }),
+  DEFAULT_GAIT_POLL_MS: 250,
+  // 配信ペーシング（begin({ insole15: { pacing } })）。FW は 100 ms 窓（20 サンプル = 10 パケット）を
+  // まとめて返すので、そのまま流すと got* が 10 Hz のバーストになり、画面の動きが 100 ms ごとの飛び飛びに
+  // 見える。'smooth'（既定）は窓を受け取ったらパケットを 10 ms 間隔（製品版の配信に近い連続性）で流す。
+  // 代わりに最大 1 窓分（100 ms）遅れる。'burst' は届いた瞬間に全部流す（最小遅延・従来動作）。
+  DEFAULT_PACING: 'smooth',
+  PACKET_PERIOD_MS: 10,          // 2 サンプル/パケット × 5 ms
+  PACER_MAX_QUEUE: 15,           // これを超えて滞留したパケットは即時に流す（追加遅延の上限 ≈ 150 ms）
+  DEFAULT_MAX_LAG_MS: 0,         // 0 = 追従遅れで飛ばさない（ロスレス）。表示用途は 300 程度
+});
+
+function _orpheInsole15Now() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function _orpheInsole15IsDevice(device) {
+  return !!device && typeof device.name === 'string' && device.name === ORPHE_INSOLE15.NAME;
+}
+
+function _orpheInsole15ClampInt16(v) {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(-32768, Math.min(32767, Math.round(v)));
+}
+
+function _orpheInsole15ClampUint16(v) {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(65535, Math.round(v)));
+}
+
+/**
+ * INSOLE 1.5 の 200 Hz フレーム（Insole15 クライアントの InsoleFrame）1〜2 個を、製品版
+ * SENSOR_VALUES パケット（header 56、104 byte）に再エンコードする。
+ * parseInsoleSensorValues() が header 56 を読む配置（packet_number 0 = 後半 32 byte、
+ * packet_number 1 = 前半 32 byte。古いサンプルほど後ろ）にそのまま合わせる。
+ * 2 個目が無い場合（欠損境界・停止直前の端数）は呼び出し側で破棄する（複製はしない）。
+ * @param {Array<object>} frames [{t, serial, press[6] mV, acc{x,y,z} m/s², gyro{x,y,z} dps, quat{w,x,y,z}}] 2 個
+ * @param {object} [options]
+ * @param {number} [options.serial] パケットの serial（uint16）。省略時は floor(frames[0].serial / 2)
+ * @param {number} [options.pressureScale=10] mV → values の倍率
+ * @param {number[]} [options.channelMap] 公式番号順に並べ替える元チャネルの index 配列
+ * @returns {DataView} 104 byte
+ */
+function encodeInsole15Packet(frames, options = {}) {
+  if (!Array.isArray(frames) || frames.length !== ORPHE_INSOLE15.SAMPLES_PER_PACKET) {
+    throw new TypeError(`encodeInsole15Packet expects ${ORPHE_INSOLE15.SAMPLES_PER_PACKET} frames`);
+  }
+  const first = frames[0];
+  const pressureScale = Number.isFinite(Number(options.pressureScale)) && Number(options.pressureScale) > 0
+    ? Number(options.pressureScale) : ORPHE_INSOLE15.DEFAULT_PRESSURE_SCALE;
+  const channelMap = Array.isArray(options.channelMap) && options.channelMap.length === 6
+    ? options.channelMap : ORPHE_INSOLE15.PRESSURE_CHANNEL_MAP.left;
+  const serial = Number.isInteger(options.serial)
+    ? (options.serial & 0xffff)
+    : (Math.floor((Number(first.serial) || 0) / ORPHE_INSOLE15.SAMPLES_PER_PACKET) & 0xffff);
+  const dv = new DataView(new ArrayBuffer(104));
+  dv.setUint8(0, ORPHE_INSOLE15.PACKET_HEADER);
+  dv.setUint16(1, serial);
+  const date = new Date(Number.isFinite(Number(first.t)) ? Number(first.t) : Date.now());
+  dv.setUint8(3, date.getHours());
+  dv.setUint8(4, date.getMinutes());
+  dv.setUint8(5, date.getSeconds());
+  dv.setUint16(6, date.getMilliseconds());
+  const gyroLsb = ORPHE_INSOLE15.GYRO_RANGE_DPS * _ORPHE_INSOLE_GYRO_DPS_PER_LSB_PER_RANGE; // 0.07 dps/LSB
+  frames.forEach((f, k) => {
+    // k = 0 が古いサンプル（packet_number 0）→ 後半（base 40）、k = 1 → 前半（base 8）
+    const base = 8 + 32 * (ORPHE_INSOLE15.SAMPLES_PER_PACKET - 1 - k);
+    const q = f.quat || { w: 1, x: 0, y: 0, z: 0 };
+    dv.setInt16(base + 0, _orpheInsole15ClampInt16(q.w * 16384));
+    dv.setInt16(base + 2, _orpheInsole15ClampInt16(q.x * 16384));
+    dv.setInt16(base + 4, _orpheInsole15ClampInt16(q.y * 16384));
+    dv.setInt16(base + 6, _orpheInsole15ClampInt16(q.z * 16384));
+    const g = f.gyro || { x: 0, y: 0, z: 0 };
+    dv.setInt16(base + 8, _orpheInsole15ClampInt16(g.x / gyroLsb));
+    dv.setInt16(base + 10, _orpheInsole15ClampInt16(g.y / gyroLsb));
+    dv.setInt16(base + 12, _orpheInsole15ClampInt16(g.z / gyroLsb));
+    const a = f.acc || { x: 0, y: 0, z: 0 };
+    const accLsb = ORPHE_INSOLE15.G * ORPHE_INSOLE15.ACC_RANGE_G / 32768; // m/s² per LSB
+    dv.setInt16(base + 14, _orpheInsole15ClampInt16(a.x / accLsb));
+    dv.setInt16(base + 16, _orpheInsole15ClampInt16(a.y / accLsb));
+    dv.setInt16(base + 18, _orpheInsole15ClampInt16(a.z / accLsb));
+    const mv = Array.isArray(f.press) ? f.press : [0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 6; i++) {
+      const src = channelMap[i];
+      dv.setUint16(base + 20 + 2 * i, _orpheInsole15ClampUint16((mv[src] ?? 0) * pressureScale));
+    }
+  });
+  return dv;
+}
+
 /**
  * ORPHE INSOLE Module Javascript class
 * @class
@@ -1712,9 +1847,26 @@ class OrpheInsole {
     // ユーザが onDisconnect を上書きしても古い関数が呼ばれ続けるため、
     // 必ずこのラッパーを登録する。
     this._onDisconnectHandler = (event) => {
+      // INSOLE 1.5: 物理切断で get_window / get_gait_live のループを止める（GATT 切断の重複呼出しは無し）
+      this._releaseInsole15Client(false);
       this._invalidateNotifyOperations();
       this._safeLifecycleCallback('onDisconnect', event);
     };
+    // ── INSOLE 1.5 ──
+    /**
+     * 接続中デバイスの世代。1 = 製品版 ORPHE INSOLE、2 = INSOLE 1.5（INS2）。
+     * requestDevice()/記憶デバイス復元でデバイス名から判定する。
+     * @property {number} generation
+     */
+    this.generation = 1;
+    this._insole15 = null;          // Insole15.InsoleClient（接続中のみ）
+    this._insole15Config = null;    // get_config の結果 { deviceId, deviceIdHex, foot, firmwareVersion }
+    this._insole15Options = {};     // begin(options.insole15) で与えた設定
+    this._insole15Stats = null;     // insole15Diagnostics() 用のカウンタ
+    this._insole15Pending = [];     // 製品版パケット（2 サンプル）にまとめる前のフレーム
+    this._insole15Pacer = null;     // pacing 'smooth' の送出キュー { queue, timer, due, session }
+    this._insole15Rate = { count: 0, since: 0 };
+    this._insole15Session = 0;      // begin/stop ごとに増やし、古いループの callback を無視する
     OrpheInsole._instances = OrpheInsole._instances || [];
     OrpheInsole._instances.push(this);
 
@@ -2038,6 +2190,21 @@ class OrpheInsole {
 
     this._connecting = true;
     try {
+      // デバイス選択（チューザ / 記憶デバイス）を先に済ませ、INSOLE 1.5（INS2）なら専用経路へ。
+      // 製品版は従来どおり getDeviceInformation() 以降の GATT 手順を踏む（scan() は選択済みなら no-op）。
+      // Web Bluetooth が無い環境（Node のモック・テスト）では従来どおり read() 側の scan() に任せる。
+      if (!this.bluetoothDevice && typeof navigator !== 'undefined' && navigator.bluetooth) {
+        await this.scan('DEVICE_INFORMATION', options);
+      }
+      if (this.isInsole15) {
+        const result15 = await this._begin15(options);
+        if (this.bluetoothDevice) {
+          this._rememberBluetoothDevice(this.bluetoothDevice);
+          this._attachAutoReconnectDisconnectHandler(this.bluetoothDevice);
+        }
+        return result15;
+      }
+
       await this.getDeviceInformation(options);
 
       // データストリーミングモードは 100Hzのジャイロ、加速度、圧力、クオータニオンに設定
@@ -2073,6 +2240,371 @@ class OrpheInsole {
    */
   stop() {
     this.reset();
+  }
+
+  // ── INSOLE 1.5 ─────────────────────────────────────────────
+  /** 接続中（または最後に選択した）デバイスが INSOLE 1.5 なら true */
+  get isInsole15() {
+    return this.generation === 2;
+  }
+
+  /**
+   * BluetoothDevice が INSOLE 1.5（BLE 名 INS2）かどうか。
+   * @param {BluetoothDevice} device
+   * @returns {boolean}
+   */
+  static isInsole15Device(device) {
+    return _orpheInsole15IsDevice(device);
+  }
+
+  /** INSOLE 1.5 クライアント（グローバル Insole15）が読み込み済みなら true */
+  static insole15ClientAvailable() {
+    const lib = global.Insole15;
+    return !!lib && typeof lib.InsoleClient === 'function';
+  }
+
+  /**
+   * INSOLE 1.5 クライアント（Insole15Client.js）を読み込む。既に読み込み済みなら即 resolve。
+   * src/ORPHE-INSOLE.js（または dist/orphe-insole(.min).js）自身の URL を基準に同じディレクトリの
+   * Insole15Client(.min).js を <script> で挿入する。URL が取れない環境（インライン評価・module）では
+   * 事前に <script src=".../Insole15Client.js"> を読み込んでおくこと。
+   * @returns {Promise<object>} グローバル Insole15
+   */
+  static loadInsole15Client() {
+    if (OrpheInsole.insole15ClientAvailable()) return Promise.resolve(global.Insole15);
+    if (OrpheInsole._insole15ClientLoading) return OrpheInsole._insole15ClientLoading;
+    if (typeof document === 'undefined' || !_orpheInsoleScriptBase) {
+      return Promise.reject(_insoleError('INSOLE15_CLIENT_UNAVAILABLE',
+        'INSOLE 1.5 client (Insole15Client.js) is not loaded and cannot be auto-loaded. '
+        + 'Add <script src=".../src/Insole15Client.js"></script> after ORPHE-INSOLE.js.'));
+    }
+    const minified = !!_orpheInsoleScriptFile && /\.min\.js$/i.test(_orpheInsoleScriptFile);
+    const src = _orpheInsoleScriptBase + (minified ? ORPHE_INSOLE15.CLIENT_MIN_FILE : ORPHE_INSOLE15.CLIENT_FILE);
+    OrpheInsole._insole15ClientLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.type = 'text/javascript';
+      script.async = true;
+      script.onload = () => {
+        if (OrpheInsole.insole15ClientAvailable()) resolve(global.Insole15);
+        else reject(_insoleError('INSOLE15_CLIENT_UNAVAILABLE', `Loaded ${src} but global Insole15 is not defined`));
+      };
+      script.onerror = () => reject(_insoleError('INSOLE15_CLIENT_UNAVAILABLE', `Failed to load INSOLE 1.5 client: ${src}`));
+      document.head.appendChild(script);
+    }).finally(() => { OrpheInsole._insole15ClientLoading = null; });
+    return OrpheInsole._insole15ClientLoading;
+  }
+
+  // 選択/復元したデバイスから世代を決める（INS2 = INSOLE 1.5）
+  _adoptDeviceGeneration(device) {
+    this.generation = _orpheInsole15IsDevice(device) ? 2 : 1;
+  }
+
+  // begin() の INSOLE 1.5 経路: クライアント接続 → get_config → 100 ms 窓のストリーミング開始
+  async _begin15(options = {}) {
+    const device = this.bluetoothDevice;
+    if (!device) throw _insoleError('NO_DEVICE', 'No Bluetooth Device');
+    const Insole15 = await OrpheInsole.loadInsole15Client();
+    // クライアント読み込み待ちの間に reset()/別デバイス選択が起きていたら、この接続は続けない
+    if (this.bluetoothDevice !== device) throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
+    // 既に同じデバイスへ接続・配信中なら二重接続しない（Toolkit の connect() と同じ「already connected」扱い）
+    if (this._insole15 && this.isConnected() && this._insole15.isMonitoring) {
+      return 'done begin(); SENSOR VALUES (INSOLE 1.5, already connected)';
+    }
+    const userOptions = (options && typeof options.insole15 === 'object' && options.insole15) || {};
+    this._insole15Options = Object.assign({}, userOptions);
+    this._releaseInsole15Client(false);          // 古いクライアントを止める（session も進む）
+    const session = ++this._insole15Session;     // この接続の世代
+    const client = new Insole15.InsoleClient({
+      requireEncryption: userOptions.requireEncryption ?? true,
+      pinIdentity: userOptions.pinIdentity ?? true,
+      // get_window の応答待ち上限。FW キャッシュ（約 1.7 秒）内に再要求できるよう既定 1000 ms
+      windowTimeoutMs: Number.isFinite(Number(userOptions.windowTimeoutMs)) ? Number(userOptions.windowTimeoutMs) : 1000,
+    });
+    this._insole15 = client;
+    try {
+      await client.connect({ device, name: device.name, address: device.id, rssi: 0 });
+      if (this._insole15 !== client || session !== this._insole15Session) {
+        throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
+      }
+      const cfg = await client.getConfigInfo();
+      if (this._insole15 !== client || session !== this._insole15Session) {
+        throw _insoleError('INSOLE15_ABORTED', 'INSOLE 1.5 connection was cancelled');
+      }
+      this._insole15Config = cfg;
+      this.firmware_version = cfg.firmwareVersion || null;
+      this.device_information = this._insole15DeviceInformation(cfg);
+      const streamingMode = Number(options.streamingMode ?? options.dataStreamingMode ?? 4);
+      this.streaming_mode = [1, 3, 4].includes(streamingMode) ? streamingMode : 4;
+      this._characteristics = {};
+      this.dataCharacteristic = null;
+      this._serialInitialized = false;
+      this._log('INSOLE 1.5 connected', { foot: cfg.foot, firmwareVersion: cfg.firmwareVersion, deviceId: cfg.deviceIdHex });
+      this.onConnectGATT('SENSOR_VALUES');
+      this.onConnect('SENSOR_VALUES');
+      this._startInsole15Monitor(client, session);
+      this.onStartNotify('SENSOR_VALUES');
+      return 'done begin(); SENSOR VALUES (INSOLE 1.5)';
+    } catch (error) {
+      if (this._insole15 === client) {
+        this._releaseInsole15Client(true);
+      } else if (this.bluetoothDevice !== device || !this._insole15) {
+        // reset()/切断で手放された接続が後から確立した場合: 持ち主の無い GATT を残さない。
+        // 同じデバイスへ新しいクライアントが既に接続中なら（再接続の競合）そのリンクは触らない。
+        try { client.disconnect(); } catch { /* noop */ }
+      }
+      throw error;
+    }
+  }
+
+  _insole15DeviceInformation(cfg) {
+    const foot = cfg && typeof cfg.foot === 'string' ? cfg.foot : 'unspecified';
+    return {
+      battery: null,                         // 1.5 は RPC で電池を返さない（広告の mV のみ）
+      mount_position: foot === 'right' ? 1 : 0, // bit0: 0=LEFT, 1=RIGHT（足底固定）
+      range: { acc: ORPHE_INSOLE15.ACC_RANGE_INDEX, gyro: ORPHE_INSOLE15.GYRO_RANGE_INDEX },
+      raw: null,
+      generation: 2,
+      foot,
+      device_id: cfg ? cfg.deviceIdHex : null,
+      firmware_version: cfg ? cfg.firmwareVersion || null : null,
+    };
+  }
+
+  _insole15ChannelMap() {
+    const custom = this._insole15Options && this._insole15Options.pressureChannelMap;
+    const foot = this._insole15Config ? this._insole15Config.foot : 'unspecified';
+    if (custom && typeof custom === 'object') {
+      const m = Array.isArray(custom) ? custom : custom[foot];
+      if (Array.isArray(m) && m.length === 6) return m;
+    }
+    return ORPHE_INSOLE15.PRESSURE_CHANNEL_MAP[foot] || ORPHE_INSOLE15.PRESSURE_CHANNEL_MAP.left;
+  }
+
+  _insole15PressureScale() {
+    const s = Number(this._insole15Options && this._insole15Options.pressureScale);
+    return Number.isFinite(s) && s > 0 ? s : ORPHE_INSOLE15.DEFAULT_PRESSURE_SCALE;
+  }
+
+  _insole15Pacing() {
+    const p = this._insole15Options && this._insole15Options.pacing;
+    return p === 'burst' || p === 'smooth' ? p : ORPHE_INSOLE15.DEFAULT_PACING;
+  }
+
+  _insole15MaxLagMs() {
+    const v = Number(this._insole15Options && this._insole15Options.maxLagMs);
+    return Number.isFinite(v) && v > 0 ? v : ORPHE_INSOLE15.DEFAULT_MAX_LAG_MS;
+  }
+
+  _startInsole15Monitor(client, session) {
+    this._insole15Stats = {
+      windows: 0, ok: 0, tooOld: 0, tooNew: 0, timeNotSet: 0, errors: 0, lagSkips: 0,
+      samples: 0, skippedSamples: 0, droppedOddFrames: 0, gaps: 0,
+      rtt: [], lastRttMs: null, lag: [], lastLagMs: null, lastWindowAt: null, lastError: null, startedAt: Date.now(),
+    };
+    this._insole15Pending = [];
+    this._resetInsole15Pacer();
+    this._insole15Rate = { count: 0, since: _orpheInsole15Now() };
+    // モニタ再開（stopNotify → startNotify）でクライアントの serial は 0 から振り直されるので、
+    // 直前の serial との差分で lostData を出さないようにする
+    this._serialInitialized = false;
+    const alive = () => this._insole15 === client && session === this._insole15Session;
+    client.startMonitor(
+      (frame) => {
+        if (!alive()) return;
+        // ユーザの got* / listener が throw しても配信ループは止めない（製品版の notify と同じ隔離）
+        try { this._onInsole15Frame(frame); } catch (error) { this._safeReportError(error, 'insole15Frame'); }
+      },
+      {
+        onError: (error) => {
+          if (!alive()) return;
+          this._insole15Stats.lastError = error;
+          this._log('INSOLE 1.5 monitor error', { message: error && error.message ? error.message : String(error) });
+        },
+        onWindow: (info) => { if (alive()) this._onInsole15Window(info); },
+        maxLagMs: this._insole15MaxLagMs(),
+      },
+    ).catch((error) => { if (alive()) this._safeReportError(error, 'insole15Monitor'); });
+  }
+
+  // 1 フレーム（200 Hz サンプル）。製品版パケット（2 サンプル）に揃えてから onRead へ流す。
+  _onInsole15Frame(frame) {
+    const pending = this._insole15Pending;
+    if (pending.length === 1 && Number(frame.serial) !== Number(pending[0].serial) + 1) {
+      // 欠損境界で相方が来ないフレームは破棄（複製で埋めない）。欠損は serial gap で lostData に出る。
+      this._insole15Stats.droppedOddFrames++;
+      pending.length = 0;
+    }
+    pending.push(frame);
+    if (pending.length < ORPHE_INSOLE15.SAMPLES_PER_PACKET) return;
+    const frames = pending.splice(0, ORPHE_INSOLE15.SAMPLES_PER_PACKET);
+    this.lastInsole15Frame = frames[frames.length - 1];
+    const dv = encodeInsole15Packet(frames, {
+      pressureScale: this._insole15PressureScale(),
+      channelMap: this._insole15ChannelMap(),
+    });
+    this._emitInsole15Packet(dv);
+  }
+
+  // 再エンコード済みパケットを onRead へ。pacing 'smooth' では 10 ms 間隔に並べ直す（窓単位のバースト解消）。
+  _emitInsole15Packet(dv) {
+    if (this._insole15Pacing() !== 'smooth') {
+      this.onRead(dv, 'SENSOR_VALUES');
+      return;
+    }
+    let p = this._insole15Pacer;
+    if (!p || p.session !== this._insole15Session) {
+      this._resetInsole15Pacer();
+      p = this._insole15Pacer = { queue: [], timer: null, due: 0, session: this._insole15Session };
+    }
+    p.queue.push(dv);
+    // 窓が溜まって滞留が 1.5 窓分を超えたら古い分を即時に流し、追加遅延を上限で抑える
+    // （非表示タブで timer が 1 秒に丸められたときも、ここでバースト配信に落ちる）
+    while (p.queue.length > ORPHE_INSOLE15.PACER_MAX_QUEUE) this.onRead(p.queue.shift(), 'SENSOR_VALUES');
+    if (p.timer === null) {
+      // 前の送出から 10 ms 経っていれば今すぐ、まだなら次の送出時刻（due）まで待つ。空いた時間は持ち越さない
+      const now = _orpheInsole15Now();
+      if (p.due < now) p.due = now;
+      this._drainInsole15Pacer();
+    }
+  }
+
+  _drainInsole15Pacer() {
+    const p = this._insole15Pacer;
+    if (!p || p.session !== this._insole15Session) return;
+    p.timer = null;
+    const now = _orpheInsole15Now();
+    while (p.queue.length && p.due <= now) {
+      p.due += ORPHE_INSOLE15.PACKET_PERIOD_MS;
+      this.onRead(p.queue.shift(), 'SENSOR_VALUES');
+    }
+    if (!p.queue.length) return; // due は次の送出時刻として残す（同じ窓の続きが同期的に届く）
+    p.timer = setTimeout(() => this._drainInsole15Pacer(), Math.max(1, p.due - _orpheInsole15Now()));
+  }
+
+  _resetInsole15Pacer() {
+    const p = this._insole15Pacer;
+    if (p && p.timer !== null) clearTimeout(p.timer);
+    this._insole15Pacer = null;
+  }
+
+  // get_window 1 回ごとの結果（診断・実効レート）
+  _onInsole15Window(info) {
+    const s = this._insole15Stats;
+    if (!s) return;
+    s.windows++;
+    s.lastWindowAt = Date.now();
+    if (info.status !== 'lag' && Number.isFinite(info.rttMs)) {
+      s.lastRttMs = info.rttMs;
+      s.rtt.push(info.rttMs);
+      if (s.rtt.length > 600) s.rtt.splice(0, s.rtt.length - 600);
+    }
+    if (info.status === 'ok' && Number.isFinite(info.lagMs)) {
+      s.lastLagMs = info.lagMs;
+      s.lag.push(info.lagMs);
+      if (s.lag.length > 600) s.lag.splice(0, s.lag.length - 600);
+    }
+    if (info.status === 'ok') {
+      s.ok++;
+      s.samples += info.samples || 0;
+      this._insole15Rate.count += info.samples || 0;
+    } else if (info.status === 'too_old') {
+      s.tooOld++;
+      s.gaps++;
+      s.skippedSamples += info.skippedSamples || 0;
+    } else if (info.status === 'lag') {
+      s.lagSkips++;          // maxLagMs で意図的に飛ばした（表示用途のみ。欠損として計上する）
+      s.gaps++;
+      s.skippedSamples += info.skippedSamples || 0;
+    } else if (info.status === 'too_new') {
+      s.tooNew++;
+    } else if (info.status === 'time_not_set') {
+      s.timeNotSet++;
+      s.skippedSamples += info.skippedSamples || 0;
+      if (info.skippedSamples > 0) s.gaps++;
+    } else if (info.status === 'aligning') {
+      s.aligning = (s.aligning || 0) + 1; // 開始直後の位置合わせ（欠損ではない）
+    } else {
+      s.errors++;
+    }
+    // 実効サンプルレート（frames/s）を約 1 秒ごとに gotBLEFrequency へ（製品版の実測 Hz 表示と同じ口）
+    const now = _orpheInsole15Now();
+    const elapsed = now - this._insole15Rate.since;
+    if (elapsed >= 1000) {
+      const hz = this._insole15Rate.count * 1000 / elapsed;
+      this._insole15Rate = { count: 0, since: now };
+      this.gotBLEFrequency(hz);
+    }
+  }
+
+  /**
+   * INSOLE 1.5 の通信診断。製品版では null。
+   * @returns {?object} { windows, ok, tooOld, tooNew, timeNotSet, errors, lagSkips, samples, skippedSamples, gaps,
+   *   lossRate, rttMs: {p50, p90, max, last}, lagMs: {p50, p90, max, last}（配信した窓の末尾が端末の最新サンプルから
+   *   どれだけ遅れていたか = 表示遅延の下限）, pacing, maxLagMs, config: {foot, firmwareVersion, deviceId}, monitoring }
+   */
+  insole15Diagnostics() {
+    if (!this.isInsole15) return null;
+    const s = this._insole15Stats;
+    const pct = (arr, p) => {
+      if (!arr.length) return null;
+      const sorted = [...arr].sort((a, b) => a - b);
+      return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+    };
+    const delivered = s ? s.samples : 0;
+    const lost = s ? s.skippedSamples + s.droppedOddFrames : 0;
+    return {
+      windows: s ? s.windows : 0,
+      ok: s ? s.ok : 0,
+      tooOld: s ? s.tooOld : 0,
+      tooNew: s ? s.tooNew : 0,
+      timeNotSet: s ? s.timeNotSet : 0,
+      errors: s ? s.errors : 0,
+      lagSkips: s ? s.lagSkips : 0,
+      samples: delivered,
+      skippedSamples: s ? s.skippedSamples : 0,
+      droppedOddFrames: s ? s.droppedOddFrames : 0,
+      gaps: s ? s.gaps : 0,
+      lossRate: delivered + lost > 0 ? lost / (delivered + lost) : 0,
+      rttMs: s ? { p50: pct(s.rtt, 0.5), p90: pct(s.rtt, 0.9), max: pct(s.rtt, 1), last: s.lastRttMs } : null,
+      lagMs: s ? { p50: pct(s.lag, 0.5), p90: pct(s.lag, 0.9), max: pct(s.lag, 1), last: s.lastLagMs } : null,
+      pacing: this._insole15Pacing(),
+      maxLagMs: this._insole15MaxLagMs(),
+      lastWindowAt: s ? s.lastWindowAt : null,
+      lastError: s ? s.lastError : null,
+      monitoring: !!(this._insole15 && this._insole15.isMonitoring),
+      gaitMonitoring: !!(this._insole15 && this._insole15.isGaitMonitoring),
+      config: this._insole15Config ? {
+        foot: this._insole15Config.foot,
+        firmwareVersion: this._insole15Config.firmwareVersion,
+        deviceId: this._insole15Config.deviceIdHex,
+      } : null,
+    };
+  }
+
+  // クライアントのループを止めて手放す。disconnectGatt=true なら GATT も切る（手動切断）。
+  _releaseInsole15Client(disconnectGatt) {
+    const client = this._insole15;
+    this._insole15Session++;
+    this._insole15Pending = [];
+    this._resetInsole15Pacer();
+    if (!client) return;
+    this._insole15 = null;
+    try { client.stopGaitMonitor(); } catch { /* noop */ }
+    try { client.stopMonitor(); } catch { /* noop */ }
+    if (disconnectGatt) {
+      try { client.disconnect(); } catch { /* noop */ }
+    } else if (!(this.bluetoothDevice && this.bluetoothDevice.gatt && this.bluetoothDevice.gatt.connected)) {
+      // 物理切断後: GATT はもう無いので transport のリスナー解除だけ行う。
+      // GATT がまだ繋がっているとき（clear() 等）は製品版の clear() と同じく物理リンクには触れない
+      // （transport.disconnect() は接続中なら gatt.disconnect() まで呼ぶため、ここでは呼ばない）。
+      try { if (client.transport && typeof client.transport.disconnect === 'function') client.transport.disconnect(); } catch { /* noop */ }
+    }
+  }
+
+  _insole15Unsupported(name) {
+    const error = _insoleError('INSOLE15_UNSUPPORTED', `OrpheInsole.${name}() is not supported on INSOLE 1.5.`);
+    return error;
   }
 
 
@@ -2225,6 +2757,7 @@ class OrpheInsole {
     const rememberedDevice = await this._requestRememberedBluetoothDevice();
     if (!rememberedDevice) return false;
     this.bluetoothDevice = rememberedDevice;
+    this._adoptDeviceGeneration(rememberedDevice);
     this._usingRememberedBluetoothDevice = true;
     this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
     this._attachAutoReconnectDisconnectHandler(this.bluetoothDevice);
@@ -2306,6 +2839,7 @@ class OrpheInsole {
    */
   selectBluetoothDevice(uuid = 'DEVICE_INFORMATION') {
     this._disableAutoReconnect();
+    this._releaseInsole15Client(false);
     this._invalidateNotifyOperations();
     this.forgetLastBluetoothDevice();
     if (this.bluetoothDevice?.gatt?.connected) {
@@ -2402,6 +2936,11 @@ class OrpheInsole {
    * Reset Analysis logs in the core module.
    */
   resetAnalysisLogs() {
+    if (this.isInsole15) {
+      // 1.5 では該当する操作は保守系 RPC（公開クライアントには含めない）。
+      console.warn('OrpheInsole.resetAnalysisLogs() is not available on INSOLE 1.5.');
+      return;
+    }
     const data = new Uint8Array([0x04]);
     this.write('DEVICE_INFORMATION', data);
   }
@@ -2430,6 +2969,7 @@ class OrpheInsole {
           return this.requestDevice(uuid);
         }
         this.bluetoothDevice = device;
+        this._adoptDeviceGeneration(device);
         this._usingRememberedBluetoothDevice = true;
         this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
         this.onScan(this.bluetoothDevice.name);
@@ -2460,7 +3000,9 @@ class OrpheInsole {
         this.ORPHE_OTHER_SERVICE,
         // 標準BLE Device Information Service (0x180A)。
         // FWが実装している場合に getFirmwareVersion() が Firmware Revision を読む。
-        'device_information'
+        'device_information',
+        // INSOLE 1.5（INS2）の bleRPC service。同じ 'INS' 接頭辞で 1 つのチューザに出す。
+        ORPHE_INSOLE15.SERVICE_UUID
       ],
       optionalManufacturerData: [
         0x0000
@@ -2481,9 +3023,11 @@ class OrpheInsole {
           throw new Error(`Bluetooth device "${device.name || device.id || 'unknown'}" is already assigned to ORPHE INSOLE ${String(inUseBy.id + 1).padStart(2, '0')}. Select a different device.`);
         }
         this.bluetoothDevice = device;
+        this._adoptDeviceGeneration(device);
         // デバイスが変わった可能性があるため、デバイス固有のキャッシュを破棄する
         this.lastStatus = null;
         this.firmware_version = null;
+        this._insole15Config = null;
         this._usingRememberedBluetoothDevice = false;
         this._rememberedBluetoothDeviceUnavailable = false;
         this.bluetoothDevice.addEventListener('gattserverdisconnected', this._onDisconnectHandler);
@@ -2706,6 +3250,7 @@ class OrpheInsole {
    *
    */
   read(uuid, options = {}) {
+    if (this.isInsole15) return Promise.reject(this._insole15Unsupported('read'));
     return (this.scan(uuid, options))
       .then(() => {
         return this.connectGATT(uuid, options);
@@ -2725,6 +3270,7 @@ class OrpheInsole {
    *
    */
   write(uuid, array_value, options = {}) {
+    if (this.isInsole15) return Promise.reject(this._insole15Unsupported('write'));
     return (this.scan(uuid, options))
       .then(() => {
         return this.connectGATT(uuid, options);
@@ -2747,6 +3293,16 @@ class OrpheInsole {
    *
    */
   startNotify(uuid, options = {}) {
+    if (this.isInsole15) {
+      // INSOLE 1.5: SENSOR_VALUES = get_window ストリーミング。STEP_ANALYSIS は OrpheInsoleGait が
+      // get_gait_live ポーリングで扱うので、ここでは SENSOR_VALUES 以外を受け付けない。
+      if (uuid !== 'SENSOR_VALUES') return Promise.reject(this._insole15Unsupported(`startNotify(${uuid})`));
+      const client = this._insole15;
+      if (!client || !this.isConnected()) return Promise.reject(_insoleError('NO_DEVICE', 'INSOLE 1.5 is not connected'));
+      if (!client.isMonitoring) this._startInsole15Monitor(client, this._insole15Session);
+      this.onStartNotify(uuid);
+      return Promise.resolve();
+    }
     const operationToken = this._nextNotifyOperation(uuid);
     return this.scan(uuid, options)
       .then(() => {
@@ -2789,6 +3345,15 @@ class OrpheInsole {
    *
    */
   stopNotify(uuid, options = {}) {
+    if (this.isInsole15) {
+      if (uuid !== 'SENSOR_VALUES') return Promise.resolve();
+      const client = this._insole15;
+      if (client) { try { client.stopMonitor(); } catch { /* noop */ } }
+      this._insole15Pending = [];
+      this._resetInsole15Pacer();
+      this.onStopNotify(uuid);
+      return Promise.resolve();
+    }
     const operationToken = this._nextNotifyOperation(uuid);
     return this.scan(uuid, options) // BLEデバイスのスキャンを開始します。
       .then(() => {
@@ -2853,6 +3418,17 @@ class OrpheInsole {
     // アドバタイズメント監視を停止
     this.stopWatchingAdvertisements();
 
+    if (this._insole15) {
+      // INSOLE 1.5: ループ停止 → クライアント側で GATT 切断
+      this._invalidateNotifyOperations();
+      this._releaseInsole15Client(true);
+      this._characteristics = {};
+      if (this.bluetoothDevice.gatt.connected) {
+        try { this.bluetoothDevice.gatt.disconnect(); } catch { /* noop */ }
+      }
+      return;
+    }
+
     if (this.bluetoothDevice.gatt.connected) {
       this._invalidateNotifyOperations();
       this.bluetoothDevice.gatt.disconnect();
@@ -2890,6 +3466,12 @@ class OrpheInsole {
     if (!Number.isInteger(normalizedMode) || !supportedModes.includes(normalizedMode)) {
       throw _insoleError('INVALID_MODE', `Invalid ORPHE INSOLE data streaming mode: ${mode}. Use 1, 3, or 4.`);
     }
+    if (this.isInsole15) {
+      // INSOLE 1.5 にモードの概念は無い（常に quat + gyro + acc + press を 200 Hz）。値は記録だけする。
+      this.streaming_mode = normalizedMode;
+      this._log('setDataStreamingMode ignored on INSOLE 1.5', { mode: normalizedMode });
+      return;
+    }
     const data = new Uint8Array([0x0D, normalizedMode]);
     await this.write('DEVICE_INFORMATION', data, options);
     this.streaming_mode = normalizedMode;
@@ -2906,6 +3488,11 @@ class OrpheInsole {
     if (typeof n === 'object' && n !== null) {
       options = n;
       n = 3;
+    }
+    if (this.isInsole15) {
+      // INSOLE 1.5 の時計は get_window ループ開始時に set_time で合わせる（途中で動かすと窓の歩進が狂う）。
+      const standard_time = Date.now();
+      return { sum_round_trip_time: 0, average_round_trip_time: 0, standard_time, adjusted_time: standard_time, round_trip_times: [] };
     }
     let average_round_trip_time = 0;
     let sum_round_trip_time = 0;
@@ -2931,6 +3518,10 @@ class OrpheInsole {
    * [YY, MM, DD, hh, mm, ss, (sub)ss]の配列を渡すことで、コアモジュールの日時設定ができます。
    */
   async setDateTime(set_date, options = {}) {
+    if (this.isInsole15) {
+      console.warn('OrpheInsole.setDateTime() is ignored on INSOLE 1.5 (the clock is set when streaming starts).');
+      return;
+    }
     const array = new Uint8Array(7);
     array[0] = set_date.getFullYear() - 2000;
     array[1] = set_date.getMonth() + 1;
@@ -2947,11 +3538,13 @@ class OrpheInsole {
    * 接続情報をクリアします。
    */
   clear() {
+    this._releaseInsole15Client(false);
     this._invalidateNotifyOperations();
     this.bluetoothDevice = null;
     this.dataCharacteristic = null;
     this._characteristics = {};
     this._serialInitialized = false;
+    this._insole15Config = null;
     this.isFirstAdvertisementReceived = false; // フラグをリセット
     this.onClear();
   }
@@ -3008,8 +3601,12 @@ class OrpheInsole {
       return;
     }
 
-    let ret = this.timestamp.getHz();
-    if (ret > 0) this.gotBLEFrequency(ret);
+    // INSOLE 1.5 は 100 ms 窓ごとにパケットがまとめて届くので、パケット間隔からの実測 Hz は
+    // 使わず、_onInsole15Window() が実効サンプルレートを gotBLEFrequency へ通知する。
+    if (!this.isInsole15) {
+      let ret = this.timestamp.getHz();
+      if (ret > 0) this.gotBLEFrequency(ret);
+    }
 
     // Realtime packet listener は既存 gotData / got* のどちらを利用するアプリとも
     // 共存する。購読者がいる時だけ先にdecodeし、同じpacketを各購読者へ配る。
@@ -3129,6 +3726,7 @@ class OrpheInsole {
    * @returns {Promise<object>} date_timeを連想配列形式{timestamp, data,round_trip_time}で返す。dataにはCOREから直接送信されてきたdataviewが格納されている。round_trip_timeはデータを取得にかかった時間[ms]。
    */
   async getDateTime(options = {}) {
+    if (this.isInsole15) throw this._insole15Unsupported('getDateTime');
     return new Promise((resolve, reject) => {
       const startTime = performance.now(); // 関数開始時の時間を取得
       this.read('DATE_TIME', options).then((data) => {
@@ -3247,6 +3845,26 @@ class OrpheInsole {
    * @returns {Promise<object>} device_informationを連想配列形式で返す
    */
   async getDeviceInformation(options = {}) {
+    if (this.isInsole15) {
+      // get_config を読み直す（接続中のみ）。未接続なら最後の値を返す。
+      const client = this._insole15;
+      if (client && this.isConnected()) {
+        try {
+          const cfg = await client.getConfigInfo();
+          if (this._insole15 === client) {
+            // 待機中に再接続して別クライアントになっていたら、古い応答で上書きしない
+            this._insole15Config = cfg;
+            this.firmware_version = cfg.firmwareVersion || null;
+            this.device_information = this._insole15DeviceInformation(cfg);
+          }
+        } catch (error) {
+          this._reportError(error);
+          throw error;
+        }
+      }
+      if (!this.device_information) throw _insoleError('NO_DEVICE', 'INSOLE 1.5 is not connected');
+      return this.device_information;
+    }
     return new Promise((resolve, reject) => {
       this.read('DEVICE_INFORMATION', options).then((data) => {
         if (!data) {
@@ -3296,6 +3914,11 @@ class OrpheInsole {
    */
   async getFirmwareVersion() {
     if (this.firmware_version) return this.firmware_version;
+    if (this.isInsole15) {
+      const version = this._insole15Config && this._insole15Config.firmwareVersion;
+      if (version) this.firmware_version = version;
+      return version || null;
+    }
     const fromDis = await this._readFirmwareRevisionString();
     const version = fromDis || (this.lastStatus && this.lastStatus.version) || null;
     if (version) this.firmware_version = version;
@@ -3528,6 +4151,10 @@ class OrpheInsole {
 }
 
 OrpheInsole.STREAMING_MODES = ORPHE_INSOLE_STREAMING_MODES;
+// INSOLE 1.5 の定数（BLE 名・service UUID・レンジ・圧力チャネル並び替え）と、1.5 フレーム →
+// 製品版パケットの再エンコーダ（Node で単体テスト可）。
+OrpheInsole.INSOLE15 = ORPHE_INSOLE15;
+OrpheInsole.encodeInsole15Packet = encodeInsole15Packet;
 // package.json の version と同じ値を保つ（tests/insole-version-sync.test.js が検証）。
 // 記録データに SDK 版を残す用途（例: gait-report の CSV）で、デコード規則の差異を後から追えるようにする。
 OrpheInsole.SDK_VERSION = '1.3.4';
@@ -3565,7 +4192,9 @@ if (typeof module !== 'undefined' && module.exports) {
     FixedSizeArray,
     OrpheTimestamp,
     parseInsoleSensorValues,
-    ORPHE_INSOLE_STREAMING_MODES
+    ORPHE_INSOLE_STREAMING_MODES,
+    ORPHE_INSOLE15,
+    encodeInsole15Packet
   };
 }
 

@@ -9,6 +9,13 @@ import { insole } from '../proto/insole';
 //   `insole_cli/stream.py` (`monitor`), not the lossless `extract`.
 export const WINDOW_MS = 100;
 export const SAMPLE_PERIOD_MS = 5; // 200 Hz
+// A too_new answer carries newest_ms, i.e. how much of the requested window
+// the firmware has still to capture. The loop waits just that long (minus the
+// round trip it already spent, plus this margin) instead of a blind 100 ms:
+// measured on a 30 ms link this takes the delivery latency of a window from
+// 40–190 ms (mean ~90) down to ~40–60 ms.
+const TOO_NEW_MARGIN_MS = 10;
+const MIN_POLL_WAIT_MS = 10;
 
 const FOOT_NAME: Record<number, 'left' | 'right' | 'unspecified'> = {
   0: 'unspecified',
@@ -128,6 +135,71 @@ export interface InsoleClientOptions {
   namePrefix?: string;
   requireEncryption?: boolean;
   pinIdentity?: boolean;
+  /**
+   * Response timeout for get_window [ms] (default 1000; 0 = use the bleRPC
+   * default, i.e. the peripheral's negotiated timeout, typically 5000). The
+   * firmware keeps only ~1.7 s of samples, so waiting the full 5 s for a lost
+   * notification guarantees a hole; retrying within the cache does not.
+   */
+  windowTimeoutMs?: number;
+}
+
+/**
+ * Outcome of one get_window round trip inside the monitor loop, reported via
+ * `startMonitor()`'s `onWindow` so a host can account for every window: how
+ * many were delivered, how many the firmware had already evicted (`too_old`,
+ * with the number of 200 Hz samples that were skipped and are unrecoverable),
+ * how often the loop was caught up (`too_new`), and the BLE round-trip time.
+ * For an `ok` window it is reported after that window's frames were emitted.
+ */
+export interface InsoleWindowInfo {
+  // 'aligning' = too_old before any window was delivered (start-up: the cache
+  // holds nothing stamped with the clock we just set), so nothing was lost.
+  // 'lag' = the loop jumped ahead because it was more than `maxLagMs` behind
+  // live (no round trip: reported right after the `ok` window that showed it).
+  status: 'ok' | 'too_old' | 'too_new' | 'time_not_set' | 'error' | 'aligning' | 'lag';
+  startMs: number; // requested window start (insole clock, epoch ms); first skipped window for 'lag'
+  rttMs: number; // get_window round trip (request → decoded response); 0 for 'lag'
+  samples: number; // frames emitted for this window (0 unless ok)
+  skippedMs: number; // time jumped over: evicted from the cache (too_old) or given up (lag)
+  skippedSamples: number; // skippedMs / SAMPLE_PERIOD_MS — samples that will not be delivered
+  oldestMs: number | null; // firmware cache bounds as reported with the response
+  newestMs: number | null;
+  // ok / lag only: how far the end of the delivered window was behind the
+  // newest cached sample when the firmware served it (insole clock on both
+  // sides, so immune to host/insole clock offset). This is the floor of the
+  // readout latency — the loop is this far behind live, plus one round trip.
+  // ~0–30 ms when the loop keeps up; it settles near the cache depth (~1 s or
+  // more) on a link whose round trip is at or above the 100 ms window length.
+  lagMs: number | null;
+  error?: unknown; // the RPC/BLE error (status 'error' only)
+}
+
+export interface InsoleMonitorOptions {
+  onError?: (e: unknown) => void;
+  onWindow?: (info: InsoleWindowInfo) => void;
+  /**
+   * Readout latency cap [ms] (default 0 = unlimited). When the window just
+   * delivered ended more than this far behind the newest cached sample, the
+   * loop jumps to the newest complete window instead of walking there one
+   * window at a time. The windows jumped over are still in the cache but are
+   * given up: reported as one `lag` window (skippedSamples, serial gap). Leave
+   * at 0 for recording — the loop is then lossless as long as it stays within
+   * the ~1.7 s cache. Set to e.g. 300 for a live display on a link whose round
+   * trip is near the window length, where the loop otherwise settles a second
+   * or more behind live (measured: 1.1 s on a 90–120 ms link).
+   */
+  maxLagMs?: number;
+}
+
+/** Running counters of one get_gait_live poll, reported via `startGaitMonitor()`'s `onPoll`. */
+export interface InsoleGaitPollInfo {
+  measuring: boolean;
+  sessionId: number;
+  steps: number;
+  distanceM: number;
+  strideSeq: number;
+  rttMs: number;
 }
 
 /**
@@ -175,6 +247,8 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  */
 export class InsoleClient extends BlerpcClient {
   private _monitoring = false;
+  // Incremented by startMonitor()/stopMonitor()/disconnect(); see startMonitor.
+  private _monitorGeneration = 0;
   // Orientation estimate (Madgwick IMU fusion), [w,x,y,z]. Reset per monitor run.
   private _q: [number, number, number, number] = [1, 0, 0, 0];
   private _gaitMonitoring = false;
@@ -190,12 +264,31 @@ export class InsoleClient extends BlerpcClient {
   // link), so every RPC — the 100 ms window loop, gait polling, config reads —
   // is queued on one promise chain. A failed call never blocks the next one.
   private _rpcChain: Promise<unknown> = Promise.resolve();
+  // Name of the RPC currently on the wire (calls are serialized, so at most one).
+  private _activeCmd: string | null = null;
+  private readonly _windowTimeoutMs: number;
 
   protected override call(cmdName: string, requestData: Uint8Array): Promise<Uint8Array> {
-    const run = () => super.call(cmdName, requestData);
+    const run = () => {
+      this._activeCmd = cmdName;
+      return super.call(cmdName, requestData).finally(() => {
+        if (this._activeCmd === cmdName) this._activeCmd = null;
+      });
+    };
     const p = this._rpcChain.then(run, run);
     this._rpcChain = p.catch(() => undefined);
     return p;
+  }
+
+  // get_window answers within one connection interval or so (30–120 ms
+  // measured); a response that is still missing after `windowTimeoutMs` was
+  // lost on the air. Failing fast lets the monitor loop re-request the same
+  // window while the firmware still has it (~1.7 s cache) instead of waiting
+  // the peripheral's 5 s timeout and then finding the window evicted.
+  protected override _readTimeout(firstRead: boolean): number {
+    const base = super._readTimeout(firstRead);
+    if (this._activeCmd === 'get_window' && this._windowTimeoutMs > 0) return Math.min(base, this._windowTimeoutMs);
+    return base;
   }
 
   constructor(options: InsoleClientOptions = {}) {
@@ -204,6 +297,8 @@ export class InsoleClient extends BlerpcClient {
       options.requireEncryption ?? true,
       options.pinIdentity ?? true,
     );
+    const wt = Number(options.windowTimeoutMs);
+    this._windowTimeoutMs = Number.isFinite(wt) && wt >= 0 ? wt : 1000;
   }
 
   /** Read the persisted device configuration into a friendly shape. */
@@ -281,40 +376,116 @@ export class InsoleClient extends BlerpcClient {
    */
   async startMonitor(
     onFrame: (frame: InsoleFrame) => void,
-    opts: { onError?: (e: unknown) => void } = {},
+    opts: InsoleMonitorOptions = {},
   ): Promise<void> {
     if (this._monitoring) return;
     this._monitoring = true;
+    // A loop keeps running only while the generation it started with is
+    // current: stopMonitor() → startMonitor() within one round trip would
+    // otherwise leave the old loop (suspended in getWindow/sleep) alive next to
+    // the new one, both emitting frames with their own serials.
+    const generation = ++this._monitorGeneration;
+    const alive = () => this._monitoring && generation === this._monitorGeneration;
     this._q = [1, 0, 0, 0]; // reset orientation estimate
+    const maxLagMs = Number.isFinite(Number(opts.maxLagMs)) && Number(opts.maxLagMs) > 0 ? Number(opts.maxLagMs) : 0;
 
     const WS = insole.WindowStatus;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     let base = Date.now();
-    await this.setTime({ epochMs: base });
+    try {
+      await this.setTime({ epochMs: base });
+    } catch (e) {
+      if (generation === this._monitorGeneration) this._monitoring = false;
+      throw e;
+    }
+    if (!alive()) return;
     let t = base;
+    // `serial` counts delivered samples plus the ones the loop had to skip
+    // (too_old / clock re-sync), so a gap in the frame serials is a gap in the
+    // data and a host can detect loss with `serial !== previous + 1` just like
+    // the product insole's packet serials. Within a run of consecutive OK
+    // windows it is purely a sample count: the firmware bins the 200 Hz stream
+    // into 100 ms windows by its own clock, so a window may carry 19 or 21
+    // samples with no loss at all, and a time-based slot count would report
+    // phantom gaps there.
     let serial = 0;
+    // Until the first window has been delivered, a too_old answer is only the
+    // loop aligning itself with the cache (the samples before set_time took
+    // effect were never stamped with this clock), not data that was lost.
+    let delivered = false;
 
-    while (this._monitoring) {
+    while (alive()) {
+      const started = now();
+      const requestedT = t;
       try {
         const resp = await this.getWindow({ startMs: t });
+        const rttMs = now() - started;
         const status = resp.status as number;
+        const oldestMs = Number.isFinite(Number(resp.oldestMs)) && Number(resp.oldestMs) > 0 ? Number(resp.oldestMs) : null;
+        const newestMs = Number.isFinite(Number(resp.newestMs)) && Number(resp.newestMs) > 0 ? Number(resp.newestMs) : null;
+        if (!alive()) break; // stopMonitor()/restart during the round trip: do not emit
         if (status === WS.WINDOW_STATUS_OK) {
           const frames = this.framesFromWindow(resp, t, serial);
-          for (const f of frames) onFrame(f);
+          // Advance the cursor before emitting: a throwing host callback must
+          // not make the loop re-request (and re-emit) the same window forever.
           serial += frames.length;
+          delivered = delivered || frames.length > 0;
           t += WINDOW_MS;
+          try {
+            for (const f of frames) onFrame(f);
+          } catch (e) {
+            opts.onError?.(e);
+          }
+          const lagMs = newestMs !== null ? Math.max(0, newestMs - t) : null; // t is now the end of this window
+          opts.onWindow?.({ status: 'ok', startMs: requestedT, rttMs, samples: frames.length, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs, lagMs });
+          if (maxLagMs > 0 && lagMs !== null && newestMs !== null && lagMs > maxLagMs) {
+            // Live readout that fell behind (round trip ≳ window length): jump
+            // to the newest complete window rather than keep delivering data
+            // that is seconds old. The windows jumped over are given up on
+            // purpose — reported, and the serial gap stays visible.
+            const next = newestMs - WINDOW_MS;
+            const skippedMs = next - t;
+            const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+            serial += skippedSamples;
+            t = next;
+            opts.onWindow?.({ status: 'lag', startMs: requestedT + WINDOW_MS, rttMs: 0, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs, lagMs });
+          }
         } else if (status === WS.WINDOW_STATUS_TOO_NEW) {
-          await sleep(WINDOW_MS); // caught up to live — wait for capture
+          opts.onWindow?.({ status: 'too_new', startMs: requestedT, rttMs, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs, newestMs, lagMs: null });
+          // Caught up to live. newest_ms says how much of the window is still
+          // to be captured; a request sent after that long (minus the round
+          // trip just spent, which the next one spends again on the way in)
+          // reaches the insole as the window completes.
+          const wait = newestMs !== null
+            ? Math.min(WINDOW_MS, Math.max(MIN_POLL_WAIT_MS, Math.round(t + WINDOW_MS - newestMs - rttMs + TOO_NEW_MARGIN_MS)))
+            : WINDOW_MS;
+          await sleep(wait);
         } else if (status === WS.WINDOW_STATUS_TOO_OLD) {
-          const newest = Number(resp.newestMs) || t + WINDOW_MS;
-          t = Math.max(t + WINDOW_MS, newest - WINDOW_MS); // fell behind — skip ahead
+          const newest = newestMs ?? t + WINDOW_MS;
+          const next = Math.max(t + WINDOW_MS, newest - WINDOW_MS); // fell behind — skip ahead
+          const skippedMs = delivered ? next - t : 0;
+          const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+          serial += skippedSamples; // evicted windows: unrecoverable, leave the hole in the serials
+          t = next;
+          opts.onWindow?.({ status: delivered ? 'too_old' : 'aligning', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs, lagMs: null });
         } else {
-          // TIME_NOT_SET (or unspecified) — re-sync the clock.
+          // TIME_NOT_SET (or unspecified) — re-sync the clock. Both clocks are
+          // host epoch ms (set_time), so the samples between the window we were
+          // about to read and the new base are lost: skip their serials too
+          // (unless nothing had been delivered yet — then it is start-up alignment).
           base = Date.now();
           await this.setTime({ epochMs: base });
+          if (!alive()) break;
+          const skippedMs = delivered ? Math.max(0, base - t) : 0;
+          const skippedSamples = Math.round(skippedMs / SAMPLE_PERIOD_MS);
+          serial += skippedSamples;
           t = base;
+          opts.onWindow?.({ status: 'time_not_set', startMs: requestedT, rttMs, samples: 0, skippedMs, skippedSamples, oldestMs, newestMs, lagMs: null });
         }
       } catch (e) {
+        if (!alive()) break;
         opts.onError?.(e);
+        opts.onWindow?.({ status: 'error', startMs: requestedT, rttMs: now() - started, samples: 0, skippedMs: 0, skippedSamples: 0, oldestMs: null, newestMs: null, lagMs: null, error: e });
         await sleep(20); // transient BLE/RPC error — keep going
       }
     }
@@ -323,6 +494,7 @@ export class InsoleClient extends BlerpcClient {
   /** Stop the monitor loop started by startMonitor(). */
   stopMonitor(): void {
     this._monitoring = false;
+    this._monitorGeneration++; // a loop mid-await exits instead of running next to the next one
   }
 
   /** True while the gait monitor (get_gait_live polling) is running. */
@@ -351,20 +523,33 @@ export class InsoleClient extends BlerpcClient {
    */
   async startGaitMonitor(
     onStride: (stride: InsoleGaitStride) => void,
-    opts: { pollMs?: number; onError?: (e: unknown) => void } = {},
+    opts: { pollMs?: number; onError?: (e: unknown) => void; onPoll?: (info: InsoleGaitPollInfo) => void } = {},
   ): Promise<void> {
     if (this._gaitMonitoring || this._gaitStarting) return;
     this._gaitStarting = true;
     const generation = ++this._gaitGeneration;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const pollInfo = (live: insole.GetGaitLiveResponse, rttMs: number): InsoleGaitPollInfo => ({
+      measuring: !!live.measuring,
+      sessionId: live.sessionId ?? 0,
+      steps: live.steps ?? 0,
+      distanceM: live.distanceM ?? 0,
+      strideSeq: live.strideSeq ?? 0,
+      rttMs,
+    });
     let first: insole.GetGaitLiveResponse;
+    const firstStarted = now();
     try {
       first = await this.getGaitLive();
     } finally {
-      this._gaitStarting = false;
+      // Only this generation may clear the flag: stopGaitMonitor() during the
+      // first poll already cleared it for the next start.
+      if (generation === this._gaitGeneration) this._gaitStarting = false;
     }
     // stopGaitMonitor() / disconnect() ran while the first
     // poll was in flight: do not start polling.
     if (generation !== this._gaitGeneration) return;
+    opts.onPoll?.(pollInfo(first, now() - firstStarted));
     if (!first.measuring) throw new GaitLiveUnsupportedError();
     this._gaitMonitoring = true;
     const pollMs = opts.pollMs ?? 250;
@@ -402,8 +587,10 @@ export class InsoleClient extends BlerpcClient {
         await sleep(pollMs);
         if (!alive()) break;
         try {
+          const pollStarted = now();
           const live = await this.getGaitLive();
           if (!alive()) break; // stopped (or restarted) while this poll was in flight
+          opts.onPoll?.(pollInfo(live, now() - pollStarted));
           emit(live);
         } catch (e) {
           if (alive()) opts.onError?.(e); // transient BLE/RPC error — keep polling
@@ -418,12 +605,15 @@ export class InsoleClient extends BlerpcClient {
    */
   stopGaitMonitor(): void {
     this._gaitMonitoring = false;
+    this._gaitStarting = false; // a start whose first poll is still in flight is abandoned; the next start may proceed
     this._gaitGeneration++;
   }
 
   disconnect(): void {
     this._monitoring = false;
+    this._monitorGeneration++;
     this._gaitMonitoring = false;
+    this._gaitStarting = false;
     this._gaitGeneration++;
     super.disconnect();
   }

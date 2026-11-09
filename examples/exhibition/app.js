@@ -13,8 +13,16 @@
  *  - 描画は requestAnimationFrame で約25fpsにスロットリング（CLAUDE.md Pattern 5）
  */
 
+// 展示現場での調整用クエリ（README 参照）:
+//   ?fps=25          描画レート（5〜60。チャート8枚+3DなのでShowcaseより控えめな25が既定）
+//   ?pacing=smooth   INSOLE 1.5 の配信ペーシング。'smooth'(既定)=10 ms 間隔で滑らか（最大+100 ms）、'burst'=届いた瞬間に全部（最小遅延・10 Hz で飛び飛び）
+//   ?maxlag=300      INSOLE 1.5 の追従遅れ上限 [ms]。超えたら最新の窓へ飛ぶ（0 でロスレス＝遅れが溜まりうる）
+const PAGE_PARAMS = new URLSearchParams(location.search);
 const HISTORY = 160;           // チャートに表示するサンプル数
-const RENDER_INTERVAL_MS = 40; // 描画間隔（約25fps。チャート8枚+3DなのでShowcaseより控えめ）
+const RENDER_INTERVAL_MS = Math.round(1000 / Math.min(60, Math.max(5, Number(PAGE_PARAMS.get('fps')) || 25))); // 既定 40 ms（約25fps）
+const INSOLE15_PACING = PAGE_PARAMS.get('pacing') === 'burst' ? 'burst' : 'smooth';
+const INSOLE15_MAX_LAG_MS = PAGE_PARAMS.has('maxlag') && Number.isFinite(Number(PAGE_PARAMS.get('maxlag')))
+    ? Math.max(0, Number(PAGE_PARAMS.get('maxlag'))) : 300;
 const LIVE_TIMEOUT_MS = 1500;  // ライブ受信がこの時間途絶えたらデモ再生に戻る
 const PRESSURE_GAUGE_MAX = 10000;
 const FOOT_LOCAL_X_RANGE = 0.58;
@@ -89,18 +97,27 @@ class ChartFeed {
     }
     push(values) {
         this.pending.push(values);
+        this.count++; // 受信の通し番号（表示に乗らない分も進む）
+        // 描画ループ（rAF）はタブ非表示・ウィンドウの完全遮蔽で止まるが、コールバックは 200Hz で
+        // 来続ける。表示できるのは直近 HISTORY 件だけなので、それ以上は溜めない（溜めた分を復帰時に
+        // 1 件ずつ shift すると O(n²) になり、数十分タブが固まる）
+        if (this.pending.length > HISTORY * 2) this.pending.splice(0, this.pending.length - HISTORY);
     }
     flush() {
         if (this.pending.length === 0) return false;
         const data = this.chart.data;
-        for (const values of this.pending) {
-            data.labels.push(this.count++);
+        const skipped = Math.max(0, this.pending.length - HISTORY);
+        const base = this.count - this.pending.length; // pending[0] の通し番号
+        for (let k = skipped; k < this.pending.length; k++) {
+            const values = this.pending[k];
+            data.labels.push(base + k);
             values.forEach((v, i) => data.datasets[i].data.push(v));
         }
         this.pending.length = 0;
-        while (data.labels.length > HISTORY) {
-            data.labels.shift();
-            data.datasets.forEach(ds => ds.data.shift());
+        const excess = data.labels.length - HISTORY;
+        if (excess > 0) { // 余剰は一括で切り落とす（while + shift() は使わない）
+            data.labels.splice(0, excess);
+            data.datasets.forEach(ds => ds.data.splice(0, excess));
         }
         return true;
     }
@@ -493,6 +510,10 @@ window.onload = function () {
                 streamingMode: 4,          // press + acc + gyro + quat（この画面は全部使う）
                 autoReconnect: true,
                 sensorDataMode: 'realtime',
+                // INSOLE 1.5（プル型 100 ms 窓）: 展示表示なので欠損より遅延を嫌う。追従遅れが maxLagMs（既定 300 ms）を
+                // 超えたら最新の窓へ飛ぶ（飛ばした分は lostData / lagSkips に出る）。pacing 既定 'smooth' はパケットを
+                // 10 ms 間隔で配信して 100 ms ごとのバーストで動きが飛び飛びにならないようにする（?pacing=burst で最小遅延）
+                insole15: { pacing: INSOLE15_PACING, maxLagMs: INSOLE15_MAX_LAG_MS },
                 // 接続はRawだけで確立し、Step Analysisは接続後に追加する
                 // （enableStepAnalysisWhenReady。最終形は realtime-full-step 相当）
                 outputs: { sensorValues: true, stepAnalysis: false },
@@ -541,6 +562,17 @@ window.onload = function () {
         insole.onReconnectSuccess = function () {
             applyMountPositionWhenReady(this);
             enableStepAnalysisWhenReady(this.id);
+        };
+        // 切断時は次の接続に備えて Raw のみへ戻す（同じスロットに別個体が繋がることもある）。
+        // Step を含んだ状態のまま接続すると、Step 出力の無い個体（旧 FW）では接続自体が
+        // GAIT_NO_NOTIFICATIONS で失敗して切断される。Step は接続後に enableStepAnalysisWhenReady が足す。
+        // Toolkit も onDisconnect を包んでいる（markDisconnected）ので、上書きせずに連鎖させる
+        const toolkitOnDisconnect = insole.onDisconnect;
+        insole.onDisconnect = function (...args) {
+            if (typeof toolkitOnDisconnect === 'function') toolkitOnDisconnect.apply(this, args);
+            stepUnavailable[this.id] = null;
+            const session = getInsoleToolkitSession(this.id);
+            if (session) session.setOutputs({ sensorValues: true, stepAnalysis: false }).catch(() => {});
         };
     }
 

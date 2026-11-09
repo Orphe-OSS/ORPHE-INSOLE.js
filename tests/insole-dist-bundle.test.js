@@ -15,7 +15,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { buildDist, OUTPUT_FILE, SOURCE_FILE } = require('../scripts/build-dist.js');
+const { buildDist, OUTPUT_FILE, SOURCE_FILE, COPY_FILES, sha256, minifiedSourceSha } = require('../scripts/build-dist.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -120,6 +120,22 @@ function main() {
 
   // 8. vendor ファイルが src 直読みの相対パスに実在する
   assert.ok(fs.existsSync(path.join(ROOT, 'src', 'vendor', 'quaternion.js')), 'src/vendor/quaternion.js exists');
+
+  // 9. INSOLE 1.5 クライアントは SDK に同梱せず、src と同じ内容を dist にも置く（遅延ロードの相対パス用）。
+  //    .min.js は terser 生成物なので存在とグローバル名だけ確認する。
+  assert.ok(!/Insole15Client\.js is bundled/.test(dist));
+  assert.ok(!/var Insole15 = \(\(\) =>/.test(dist), 'dist/orphe-insole.js must not inline the INSOLE 1.5 client');
+  for (const copy of COPY_FILES) {
+    assert.equal(read(copy.to), read(copy.from), `${copy.to} must equal ${copy.from} — run \`npm run build\` and commit`);
+  }
+  const min15 = read('dist/Insole15Client.min.js');
+  assert.match(min15.slice(0, 400), /var Insole15=/, 'dist/Insole15Client.min.js defines global Insole15');
+  // .min.js は terser 生成物なので、先頭コメントの sha256 が元ファイルと一致することで鮮度を検査する
+  assert.equal(minifiedSourceSha(min15), sha256(read('src/Insole15Client.js')),
+    'dist/Insole15Client.min.js is stale — run `npm run build` and commit');
+  assert.ok(/INS2|12340001-0000-1000-8000-00805f9b34fb/.test(src), 'src knows the INSOLE 1.5 service UUID');
+  assert.ok(/Insole15Client\.min\.js/.test(src) && /Insole15Client\.js/.test(src), 'src names both client files for lazy load');
+  // 遅延ロードは選択時のみ: 読み込み直後に Insole15Client が挿入されてはいけない（7 のケースで確認済み）
 
   console.log('insole-dist-bundle: OK');
 }

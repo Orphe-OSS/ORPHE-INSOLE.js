@@ -8,7 +8,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- showcase: ORPHE INSOLE 1.5 を製品版と**同じトグル・同じ手順**で接続できるようにした。1回のデバイス選択で種別（`INS…` / `Orphe_Insole…`）を自動判別し、製品版は従来の Toolkit 接続（`session.connect()`）、INSOLE 1.5 は同梱の専用クライアント `examples/showcase/lib/insole-1.5.web.js`（グローバル `Insole15`。Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得、IMU からの Madgwick 姿勢推定）へ振り分け、どちらも同じ `dispatchFrame()` で可視化する。INSOLE 1.5 は加速度 m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（右足は基板上のセンサ配置が異なるため専用テーブル）。pitch/roll の表示補正は既存の「pitch / roll を入れ替えて表示」スイッチを両者共通で使う。クライアントのソース（TypeScript）と再ビルド手順は `examples/showcase/lib/README.md`（ESLint 対象外。`.gitignore` の `proto/` は root 限定の `/proto/` に変更）。INSOLE 1.5 は通常のストリーミングがプル型でロスレスなため FIFO 収録が不要である旨を「ロスレス収録（FIFO）」カードと README に記載し、INSOLE 1.5 のみ接続中はカードのステータスにも表示する。歩容解析も INSOLE 1.5 で動作: クライアントに `startGaitMonitor()` / `stopGaitMonitor()`（FW の `get_gait_live` をポーリングするだけ。計測セッションは開かず、端末には何も記録されない）と RPC 直列化（bleRPC は再入不可）を追加し、showcase は完了ストライドを `OrpheInsoleGait` 互換 row に変換して同じパネル・CSV で扱う（ストライド方向・X/Y 成分・カロリーは取得できないため空欄）。
+- **コア SDK 全体で INSOLE 1.5（INS2）に対応**。`OrpheInsole.begin()` がデバイス選択ダイアログで選ばれた
+  INS2 を自動判別し、専用クライアント `src/Insole15Client.js`（global `Insole15`、`src/insole15-client/` の
+  TypeScript からビルド。旧 `examples/showcase/lib/insole-1.5.web.js` を移動・改名）を**自身の URL 基準で
+  遅延ロード**して接続する（`dist/Insole15Client(.min).js` も同梱。`<script>` で先に読み込めば遅延ロードなし）。
+  受け取った 200 Hz フレームを製品版 SENSOR_VALUES パケット（header 56）に再エンコード
+  （`OrpheInsole.encodeInsole15Packet`）して同じ `onRead()` に流すため、got* コールバック・
+  `addSensorDataListener`・`lostData`・`gotBLEFrequency`（実効サンプルレート）・自動再接続・Toolkit の
+  計測記録・`OrpheInsoleGait`（FW `get_gait_live` のポーリング）・examples が製品版と同じコードで動く。
+  新 API: `insole.generation`（1/2）、`insole.isInsole15`、`insole.insole15Diagnostics()`（窓数・`too_old`
+  欠損・RTT・foot/firmware）、`insole.lastInsole15Frame`、`OrpheInsole.INSOLE15`（定数・左右別圧力チャネル
+  並び替え）、`OrpheInsole.isInsole15Device()` / `insole15ClientAvailable()` / `loadInsole15Client()`、
+  `begin({ insole15: { pressureScale, pressureChannelMap, requireEncryption, pinIdentity } })`、
+  `OrpheInsoleGait.insole15StrideToRow()`、`new OrpheInsoleGait(insole, { pollMs })`、Toolkit
+  `snapshot().generation / insole15 / insole15Diagnostics`。1.5 では `setDataStreamingMode()` は no-op、
+  `read/write/getDateTime` は `INSOLE15_UNSUPPORTED`、FIFO は Toolkit が Realtime へ退避する
+  （診断 `insole15-fifo-unavailable`）。回帰テスト `tests/insole15-core.test.js` / `insole15-gait.test.js` /
+  `insole15-toolkit.test.js`。
+- INSOLE 1.5 の配信ペーシングと表示遅延の上限: FW は 100 ms 窓（10 パケット）をまとめて返すため got* が
+  10 Hz のバーストになり、画面の動きが飛び飛びに見えていた。`begin({ insole15: { pacing } })`（既定 `'smooth'`:
+  窓内のパケットを 10 ms 間隔で配信、最大 +100 ms。`'burst'`: 従来どおり届いた瞬間に全部）を追加。往復が窓長
+  100 ms に近いリンク（2 台同時の先に接続した側、実測 90〜120 ms）ではループが追いつけず表示が 1 秒以上遅れる
+  （実測 1.1 秒）ため、`begin({ insole15: { maxLagMs } })`（既定 0 = ロスレス）で最新の窓へ飛ばせる。
+  `insole15Diagnostics()` に `lagMs: {p50, p90, max, last}` / `lagSkips` / `pacing` / `maxLagMs` を追加し、
+  Toolkit の状態表示に `lag x.x s`（300 ms 以上）を出す。exhibition は `maxLagMs: 300` を指定。
+- INSOLE 1.5 クライアント: `startMonitor()` のフレーム `serial` が欠損（`too_old` / 時計再同期）の分だけ飛ぶ
+  ようになり、ホスト側で `serial !== prev + 1` の欠損検出ができる（従来は連番のまま穴が見えなかった）。
+  `onWindow`（窓ごとの status / RTT / skippedSamples / `lagMs`＝配信した窓の末尾が端末の最新サンプルから
+  どれだけ遅れていたか）と `startGaitMonitor()` の `onPoll` を追加。追いついたとき（`too_new`）の再要求は
+  `newest_ms` から窓の残り時間を計算して待つ（盲目的な 100 ms 待ちを廃止。1 台・RTT 30 ms で窓の遅れ
+  40〜190 ms → 40〜60 ms）。`startMonitor(onFrame, { maxLagMs })` で追従遅れの上限を指定でき、超えたら
+  最新の窓へ飛んで `lag` 窓（skippedSamples・serial の飛び）として報告する（表示用途向け。既定 0 = ロスレス）。
+  get_window の応答待ちを `windowTimeoutMs`（既定 1000 ms、`begin({ insole15: { windowTimeoutMs } })`）で打ち切り、
+  通知を 1 つ取りこぼしても FW キャッシュ（約 1.7 秒）内に同じ窓を再要求する（端末既定の 5 秒待ちでは必ず穴になっていた）。
+- showcase: ORPHE INSOLE 1.5 を製品版と**同じトグル・同じ手順**で接続できるようにした（※この実装はその後コア SDK へ移り、showcase 独自経路は撤去。下記 Changed 参照）。1回のデバイス選択で種別（`INS…` / `Orphe_Insole…`）を自動判別し、製品版は従来の Toolkit 接続（`session.connect()`）、INSOLE 1.5 は同梱の専用クライアント `examples/showcase/lib/insole-1.5.web.js`（グローバル `Insole15`。Web Bluetooth + 暗号化 bleRPC、100 ms ウィンドウ単位のライブ取得、IMU からの Madgwick 姿勢推定）へ振り分け、どちらも同じ `dispatchFrame()` で可視化する。INSOLE 1.5 は加速度 m/s²→G、圧力[mV] は表示用に10倍＋左右別のチャネル並び替え（右足は基板上のセンサ配置が異なるため専用テーブル）。pitch/roll の表示補正は既存の「pitch / roll を入れ替えて表示」スイッチを両者共通で使う。クライアントのソース（TypeScript）と再ビルド手順は `examples/showcase/lib/README.md`（ESLint 対象外。`.gitignore` の `proto/` は root 限定の `/proto/` に変更）。INSOLE 1.5 は通常のストリーミングがプル型でロスレスなため FIFO 収録が不要である旨を「ロスレス収録（FIFO）」カードと README に記載し、INSOLE 1.5 のみ接続中はカードのステータスにも表示する。歩容解析も INSOLE 1.5 で動作: クライアントに `startGaitMonitor()` / `stopGaitMonitor()`（FW の `get_gait_live` をポーリングするだけ。計測セッションは開かず、端末には何も記録されない）と RPC 直列化（bleRPC は再入不可）を追加し、showcase は完了ストライドを `OrpheInsoleGait` 互換 row に変換して同じパネル・CSV で扱う（ストライド方向・X/Y 成分・カロリーは取得できないため空欄）。
 - 圧力校正値を `begin()` 時に自動取得し、`pressure_calibration` に6ch分を保持。`getPressureCalibration({ timeoutMs })` で再取得可能。非対応・失敗時はエラーを通知せずnullで継続する。
 - 校正式（指数関数・4次多項式）とPythonクライアントの6ch既定係数による荷重[N]を `converted_press` / `gotConvertedPress` で提供。既存の `press` / `gotPress` はADC生値を維持する。
 - `examples/calibrated-pressure/`: 校正済みの圧力値（荷重[N]）を2台分の6chグラフで表示する最小サンプル（index.html + sketch.js のみ）。
@@ -23,11 +56,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- showcase: INSOLE 1.5 の独自接続経路（`installUnifiedToggle` / `connectInsole15` / 専用の歩容計測器
+  `createInsole15GaitSource`）を撤去し、製品版と同じ Toolkit 経路（コア SDK の INS2 自動判別・
+  `OrpheInsoleGait` の get_gait_live ポーリング）に統一した。`examples/showcase/lib/` は
+  `src/insole15-client/`（ソース）と `src/Insole15Client.js`（バンドル）へ移動。INSOLE 1.5 接続中は
+  「ロスレス収録（FIFO）」トグルを無効にし、FIFO 不要の旨を表示する。
 - Gait Report starts without synthetic data by default; automatic demo is now opt-in via `?demo=1` (or the existing Play demo button).
 - Gait Report CG: once the 20-step report is finalized, the animation holds the same mean as the report (`gait-report:cg-complete` → `Feed.hold`) instead of continuing to follow later steps and pausing 8 s after the last one. Start recording / Clear release the hold. The status line reads "Replaying the finalized report mean".
 
 ### Fixed
 
+- examples: 描画用の受信バッファに上限が無く、タブ非表示・ウィンドウの完全遮蔽で描画ループ（rAF）が止まっている間に
+  200 Hz の受信が溜まり続け（約 80 分で 1 本あたり数十万件・RSS 750 MB）、復帰時の flush が「全件 push → 表示件数まで
+  1 件ずつ shift」の O(n²) となってレンダラが数十分 CPU 99% で固まっていた（展示ページで実機接続中に発生。
+  Node でも 2 万件 171 ms → 4 万件 710 ms と 4 倍ずつ増える）。exhibition / showcase / VISUALIZE / insole-core-combo の
+  `ChartFeed` は pending を表示件数の 2 倍で打ち切り、flush は直近の表示件数ぶんだけ流して余剰を `splice` で一括削除。
+  calibrated-pressure は pending に上限、data-modes / fifo-vs-realtime は時間窓外の点を push 時に捨てる。
+  CLAUDE.md Pattern 5 にバッファ上限の指針を追記。回帰テスト `tests/example-render-buffer-backlog.test.js`。
+- exhibition: 同じスロットで Step Analysis を有効化したあとの再接続（別個体を含む）が、Step を含んだ設定のまま
+  接続されるため、Step 出力の無い個体（旧 FW）では接続自体が `GAIT_NO_NOTIFICATIONS` で失敗して切断されていた。
+  切断時に Raw のみへ戻し、「Raw で接続してから Step を足す」順を 2 回目以降も保つ（製品版 INSOLE で実機確認）。
 - showcase: INSOLE 1.5 の FW 0.1.7 以降はデバイス名が `Orphe_Insole` から `INS2` に変わったため、名前の接頭辞だけで判別していた統合トグルが製品版と取り違え、Toolkit 接続に失敗していた。INSOLE 1.5 は `INS2` との完全一致で判別するようにし、旧ファームの `Orphe_Insole` 名による判別と chooser の `namePrefix: 'Orphe_Insole'` フィルタは削除した（FW 0.1.7 以降が必要）。選択ダイアログ上の表示名の案内（index.html / i18n.js）と SPEC.md も更新。
 
 ## [1.3.4] - 2026-09-06

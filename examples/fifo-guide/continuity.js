@@ -79,7 +79,12 @@
      *   spanStartOffset:number,spanEndOffset:number,offsets:Set<number>,anchor:number|null,
      *   missingRanges:Array<{start:number,end:number,count:number,label:string}>}}
      */
-    function analyzeSerials(serials) {
+    function analyzeSerials(serials, options = {}) {
+        // ordered: 受信順に並んだ serial 列として、直前の serial からの前方距離で offset を積み上げる
+        // （uint16 半周 = 32768 packet を超える長い収録でも正しい。INSOLE 1.5 の Realtime は 100 packet/s
+        //   なので 6 分で 36000 packet になり、anchor からの距離だけでは wrap と区別できない）。
+        // 既定（false）は従来どおり anchor からの距離で判定する（順不同の集合向け）。
+        const ordered = !!options.ordered;
         const offsets = new Set();
         let anchor = null;
         let duplicates = 0;
@@ -87,6 +92,7 @@
         let minOffset = 0;
         let maxOffset = 0;
         let previousOffset = null;
+        let previousSerial = null;
 
         for (const raw of serials) {
             if (raw === null || raw === undefined || !Number.isFinite(Number(raw))) continue;
@@ -95,11 +101,19 @@
                 anchor = serial;
                 offsets.add(0);
                 previousOffset = 0;
+                previousSerial = serial;
                 continue;
             }
-            const forward = serialForwardDistance(anchor, serial);
-            // 半周を超える前方距離は「anchorより前（古い）」と解釈する（wrap対応）
-            const offset = forward < HALF_SERIAL_RANGE ? forward : forward - SERIAL_MOD;
+            let offset;
+            if (ordered) {
+                const step = serialForwardDistance(previousSerial, serial);
+                offset = previousOffset + (step < HALF_SERIAL_RANGE ? step : step - SERIAL_MOD);
+                previousSerial = serial;
+            } else {
+                const forward = serialForwardDistance(anchor, serial);
+                // 半周を超える前方距離は「anchorより前（古い）」と解釈する（wrap対応）
+                offset = forward < HALF_SERIAL_RANGE ? forward : forward - SERIAL_MOD;
+            }
             if (offsets.has(offset)) {
                 duplicates += 1;
                 continue;
@@ -252,18 +266,21 @@
      * @param {number} expectedSerials 収録スパンの serial 数（analyzeSerials().expected）
      * @param {number} plannedMs 予定していた計測時間
      */
-    function spanCoverage(expectedSerials, plannedMs) {
+    function spanCoverage(expectedSerials, plannedMs, options = {}) {
         const serials = Math.max(0, Number(expectedSerials) || 0);
         const planned = Math.max(0, Number(plannedMs) || 0);
-        const spanMs = serials * PACKET_INTERVAL_MS;
+        // 1 serial（packet）が表す時間。製品版 FIFO = 20 ms、INSOLE 1.5 Realtime = 10 ms（2 sample/packet @ 200 Hz）
+        const intervalMs = Number(options.packetIntervalMs) > 0 ? Number(options.packetIntervalMs) : PACKET_INTERVAL_MS;
+        const spanMs = serials * intervalMs;
         const ratio = planned > 0 ? spanMs / planned : 0;
         return {
             serials,
             spanMs,
             plannedMs: planned,
+            packetIntervalMs: intervalMs,
             ratio,
             shortfallMs: Math.max(0, planned - spanMs),
-            shortfallSerials: Math.max(0, Math.round((planned - spanMs) / PACKET_INTERVAL_MS)),
+            shortfallSerials: Math.max(0, Math.round((planned - spanMs) / intervalMs)),
             level: planned === 0 || ratio >= SPAN_COVERAGE_OK_RATIO ? 'ok' : 'warn',
         };
     }
@@ -295,7 +312,20 @@
 
         // 注意は言語に依存しない code + params で返し、表示側（i18n）で文字列にする。
         // continuity.js に日本語を持たせると英語表示に日本語が混ざるため。
+        // ignoreBuffer: FW リングバッファ（約 30 秒）と lag の概念が無い経路（INSOLE 1.5 の Realtime）では
+        // バッファ系の注意を出さない（合否は missing / dropped だけで決まる）。
         const cautions = [];
+        if (input.ignoreBuffer) {
+            return {
+                level: continuity.level,
+                label: continuity.label,
+                continuity,
+                buffer: { ...buffer, withinWindow: true, level: 'ok', lagRatio: 0, maxLag: 0, lagOverCapacity: false },
+                cautions,
+                missing,
+                dropped,
+            };
+        }
         if (!buffer.withinWindow) {
             cautions.push({
                 code: 'overBuffer',

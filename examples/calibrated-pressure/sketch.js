@@ -93,6 +93,8 @@ window.onload = function () {
     // 2. 荷重[N] を受け取る（100Hz で届くので、ここでは溜めるだけ）
     insole.gotConvertedPress = function (press) {
       pending[this.id].push(press.values);
+      // 描画ループ（rAF）はタブ非表示で止まるが受信は続く。表示できる直近 HISTORY 件だけ残す
+      if (pending[this.id].length > HISTORY * 2) pending[this.id].splice(0, pending[this.id].length - HISTORY);
     };
   }
 

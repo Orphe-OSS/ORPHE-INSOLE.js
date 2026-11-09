@@ -167,6 +167,55 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(analysis.duplicates, 3);
 }
 
+// ── INSOLE 1.5（Realtime 退避、1 packet = 2 sample / 10 ms、100 packet/s）────────────
+{
+    // 6 分 = 36000 packet > uint16 半周（32768）。anchor 距離だけでは wrap と区別できないが、
+    // 受信順の積み上げ（ordered）なら正しく 36000 expected / 0 missing になる。
+    const start = 2100;
+    const long = Array.from({ length: 36000 }, (_, i) => (start + i) % 65536);
+    const naive = C.analyzeSerials(long);
+    assert.ok(naive.expected > 36000, `anchor-only analysis misreads a 36000-packet span (${naive.expected})`);
+    const ordered = C.analyzeSerials(long, { ordered: true });
+    assert.equal(ordered.expected, 36000);
+    assert.equal(ordered.received, 36000);
+    assert.equal(ordered.missing, 0);
+    assert.equal(ordered.first, 2100);
+    assert.equal(ordered.last, (start + 35999) % 65536);
+    // 欠損・重複（再エンコード済みパケットは 2 sample が同じ serial）・順序は ordered でも検出する
+    const withHole = long.filter((s) => s !== 2110 && s !== 2111);
+    const doubled = withHole.flatMap((s) => [s, s]);
+    const analyzed = C.analyzeSerials(doubled, { ordered: true });
+    assert.equal(analyzed.expected, 36000);
+    assert.equal(analyzed.missing, 2);
+    assert.equal(analyzed.duplicates, 35998);
+    assert.deepEqual(analyzed.missingRanges.map((r) => [r.start, r.end, r.count]), [[2110, 2111, 2]]);
+    // wrap をまたぐ ordered
+    const wrapped = C.analyzeSerials([65534, 65535, 0, 1, 2], { ordered: true });
+    assert.equal(wrapped.expected, 5);
+    assert.equal(wrapped.missing, 0);
+    const wrappedGap = C.analyzeSerials([65534, 65535, 1, 2], { ordered: true });
+    assert.equal(wrappedGap.missing, 1);
+    assert.equal(wrappedGap.missingRanges[0].start, 0);
+
+    // 収録スパンは packet 間隔で換算（1.5 は 10 ms）
+    const span = C.spanCoverage(36000, 360000, { packetIntervalMs: 10 });
+    assert.equal(span.spanMs, 360000);
+    assert.equal(span.packetIntervalMs, 10);
+    assert.equal(span.level, 'ok');
+    assert.equal(C.spanCoverage(36000, 360000).spanMs, 720000, 'default stays 20 ms');
+
+    // バッファ系の注意は 1.5 では出さない（合否は missing だけ）
+    const verdict = C.evaluateRecording({ analysis: ordered, dropped: 0, durationMs: 360000, maxLag: 0, ignoreBuffer: true });
+    assert.equal(verdict.level, 'pass');
+    assert.deepEqual(verdict.cautions, []);
+    assert.equal(verdict.buffer.withinWindow, true);
+    const fail15 = C.evaluateRecording({ analysis: analyzed, dropped: 0, durationMs: 360000, ignoreBuffer: true });
+    assert.equal(fail15.level, 'fail');
+    assert.equal(fail15.missing, 2);
+    const productOver = C.evaluateRecording({ analysis: ordered, dropped: 0, durationMs: 360000 });
+    assert.equal(productOver.level, 'caution', 'product keeps the 30 s buffer caution');
+}
+
 // ── 順不同（drain / 再要求で後から届く）でも整合する ─────────────────────
 {
     // 先頭 serial が最初の要求で落ち、あとの再要求で回収されたケース

@@ -153,6 +153,32 @@ STEP_ANALYSIS packetが到着するまで確認します。無通知時は自動
 FIFO停止後のStep復元に失敗した場合もFIFO結果は`session.lastMeasurement`に残り、
 セッションは意図しないFIFO再開を避けて`realtime-full`へ退避します。
 
+### INSOLE 1.5（INS2）
+
+INSOLE 1.5（BLE 名 `INS2`、FW 0.1.7 以降）は製品版と通信方式が異なります（暗号化 bleRPC で
+100 ms 窓を要求するプル型、姿勢は送らない）が、**コード変更なしで同じ API が使えます**。
+デバイス選択ダイアログで INS2 を選ぶと SDK が自動判別し、専用クライアント `Insole15Client.js`
+（`src/` と `dist/` に同梱）を自身の URL 基準で遅延ロードして接続します。
+`gotPress` 等のコールバック・Toolkit・`OrpheInsoleGait`（FW の `get_gait_live` をポーリング）・
+自動再接続・計測記録はそのまま動きます。
+
+```js
+await insole.begin('SENSOR_VALUES', { streamingMode: 4 }); // INS2 を選べば 1.5 経路
+insole.isInsole15;             // true
+insole.insole15Diagnostics();  // 窓数・欠損（too_old）・RTT・foot / firmware
+```
+
+製品版との違い: `press.values` は ADC 生値ではなく **mV × 10**（左右別のチャネル並び替え済み、
+`begin({ insole15: { pressureScale } })` で変更可）、quat/euler はクライアント側の IMU 融合推定、
+ストリーミングモード指定と FIFO は無効（常に全データ 200 Hz。Toolkit は FIFO 選択時も Realtime へ退避）。
+2 台同時はホストの Bluetooth 次第で片側のリンクが 100 ms 窓に追いつけず欠損することがあるため、
+`insole15Diagnostics().lossRate` と計測結果の `missing` を確認してください。
+データは 100 ms 窓単位で届くプル型なので、表示の遅れは 1 台で 40〜60 ms（製品版 20〜40 ms）。SDK は既定で
+窓内のパケットを 10 ms 間隔に並べ直して流します（`insole15: { pacing: 'smooth' | 'burst' }`）。往復が 100 ms に
+近いリンクでは遅れが 1 秒以上に溜まるので（`insole15Diagnostics().lagMs`）、表示用途では
+`insole15: { maxLagMs: 300 }` で最新へ飛ばせます（欠損になるため収録では指定しない）。詳細は `CLAUDE.md` の
+「INSOLE 1.5（INS2）対応」と `src/insole15-client/README.md`。
+
 ### Tutorial
   * https://github.com/Orphe-OSS/ORPHE-INSOLE.js/wiki
 

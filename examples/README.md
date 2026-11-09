@@ -29,6 +29,23 @@
 | [quaternion-validation](./quaternion-validation/) | **quat修正の長時間実機検証** | INSOLE ×1〜2 | `?sim=1` | norm・yaw drift・欠損率、CSV逐次保存、数値レポート |
 | [terminal](./terminal/) | 生データ（gotData）のデバッグ | INSOLE ×1 | ― | プロトコル解析 |
 
+## INSOLE 1.5（INS2）で使うとき
+
+全サンプルは INSOLE 1.5 でもそのまま動きます（コア SDK が INS2 を自動判別し、`src/Insole15Client.js` を
+遅延ロード）。違いは次の 3 点だけです。
+
+- 圧力 `press.values` は ADC 生値ではなく **mV × 10**（無負荷でおよそ 590）。固定しきい値のサンプルは
+  値を見直す。相対しきい値（udon）・自動ベースライン（InsoleUtils）はそのまま使える。
+- FIFO と Realtime Streaming Format の選択は無効（常に全データ 200 Hz）。FIFO 前提のサンプル
+  （fifo-guide / fifo-vs-realtime / lab-recorder / insole-core-combo）は Toolkit が Realtime へ退避して記録する。
+- 2 台同時はホストの Bluetooth 次第で片側が欠損することがある。Toolkit の設定モーダルの状態表示と
+  `insoles[i].insole15Diagnostics()` の `lossRate` / `rttMs` で確認する。
+- データは 100 ms 窓単位で届くので表示の遅れは 1 台で 40〜60 ms（SDK 既定の `pacing: 'smooth'` が窓内の
+  パケットを 10 ms 間隔に並べ直す）。2 台同時で先に接続した側は往復が 100 ms に近づいてループが追いつけず、
+  遅れが 1 秒以上に溜まることがある（状態表示 `lag x.x s`）。表示だけのサンプルは
+  `buildInsoleToolkit(..., { insole15: { maxLagMs: 300 } })` で最新の窓へ飛ばす（exhibition が指定。
+  飛ばした分は欠損になるので収録系では指定しない）。
+
 ## FIFO（ロスレス収録）を使いたいとき
 
 1. まず [fifo-guide](./fifo-guide/) で仕組みと限界（**端末内バッファ約30秒**）を確認しながら1台で試す

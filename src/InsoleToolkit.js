@@ -321,7 +321,17 @@ class InsoleToolkitSession {
             supportsStepAnalysis: this.supportsStepAnalysis,
             gaitDiagnostics: this._gaitDiagnostics(),
             lastError: this.lastError,
+            // 接続中デバイスの世代（1 = 製品版、2 = INSOLE 1.5）。1.5 では FIFO とストリーミングモード選択は
+            // 使えず（常に 200 Hz の全データ）、Step Analysis は get_gait_live ポーリングで動く。
+            generation: this.insole && this.insole.generation === 2 ? 2 : 1,
+            insole15: this._isInsole15(),
+            insole15Diagnostics: this._isInsole15() && typeof this.insole.insole15Diagnostics === 'function'
+                ? this.insole.insole15Diagnostics() : null,
         };
+    }
+
+    _isInsole15() {
+        return !!(this.insole && this.insole.isInsole15);
     }
 
     setFifoCallbacks(callbacks = {}) {
@@ -483,10 +493,14 @@ class InsoleToolkitSession {
                 raw: {
                     packets: 0,
                     samples: [],
-                    serials: new Set(),
+                    serials: new Set(),      // uint16 の serial（互換用）
+                    offsets: new Set(),      // 先頭からの unwrap 済み距離（65536 packet 超の収録でも数えられる）
                     firstSerial: null,
                     lastSerial: null,
                     lastForwardSerial: null,
+                    lastOffset: 0,
+                    minOffset: 0,
+                    maxOffset: 0,
                     maxSerialDistance: -1,
                     truncated: false,
                 },
@@ -613,6 +627,15 @@ class InsoleToolkitSession {
 
     async _applyDesiredState() {
         if (!this.connected) return;
+        // INSOLE 1.5 に FIFO は無い（通常ストリーミング自体がプル型でロスレス）。FIFO が選ばれていても
+        // 接続は失敗させず Realtime へ退避し、状態表示と console で知らせる（fifo-guide 等の既定 FIFO ページ対策）。
+        if (this._isInsole15() && this.sensorDataMode === 'fifo') {
+            this.sensorDataMode = 'realtime';
+            this.profileId = insoleToolkitProfileIdFor(this._configuration());
+            this._syncOptions();
+            console.warn('InsoleToolkit: FIFO is not available on INSOLE 1.5; using Realtime (pull-based, already lossless while the link keeps up).');
+            this._emitGaitDiagnostic('insole15-fifo-unavailable', { fallback: 'realtime' });
+        }
         const desired = this._configuration();
         this._validateCapabilities(desired);
 
@@ -906,10 +929,14 @@ class InsoleToolkitSession {
             const serial = sample && Number.isInteger(sample.serial_number) ? sample.serial_number : null;
             if (serial !== null) this._recordMeasurementSerial(raw, serial);
         }
-        raw.packets = raw.serials.size;
+        raw.packets = raw.offsets.size;
         this._appendMeasurementSamples(raw, samples);
     }
 
+    // serial（uint16、65535 → 0 で巻き戻る）を受信順に unwrap して「先頭からの距離（offset）」で数える。
+    // 連続する packet 間の前方距離が半周（32768）未満なら前進、以上なら遅延到着（後方）とみなす。
+    // 数値の大小やモジュロ距離だけで expected を出すと 65536 packet（製品版 50 packet/s で約 21.8 分、
+    // INSOLE 1.5 の 100 packet/s で約 10.9 分）を超えた時点で飽和し、欠損が 0 に見えてしまう。
     _recordMeasurementSerial(raw, serial) {
         if (!Number.isInteger(serial)) return;
         const normalized = serial & 0xffff;
@@ -918,25 +945,33 @@ class InsoleToolkitSession {
             raw.firstSerial = normalized;
             raw.lastSerial = normalized;
             raw.lastForwardSerial = normalized;
+            raw.lastOffset = 0;
+            raw.minOffset = 0;
+            raw.maxOffset = 0;
+            raw.offsets.add(0);
             raw.maxSerialDistance = 0;
             return;
         }
         const forward = (normalized - raw.lastForwardSerial + 65536) % 65536;
-        if (forward === 0) return;
-        if (forward >= 32768) {
-            const beforeFirst = (raw.firstSerial - normalized + 65536) % 65536;
-            if (beforeFirst > 0 && beforeFirst < 32768) {
-                raw.firstSerial = normalized;
-                raw.maxSerialDistance += beforeFirst;
-            }
-            return;
+        let offset;
+        if (forward === 0) {
+            offset = raw.lastOffset;
+        } else if (forward >= 32768) {
+            offset = raw.lastOffset - (65536 - forward);   // 遅延到着（drain / 再要求）
+        } else {
+            offset = raw.lastOffset + forward;
+            raw.lastForwardSerial = normalized;
+            raw.lastSerial = normalized;
+            raw.lastOffset = offset;
         }
-        raw.lastForwardSerial = normalized;
-        raw.lastSerial = normalized;
-        raw.maxSerialDistance = Math.max(
-            raw.maxSerialDistance,
-            (normalized - raw.firstSerial + 65536) % 65536
-        );
+        if (raw.offsets.has(offset)) return;   // 重複
+        raw.offsets.add(offset);
+        if (offset < raw.minOffset) {
+            raw.minOffset = offset;
+            raw.firstSerial = normalized;
+        }
+        if (offset > raw.maxOffset) raw.maxOffset = offset;
+        raw.maxSerialDistance = raw.maxOffset - raw.minOffset;
     }
 
     _appendMeasurementSamples(raw, samples) {
@@ -1078,6 +1113,9 @@ class InsoleToolkitSession {
             durationMs: measurement.durationMs,
             profileId: measurement.profileId,
             metadata: { ...measurement.metadata },
+            // 接続中デバイスの世代（1 = 製品版、2 = INSOLE 1.5）。1.5 は Realtime が 1 packet = 2 sample / 10 ms。
+            generation: this.insole && this.insole.generation === 2 ? 2 : 1,
+            insole15: this._isInsole15(),
             raw: {
                 packets: measurement.raw.packets,
                 samples: measurement.raw.samples.length,
@@ -1118,9 +1156,8 @@ class InsoleToolkitSession {
         }
         const expected = raw.maxSerialDistance + 1;
         let received = 0;
-        for (const serial of raw.serials) {
-            const distance = (serial - raw.firstSerial + 65536) % 65536;
-            if (distance <= raw.maxSerialDistance) received += 1;
+        for (const offset of raw.offsets) {
+            if (offset >= raw.minOffset && offset <= raw.maxOffset) received += 1;
         }
         const missing = Math.max(0, expected - received);
         return {
@@ -1719,13 +1756,16 @@ function syncInsoleToolkitControls(no) {
         if (!state.transitioning) sensorDataMode.value = state.sensorDataMode;
         sensorDataMode.disabled = state.transitioning
             || state.measurementPhase !== 'idle'
-            || !state.outputs.sensorValues;
+            || !state.outputs.sensorValues
+            || state.insole15;
         const fifoOption = Array.from(sensorDataMode.options).find((option) => option.value === 'fifo');
         if (fifoOption) {
-            fifoOption.disabled = !state.supportsFifo || state.outputs.stepAnalysis;
-            fifoOption.title = state.outputs.stepAnalysis
-                ? 'Turn off Step Analysis before selecting FIFO.'
-                : '';
+            fifoOption.disabled = !state.supportsFifo || state.outputs.stepAnalysis || state.insole15;
+            fifoOption.title = state.insole15
+                ? 'INSOLE 1.5 has no FIFO mode: Realtime is already a lossless pull stream.'
+                : state.outputs.stepAnalysis
+                    ? 'Turn off Step Analysis before selecting FIFO.'
+                    : '';
         }
     }
     if (streamingMode) {
@@ -1733,7 +1773,11 @@ function syncInsoleToolkitControls(no) {
         streamingMode.disabled = state.transitioning
             || state.measurementPhase !== 'idle'
             || !state.outputs.sensorValues
-            || state.sensorDataMode === 'fifo';
+            || state.sensorDataMode === 'fifo'
+            || state.insole15;
+        streamingMode.title = state.insole15
+            ? 'INSOLE 1.5 always streams quat + gyro + acc + press at 200 Hz.'
+            : '';
     }
 
     if (status) {
@@ -1753,6 +1797,12 @@ function syncInsoleToolkitControls(no) {
             status.innerText = 'Active: Step Analysis only';
         } else if (state.sensorDataMode === 'fifo' && !state.fifoActive) {
             status.innerText = 'FIFO stopped. Select Realtime, then FIFO, to restart.';
+        } else if (state.insole15) {
+            const d = state.insole15Diagnostics;
+            const loss = d && d.lossRate > 0 ? ` — loss ${(d.lossRate * 100).toFixed(1)}%` : '';
+            // 追従遅れ（配信した窓の末尾が端末の最新からどれだけ遅れているか）。往復が窓長 100 ms に近いと 1 秒以上に溜まる
+            const lag = d && d.lagMs && d.lagMs.last !== null && d.lagMs.last >= 300 ? ` — lag ${(d.lagMs.last / 1000).toFixed(1)} s` : '';
+            status.innerText = `Active: INSOLE 1.5 Realtime 200 Hz${state.outputs.stepAnalysis ? ' + Step Analysis (polling)' : ''}${loss}${lag}`;
         } else {
             const raw = state.sensorDataMode === 'fifo' ? 'FIFO Raw Data' : 'Realtime Raw Data';
             status.innerText = `Active: ${raw}${state.outputs.stepAnalysis ? ' + Step Analysis' : ''}`;
@@ -1762,9 +1812,11 @@ function syncInsoleToolkitControls(no) {
         const unavailable = [];
         if (!state.supportsFifo) unavailable.push('Load InsoleFifo.js for FIFO.');
         if (!state.supportsStepAnalysis) unavailable.push('Load InsoleGait.js for Step Analysis.');
-        note.innerText = unavailable.length
-            ? unavailable.join(' ')
-            : 'Realtime Raw and Step Analysis can run together. FIFO is lossless Raw recording and runs alone.';
+        note.innerText = state.insole15
+            ? 'INSOLE 1.5: Realtime streams quat + gyro + acc + press at 200 Hz (pull-based, lossless while the link keeps up). FIFO and streaming format do not apply. Step Analysis polls the firmware gait analyzer.'
+            : unavailable.length
+                ? unavailable.join(' ')
+                : 'Realtime Raw and Step Analysis can run together. FIFO is lossless Raw recording and runs alone.';
     }
 }
 
@@ -1824,6 +1876,7 @@ async function updateInsoleBatteryInfo(dom) {
     if (obj.battery == 0) str_battery_status = 'empty';
     else if (obj.battery == 1) str_battery_status = 'normal';
     else if (obj.battery == 2) str_battery_status = 'full';
+    else str_battery_status = 'unknown (INSOLE 1.5 reports battery only in advertisements)';
     const el = document.querySelector(`#icon_battery${number}`);
     el.setAttribute('title', `${str_battery_status}`);
 

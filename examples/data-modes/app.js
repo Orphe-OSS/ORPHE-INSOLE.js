@@ -25,6 +25,13 @@ const lastResults = [null, null];
 const latestMeasurements = [null, null];
 const signalPoints = [];
 const timingPoints = [];
+
+// 描画ループ（rAF）はタブ非表示・ウィンドウの完全遮蔽で止まるが、受信コールバックは動き続ける。
+// 表示窓より古い点は push 時に捨て、復帰時に巨大配列を 1 件ずつ shift して固まるのを防ぐ。
+function pushTimedPoint(points, point, windowMs) {
+    points.push(point);
+    while (points.length && points[0].t < point.t - windowMs) points.shift();
+}
 const sessions = [null, null];
 const eventEntries = [];
 const previewDevices = DEVICE_IDS.map((id) => createPreviewDevice(id));
@@ -763,7 +770,7 @@ function noteBatchArrival(device, now) {
     if (device.lastBatchArrival !== null && runState === 'running') {
         const gap = now - device.lastBatchArrival;
         device.batchGaps.push(gap);
-        timingPoints.push({ t: now, id: device.id, gap, lag: device.fifoLag });
+        pushTimedPoint(timingPoints, { t: now, id: device.id, gap, lag: device.fifoLag }, CHART_WINDOW_MS);
     }
     device.lastBatchArrival = now;
 }
@@ -780,7 +787,7 @@ function notePreviewBatchArrival(device, now) {
     if (device.lastBatchArrival !== null) {
         const gap = now - device.lastBatchArrival;
         pushPreviewMetric(device.batchGaps, gap);
-        timingPoints.push({ t: now, id: device.id, gap, lag: device.fifoLag });
+        pushTimedPoint(timingPoints, { t: now, id: device.id, gap, lag: device.fifoLag }, CHART_WINDOW_MS);
     }
     device.lastBatchArrival = now;
 }
@@ -840,13 +847,13 @@ function recordSample(device, sample, source, phase) {
     if (quat && typeof AttitudeViz !== 'undefined') AttitudeViz.setQuat(device.id, quat);
     const now = performance.now();
     if ((inWindow || inPreview) && (device.lastSignalAt === null || now - device.lastSignalAt >= 8)) {
-        signalPoints.push({
+        pushTimedPoint(signalPoints, {
             t: now,
             id: device.id,
             accNorm,
             pressureTotal,
             step: false,
-        });
+        }, CHART_WINDOW_MS);
         device.lastSignalAt = now;
     }
     if (inWindow || inDrain || inPreview) noteReconnectData(device.id);
@@ -1152,7 +1159,7 @@ function handleStepRow(id, row) {
         recordStepHistory(id, row);
         preview.completedSteps += 1;
         preview.latestStep = row;
-        signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
+        pushTimedPoint(signalPoints, { t: performance.now(), id, accNorm: null, pressureTotal: null, step: true }, CHART_WINDOW_MS);
         logEvent(id, `STEP_ANALYSIS preview row completed: step=${row.step_number} gait=${row.gait_type}`, 'success');
         return;
     }
@@ -1162,7 +1169,7 @@ function handleStepRow(id, row) {
     recordStepHistory(id, row);
     device.completedSteps += 1;
     device.latestStep = row;
-    signalPoints.push({ t: performance.now(), id, accNorm: null, pressureTotal: null, step: true });
+    pushTimedPoint(signalPoints, { t: performance.now(), id, accNorm: null, pressureTotal: null, step: true }, CHART_WINDOW_MS);
     logEvent(id, `STEP_ANALYSIS row completed: step=${row.step_number} gait=${row.gait_type} duration=${formatNumber(row.duration_s, 3)}s`, 'success');
 }
 

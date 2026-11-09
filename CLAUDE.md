@@ -30,11 +30,14 @@ ORPHE-INSOLE.js/
 │   ├── InsoleUtils.js         # 圧力データ処理ユーティリティ（OrpheInsoleUtils）
 │   ├── InsoleFifo.js          # ロスレス収録（FIFO）— OrpheInsoleFifo
 │   ├── InsoleGait.js          # 歩容解析（Gait Analysis）— OrpheInsoleGait
-│   └── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
+│   ├── CoreCompanionToolkit.js # ORPHE CORE 1台をINSOLEページに同居接続（要 ORPHE-CORE.js）
+│   ├── Insole15Client.js      # INSOLE 1.5（INS2）用 bleRPC クライアント（ビルド済み IIFE、global Insole15。コア SDK が INS2 選択時に遅延ロード）
+│   ├── insole15-client/       # ↑ の TypeScript ソース・サブセット proto・ビルド手順（README.md）
 │   └── vendor/quaternion.js   # 同梱 Quaternion.js（MIT）。dist に同梱、src 直読みでは相対ロード（src/vendor/README.md）
 ├── dist/
 │   ├── orphe-insole.js        # ビルド済み（未圧縮）
-│   └── orphe-insole.min.js    # ビルド済み（CDN配信対象）
+│   ├── orphe-insole.min.js    # ビルド済み（CDN配信対象）
+│   └── Insole15Client(.min).js # INSOLE 1.5 クライアントのコピー（dist からの遅延ロード用）
 ├── types/
 │   └── orphe-insole.d.ts      # TypeScript 型定義
 ├── examples/
@@ -283,6 +286,83 @@ gait.download('gait.csv');   // 参照実装互換CSV（1歩1行）
 - 派生指標: `duration_s=stance+swing`, `stride_norm_m=|stride|`, `cadence_hz=1/duration`, `speed_mps=norm/duration`。
 - 半精度(float16)フィールド（calorie / quat / delta）は内蔵の `f16be` でデコード（外部依存なし）。
 - showcase の「歩容解析（Gait Analysis）」パネルが利用例。
+- **INSOLE 1.5 では STEP_ANALYSIS notify が無く、同じ `OrpheInsoleGait` が FW の `get_gait_live` を
+  ポーリング（既定 250 ms）して row を作る**（後述の「INSOLE 1.5 対応」）。`diagnostics().insole15` に
+  ポーリング状態が入り、`validPackets` はポーリング応答数。ストライド方向・X/Y 成分・カロリーは null。
+
+## INSOLE 1.5（INS2）対応 — コア SDK 全体で製品版と同じコードが動く
+
+INSOLE 1.5（BLE 名 `INS2`、FW 0.1.7 以降）は製品版と BLE プロトコルが異なる（GATT notify の固定長
+パケットではなく、暗号化 bleRPC（protobuf）で **100 ms 窓を要求して受け取るプル型**。姿勢は送らない）。
+コア SDK は **1 回のデバイス選択で種別を自動判別**し、INS2 なら専用クライアント
+`src/Insole15Client.js`（global `Insole15`、`src/insole15-client/` の TypeScript からビルド）を
+**自身の URL 基準で遅延ロード**して接続する。examples の HTML は変更不要（`<script src=".../Insole15Client.js">`
+を先に読み込んでおけば遅延ロードは起きない。CDN の dist からは `dist/Insole15Client(.min).js` を読む）。
+
+```javascript
+// 製品版とまったく同じ書き方。INS2 を選ぶと内部で 1.5 経路に分岐する
+await insole.begin('SENSOR_VALUES', { streamingMode: 4, autoReconnect: true,
+  insole15: { pressureScale: 10 /* 既定 */, requireEncryption: true, pinIdentity: true,
+              windowTimeoutMs: 1000, /* get_window 応答待ち上限。FW キャッシュ 1.7 秒内に再要求できる値 */
+              pacing: 'smooth',      /* 既定。窓内の 10 パケットを 10 ms 間隔で配信（'burst' = 届いた瞬間に全部） */
+              maxLagMs: 0 } });      /* 既定 0 = ロスレス。表示用途は 300（追従遅れが溜まったら最新の窓へ飛ぶ） */
+insole.generation;            // 1 = 製品版, 2 = INSOLE 1.5
+insole.isInsole15;            // true
+insole.insole15Diagnostics(); // { windows, ok, tooOld, tooNew, errors, lagSkips, samples, skippedSamples, gaps,
+                              //   lossRate, rttMs: {p50, p90, max, last}, lagMs: {同}（表示遅延の下限）,
+                              //   pacing, maxLagMs, config: {foot, firmwareVersion, deviceId} }
+insole.lastInsole15Frame;     // 直近の生フレーム { t, serial, press[6] mV, acc m/s², gyro dps, quat(推定) }
+```
+
+**同じ口で動くもの**: `gotPress / gotAcc / gotConvertedAcc / gotGyro / gotConvertedGyro / gotQuat / gotEuler /
+gotConvertedPress`、`history_sensor_values`、`addSensorDataListener`（Toolkit の計測記録）、`lostData`、
+`gotBLEFrequency`、`onConnect / onDisconnect`、自動再接続（切断で get_window ループを止め、再接続後に
+新しいクライアントで再開）、`getDeviceInformation()`（`mount_position` bit0 = get_config の foot、
+`range = {acc: 3, gyro: 3}`、`battery` は null）、`getFirmwareVersion()`（get_config の firmware_version）、
+`OrpheInsoleGait`（get_gait_live ポーリング）、Toolkit（L/R・FW バッジ・実測 Hz・設定モーダル）。
+
+**仕組み**: 受け取った 200 Hz フレームを 2 個ずつ製品版 SENSOR_VALUES パケット（header 56、104 byte）に
+再エンコード（`OrpheInsole.encodeInsole15Packet`）して `onRead()` に流す。単位は
+acc m/s² → G（±16 G = index 3）、gyro dps（±2000 dps = index 3、感度 70 mdps/LSB）、quat Q14、
+**圧力 `values[i] = mV × pressureScale(10)` を左右別チャネル並び替え後に公式番号順**
+（`OrpheInsole.INSOLE15.PRESSURE_CHANNEL_MAP.left/right`、showcase の実機確認値）。
+パケット serial = floor(frame serial / 2) の uint16。**frame serial は欠損した分だけ飛ぶ**
+（FW キャッシュ約 1.7 秒を追い越した `too_old` と時計再同期）ので、`lostData` と Toolkit の `missing` に
+欠損がそのまま出る。1 窓が 19/21 サンプルになる FW 側の時計ジッタは欠損ではない（serial は連続）。
+
+**製品版と違う点（アプリ側の注意）**:
+- `press.values` は ADC 生値ではなく **mV × 10**（無負荷 ≈ 590、`press.mv` 相当は `lastInsole15Frame.press`）。
+  しきい値は相対値（ベースライン差分）で設計する（udon・InsoleUtils の自動ベースラインは有効）。
+  `converted_press`[N] は 1.5 では未校正（既定係数の推定値）。
+- quat/euler はクライアントの Madgwick 推定（FW は姿勢を送らない）。yaw は基準なし。
+- `setDataStreamingMode()` は no-op（常に全データ 200 Hz）。`read/write/getDateTime` は
+  `INSOLE15_UNSUPPORTED`、`syncCoreTime` は 0、`resetAnalysisLogs` は警告のみ（保守系 RPC は公開しない）。
+- **FIFO は無い**。Toolkit は FIFO が選ばれていても接続を失敗させず Realtime へ退避する
+  （診断 `insole15-fifo-unavailable`、`snapshot().insole15 === true`、設定モーダルでは FIFO とモードが無効表示）。
+  通常ストリーミングがプル型なので **リンクが追従できている限り**ロスレス。
+- **2 台同時の制約**: 100 ms 窓 1 回の往復（RTT）が 100 ms を超えると追従できず、FW キャッシュ（1.7 秒）を
+  超えた分が `too_old` で失われる。片足ずつは RTT 30〜60 ms でロスレス。2 台同時では**先に接続した側の
+  リンクが遅くなる**（Mac17,3 実測: 先 90 ms / 後 30 ms）が、100 ms 未満なら追従でき、軽いページ
+  （fifo-guide）で両足 6 分間 missing 0 を確認済み（2026-11-08）。描画の重いページで RTT が 120 ms 超に
+  なると片側だけ 25〜40% 欠落する。もう一つの欠損源は**通知の取りこぼし**で、bleRPC の応答待ち（端末既定
+  5 秒）がキャッシュを超えるため、SDK は get_window だけ `windowTimeoutMs`（既定 1000 ms）で打ち切って
+  同じ窓を再要求する。`insole15Diagnostics().lossRate / rttMs / tooOld / errors` と Toolkit の計測結果
+  `missing` で必ず確認する。
+- **レイテンシー（プル型の宿命）**: FW は要求された 100 ms 窓を返すので、データは **10 Hz の窓単位**で届く。
+  窓の遅れは最短で RTT ＋ 窓完成待ち（1 台・RTT 30 ms で実測 40〜60 ms。製品版の push は 20〜40 ms）。
+  追いついたとき（`too_new`）の再要求は `newest_ms` から窓の残り時間を計算して待つ（盲目的な 100 ms 待ちは廃止）。
+  SDK 既定の **`pacing: 'smooth'`** は窓内の 10 パケットを 10 ms 間隔で流し、画面の動きが 100 ms ごとの
+  飛び飛びになるのを防ぐ（最大 +100 ms。serial・値は不変）。最小遅延が要るゲーム・可聴化は `pacing: 'burst'`。
+  **RTT が窓長 100 ms に近いリンク**（このMacの 2 台同時の 1 本目: 90〜120 ms）ではループが追いつけず、
+  追従遅れが FW キャッシュ上限（約 1.7 秒）近くまで溜まって**表示が 1 秒以上遅れる**（実測 1.06〜1.17 秒。
+  `insole15Diagnostics().lagMs`、Toolkit の状態表示に `lag 1.1 s`）。表示用途は **`maxLagMs: 300`** で最新の窓へ
+  飛ばす（exhibition が指定。飛ばした分は `lagSkips` / `skippedSamples` / `lostData` に欠損として出るので
+  **収録では指定しない**）。
+
+公開範囲: クライアントの proto は `set_time / get_window / get_config / get_gait_live` のサブセットのみ
+（保守系コマンドは含めない）。ビルド: `cd src/insole15-client && npm ci && npm run build`
+→ `npm run build`（dist へコピー・minify）。回帰テスト: `tests/insole15-core.test.js`（再エンコード・
+分岐・欠損・再接続・遅延ロード）、`tests/insole15-gait.test.js`、`tests/insole15-toolkit.test.js`。
 
 ## 通信・バイナリプロトコル実装のチェックリスト（境界値・エッジケース）
 
@@ -624,16 +704,27 @@ insole.gotPress = function(press) {
 };
 
 // CORRECT - データはバッファに溜め、描画は rAF で 30fps に間引く
+const HISTORY = 200;  // チャートに表示する件数
 const buffer = [];
-insole.gotPress = function(press) { buffer.push(press.values); };
+insole.gotPress = function(press) {
+  buffer.push(press.values);
+  // rAF はタブ非表示・ウィンドウの完全遮蔽で止まるがコールバックは止まらない。
+  // 表示に要る件数で上限を切る（溜めた分を復帰時に 1 件ずつ shift すると O(n²) で数十分固まる）
+  if (buffer.length > HISTORY * 2) buffer.splice(0, buffer.length - HISTORY);
+};
 (function render() {
   if (buffer.length) {
     for (const v of buffer.splice(0)) pushToChart(v);
+    trimChart(HISTORY);   // 余剰は splice(0, excess) で一括削除。while (len > N) shift() は不可
     chart.update();
   }
   requestAnimationFrame(render);
 })();
 ```
+
+バッファやチャート配列を `while (arr.length > N) arr.shift()` で詰めると、タブが隠れていた間に
+溜まった数十万件に対して 1 件ずつ shift する O(n²) の処理になり、復帰時にタブが固まる
+（展示ページで実際に発生。再現は `tests/example-render-buffer-backlog.test.js`）。
 
 ## Common Mistakes to Avoid
 
