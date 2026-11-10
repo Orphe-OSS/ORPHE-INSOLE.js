@@ -1,5 +1,5 @@
 var orphe_js_version_date = `
-Last modified: 2026/09/06 00:00:00
+Last modified: 2026/11/10 00:00:00
 `;
 /**
 ORPHE-INSOLE.js is javascript library for ORPHE INSOLE Module, inspired by BlueJelly.js
@@ -9,7 +9,7 @@ v1.1.0 接続安定化（デバイス記憶・高速再接続・自動再接続�
 v0.9.0 ベータ版
 @module OrpheInsole
 @author Tetsuaki BABA
-@version 1.3.4
+@version 1.4.0
 
 @description
 ## センサ座標系と圧力センサ配置 / Sensor frame and pressure sensor placement
@@ -2955,7 +2955,7 @@ OrpheInsole.INSOLE15 = ORPHE_INSOLE15;
 OrpheInsole.encodeInsole15Packet = encodeInsole15Packet;
 // package.json の version と同じ値を保つ（tests/insole-version-sync.test.js が検証）。
 // 記録データに SDK 版を残す用途（例: gait-report の CSV）で、デコード規則の差異を後から追えるようにする。
-OrpheInsole.SDK_VERSION = '1.3.4';
+OrpheInsole.SDK_VERSION = '1.4.0';
 
 // ── グローバル公開とエイリアス ─────────────────────────────────
 // 推奨クラス名は OrpheInsole。
