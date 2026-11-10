@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-10
+
 ### Added
 
 - **コア SDK 全体で INSOLE 1.5（INS2）に対応**。`OrpheInsole.begin()` がデバイス選択ダイアログで選ばれた
