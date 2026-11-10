@@ -599,8 +599,19 @@ export declare class OrpheInsoleSimulator {
 
 // ── InsoleFifo (src/InsoleFifo.js) — FIFO（ロスレス）センサーデータ収集 ──
 
+/** FIFO データパケットの形式。FW によって 4 フレーム（0x36・104 byte）か 8 フレーム（0x3A・200 byte） */
+export interface InsoleFifoPacketFormat {
+    /** 1 serial packet に含まれるフレーム（サンプル）数 */
+    frames: 4 | 8;
+    /** パケット長[byte] */
+    bytes: number;
+    /** lag がこれを超えた分を回復不能として扱う上限 packet 数 */
+    ringCapacity: number;
+}
+
 export interface InsoleFifoSample {
     serial_number: number;
+    /** パケット内のフレーム番号（古い順）。4 フレーム形式は 0〜3、8 フレーム形式（FW 20260924.1 以降）は 0〜7 */
     packet_number: number;
     /**
      * デバイス時刻ベースのミリ秒（当日 00:00 起点 + フレーム間 FRAME_INTERVAL_MS オフセット）。
@@ -657,6 +668,10 @@ export interface InsoleFifoProgress {
     lag: number;
     /** 回復不能に失われた累計シリアル数 */
     dropped: number;
+    /** 収録中のパケット形式（1 serial のサンプル数）。データ未受信なら null */
+    framesPerPacket?: 4 | 8 | null;
+    /** lag の上限 packet 数（4 フレーム形式 1500 / 8 フレーム形式 750） */
+    ringCapacity?: number;
     /** stop() 後の回収フェーズ（catch-up または drain）中の進捗なら true */
     draining?: boolean;
     /** 回収フェーズのうち catch-up（未要求バックログの回収）中の進捗なら true */
@@ -698,6 +713,12 @@ export declare class OrpheInsoleFifo {
     readonly droppedCount: number;
     /** 現在の追従遅れ（未取得シリアル数） */
     lag: number;
+    /** 収録中のパケット形式（1 serial のサンプル数。4 | 8）。データ未受信なら null */
+    readonly framesPerPacket: 4 | 8 | null;
+    /** lag がこれを超えた分を回復不能として扱う上限 packet 数（4 フレーム形式 1500 / 8 フレーム形式 750） */
+    readonly ringCapacity: number;
+    /** FIFO 中に届いた通知の内訳 { 'ヘッダ(hex):長さ': 件数 }。0 件のときの診断用（例: { '35:7': 120, '36:104': 950 }） */
+    readonly notifyStats: Record<string, number>;
     /** 回復不能な欠損が発生した時点で収録を自動停止するか */
     stopOnLoss: boolean;
     /** 収集したパケットのデコード結果（ライブ可視化用） */
@@ -730,6 +751,14 @@ export declare class OrpheInsoleFifo {
 
     static readonly CSV_HEADER: string;
     static readonly READ_MODE_FIFO: number;
+    /** 4 フレーム形式の lag 上限 packet 数（1500）。形式別の値は PACKET_FORMATS / fifo.ringCapacity */
+    static readonly RING_BUFFER_CAPACITY: number;
+    /** carryOver（再要求待ち serial）の上限。超えると回復不能として再同期する */
+    static readonly MAX_CARRY_OVER_SERIALS: number;
+    /** 対応しているデータパケット形式（キーはヘッダ byte: 0x36 / 0x3A） */
+    static readonly PACKET_FORMATS: Readonly<Record<number, Readonly<InsoleFifoPacketFormat>>>;
+    /** データパケットの形式を返す。ヘッダと長さの両方が合わなければ null */
+    static packetFormat(dv: DataView | null | undefined): Readonly<InsoleFifoPacketFormat> | null;
     /** gyro[dps] 換算係数（LSM6DSOX データシート代表感度、FIFOは±2000dps固定で0.07 dps/LSB） */
     static readonly GYRO_DPS_PER_LSB: number;
     /** decodePacket() のフレーム間隔算出に使う実測 IMU ODR[Hz]（約208Hz。旧仮定は200Hz） */

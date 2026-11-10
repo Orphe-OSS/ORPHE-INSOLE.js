@@ -14,6 +14,11 @@
  *   → 1500 packet × 20 ms = 30,000 ms = 約30秒
  *   （等価な言い方: 200 sample/s ÷ 4 sample/packet = 50 packet/s、1500 / 50 = 30 s）
  *
+ *   FW 20260924.1 以降は 1 serial packet = 8 frame（0x3A・200 byte）。src/InsoleFifo.js の
+ *   PACKET_FORMATS により上限は 750 packet になり、750 packet × 40 ms = 30,000 ms で
+ *   「約30秒」は変わらない。packet 単位の値（1 serial の時間・lag 上限）だけが形式で変わるので、
+ *   packetFormatInfo(framesPerPacket) で求めて evaluateRecording / spanCoverage に渡す。
+ *
  * 注意: ここでの FRAME_INTERVAL_MS(=5) は、このページが扱う CSV 出力の行間隔
  * （src/InsoleFifo.js の LEGACY_CSV_FRAME_INTERVAL_MS。Python 参照実装とのバイト互換のため
  * 意図的に据え置かれた表示値）に合わせたものであり、実機の実測 IMU ODR（約208Hz）とは
@@ -40,6 +45,22 @@
     const RING_BUFFER_CAPACITY = 1500;
     /** 端末内バッファが保持できる目安の長さ ms */
     const BUFFER_WINDOW_MS = RING_BUFFER_CAPACITY * PACKET_INTERVAL_MS;
+
+    /**
+     * 1 serial packet のフレーム数（4 | 8）から、packet 単位の値を求める。
+     * 8 フレーム形式（FW 20260924.1 以降）は 1 serial = 40 ms、lag 上限 750 packet。
+     * どちらの形式でも ringCapacity × packetIntervalMs = BUFFER_WINDOW_MS（約30秒）。
+     * 不明（null など）のときは従来の 4 フレーム形式として扱う。
+     */
+    function packetFormatInfo(framesPerPacket) {
+        const frames = Number(framesPerPacket) === 8 ? 8 : FRAMES_PER_PACKET;
+        const packetIntervalMs = frames * FRAME_INTERVAL_MS;
+        return {
+            framesPerPacket: frames,
+            packetIntervalMs,
+            ringCapacity: Math.round(BUFFER_WINDOW_MS / packetIntervalMs),
+        };
+    }
 
     /** lag / RING_BUFFER_CAPACITY がこれを超えたらバッファ逼迫として警告する */
     const LAG_CAUTION_RATIO = 0.5;
@@ -304,7 +325,9 @@
         const buffer = bufferGuidance(durationMs, {
             toleranceMs: input.toleranceMs != null ? input.toleranceMs : BUFFER_WINDOW_TOLERANCE_MS,
         });
-        const lagRatio = RING_BUFFER_CAPACITY > 0 ? maxLag / RING_BUFFER_CAPACITY : 0;
+        // lag の上限は packet 形式で変わる（4 フレーム 1500 / 8 フレーム 750）
+        const ringCapacity = Number(input.ringCapacity) > 0 ? Number(input.ringCapacity) : RING_BUFFER_CAPACITY;
+        const lagRatio = maxLag / ringCapacity;
 
         const continuity = missing === 0 && dropped === 0
             ? { level: 'pass', label: 'PASS' }
@@ -333,16 +356,16 @@
             });
         }
         // lag が上限そのものを超えたら、FWバッファは確実に上書きされている
-        const lagOverCapacity = maxLag > RING_BUFFER_CAPACITY;
+        const lagOverCapacity = maxLag > ringCapacity;
         if (lagOverCapacity) {
             cautions.push({
                 code: 'lagOverCapacity',
-                params: { maxLag, capacity: RING_BUFFER_CAPACITY },
+                params: { maxLag, capacity: ringCapacity },
             });
         } else if (lagRatio >= LAG_CAUTION_RATIO) {
             cautions.push({
                 code: 'lagHigh',
-                params: { maxLag, capacity: RING_BUFFER_CAPACITY, percent: Math.round(lagRatio * 100) },
+                params: { maxLag, capacity: ringCapacity, percent: Math.round(lagRatio * 100) },
             });
         }
         const bufferLevel = cautions.length > 0 ? 'caution' : 'ok';
@@ -439,6 +462,7 @@
         PACKET_INTERVAL_MS,
         RING_BUFFER_CAPACITY,
         BUFFER_WINDOW_MS,
+        packetFormatInfo,
         BUFFER_WINDOW_TOLERANCE_MS,
         SPAN_COVERAGE_OK_RATIO,
         LAG_CAUTION_RATIO,

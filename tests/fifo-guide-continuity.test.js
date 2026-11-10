@@ -24,6 +24,28 @@ const read = (name) => fs.readFileSync(path.join(GUIDE_DIR, name), 'utf8');
     assert.equal(C.RING_BUFFER_CAPACITY, Fifo.RING_BUFFER_CAPACITY,
         'continuity.js の RING_BUFFER_CAPACITY が InsoleFifo.js と一致していない');
     assert.equal(C.FRAMES_PER_PACKET, 4);
+    // packet 形式別の値（4 / 8 フレーム）が SDK の PACKET_FORMATS と一致し、どちらも約30秒になること
+    for (const format of Object.values(Fifo.PACKET_FORMATS)) {
+        const info = C.packetFormatInfo(format.frames);
+        assert.equal(info.framesPerPacket, format.frames);
+        assert.equal(info.ringCapacity, format.ringCapacity,
+            `continuity.js の ${format.frames} フレーム形式の lag 上限が InsoleFifo.js と一致していない`);
+        assert.equal(info.ringCapacity * info.packetIntervalMs, C.BUFFER_WINDOW_MS);
+    }
+    assert.equal(C.packetFormatInfo(null).framesPerPacket, 4, '形式不明は従来の 4 フレーム扱い');
+    // 8 フレーム形式: lag 760 は上限 750 超え。4 フレーム形式なら 1500 の約 51%（lagHigh）
+    {
+        const base = { missing: 0, dropped: 0, durationMs: 20000, maxLag: 760 };
+        const eight = C.evaluateRecording({ ...base, ringCapacity: C.packetFormatInfo(8).ringCapacity });
+        assert.equal(eight.buffer.lagOverCapacity, true);
+        assert.deepEqual(eight.cautions.map((c) => c.code), ['lagOverCapacity']);
+        assert.equal(eight.cautions[0].params.capacity, 750);
+        const four = C.evaluateRecording(base);
+        assert.equal(four.buffer.lagOverCapacity, false);
+        assert.deepEqual(four.cautions.map((c) => c.code), ['lagHigh']);
+        // 収録スパン: 8 フレーム形式は 1 serial = 40 ms
+        assert.equal(C.spanCoverage(750, 30000, { packetIntervalMs: C.packetFormatInfo(8).packetIntervalMs }).spanMs, 30000);
+    }
     // このページのバッファ容量表示は CSV 出力（packetToCsvRows）の行間隔基準。
     // src/InsoleFifo.js の LEGACY_CSV_FRAME_INTERVAL_MS（Python 参照実装とのバイト互換の
     // ため意図的に据え置かれた表示値）と一致させる。実機の実測 IMU ODR に基づく

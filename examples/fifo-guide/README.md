@@ -53,7 +53,14 @@ src/InsoleFifo.js:
 1 serial packet   = 4 frame × 5 ms = 20 ms
 保持できる長さ     = 1500 packet × 20 ms = 30,000 ms ≒ 30 秒
 （等価: 200 sample/s ÷ 4 sample/packet = 50 packet/s → 1500 ÷ 50 = 30 s）
+
+FW 20260924.1 以降（1 serial packet = 8 フレーム・ヘッダ 0x3A・200 byte）:
+1 serial packet   = 8 frame × 5 ms = 40 ms
+保持できる長さ     = 750 packet × 40 ms = 30,000 ms ≒ 30 秒
 ```
+
+packet の形式は SDK が自動判別します（`fifo.framesPerPacket` が 4 または 8）。
+「約30秒」はどちらの形式でも同じですが、lag の上限は 1500 → 750、1 serial の行数は 4 → 8 になります。
 
 この換算は `tests/fifo-guide-continuity.test.js` が `src/InsoleFifo.js` の定数と
 `decodePacket()` の実測フレーム間隔に対して検証しています（定数が変わればテストが落ちます）。
@@ -128,7 +135,8 @@ drain は *要求済みで届いていない* シリアルを回収するフェ�
 - uint16 の `65535 → 0` wraparound、重複 serial、drain による順不同到着をすべて正しく扱います。
 
 CSV は正式計測区間（開始〜drain完了）の sample だけを含みます。
-1 serial packet は4フレーム（5ms間隔）なので **CSV では 1 serial = 4行**です。
+1 serial packet は4フレーム（5ms間隔）なので **CSV では 1 serial = 4行**です
+（FW 20260924.1 以降は8フレームなので 1 serial = 8行）。
 欠損を数えるときは行数ではなく serial 番号の連続性を見てください。
 ページ側でも保存CSVから欠損数を数え直して画面表示と照合し、結果をイベントログに出します。
 

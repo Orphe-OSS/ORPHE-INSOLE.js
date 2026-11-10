@@ -66,6 +66,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **FW 20260924.1 以降の INSOLE で FIFO 収録が 1 件も回収できない問題を修正**。この FW から FIFO のデータパケットが
+  ヘッダ `0x3A`・200 byte・**8 フレーム**/packet に変わったが、`OrpheInsoleFifo` は「ヘッダ `0x36` かつ 104 byte」
+  以外を黙って捨てていたため、エラーも出ないまま 0 件で終わっていた（`fifo-recording` プロファイル・
+  examples/fifo-guide も同じ）。パケット形式をヘッダと長さから自動判別し（`OrpheInsoleFifo.PACKET_FORMATS` /
+  `packetFormat()`）、`decodePacket()` / `packetToCsvRows()` / 収録ループが 4 フレーム・8 フレームの両方を扱う。
+  8 フレーム形式は 1 serial = 8 サンプル（`packet_number` 0〜7、CSV は 8 行）、serial の進みは約 26 packet/s、
+  lag 上限は 750 packet（どちらの形式でも約30秒ぶん）。現在の形式は `fifo.framesPerPacket` / `fifo.ringCapacity`
+  と `onProgress` の同名フィールドで分かる。従来 FW（4 フレーム）の動作・CSV は変わらない。
+  **1 serial = 4 サンプルを前提にした自前の換算（サンプル数・時間）は `framesPerPacket` を見るように直すこと。**
+  回帰テスト `tests/insole-fifo-8frame.test.js`。
+- FIFO: データヘッダなのに長さが合わない未対応パケットを黙って捨てず、収録ごとに 1 回 `onError` で知らせる。
+  FIFO 中に届いた通知の内訳は `fifo.notifyStats`（`{ 'ヘッダ:長さ': 件数 }`）で確認できる（0 件のときの切り分け用）。
+- FIFO: 再要求待ち（carryOver）の上限 `MAX_CARRY_OVER_SERIALS` を 100 → 600 に引き上げ。8 フレーム形式では
+  100 serial が約 3.8 秒ぶんにしかならず、数秒の通信途絶で、まだ端末内に残っていて再要求すれば回収できる分まで
+  回復不能（`carryover_overflow`）として捨てていた。
+- examples/fifo-guide: lag の上限・収録スパン・注意表示を FIFO パケット形式（4 / 8 フレーム）に合わせる。
 - examples: 描画用の受信バッファに上限が無く、タブ非表示・ウィンドウの完全遮蔽で描画ループ（rAF）が止まっている間に
   200 Hz の受信が溜まり続け（約 80 分で 1 本あたり数十万件・RSS 750 MB）、復帰時の flush が「全件 push → 表示件数まで
   1 件ずつ shift」の O(n²) となってレンダラが数十分 CPU 99% で固まっていた（展示ページで実機接続中に発生。
