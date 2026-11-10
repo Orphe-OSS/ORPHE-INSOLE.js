@@ -70,6 +70,7 @@
       drainMs: null,
       drainRecovered: 0,
       maxLag: 0,
+      framesPerPacket: null,   // 4 | 8（FW の FIFO packet 形式。最初のデータ到着で確定）
       lag: 0,
       droppedLive: 0,         // onDataLoss(info.cumulative) の最新値
       droppedTotal: null,     // onStopped(info.dropped) = この収録の回復不能ロス累計
@@ -506,11 +507,27 @@
     queueLiveRender();
   }
 
+  // FIFO packet 形式（4 | 8 フレーム）。onProgress の値を優先し、無ければ sample の packet_number から求める。
+  function framesPerPacketOf(entry, samples) {
+    if (entry.framesPerPacket) return entry.framesPerPacket;
+    let maxPacketNumber = -1;
+    for (const sample of samples || []) {
+      const n = sample && Number(sample.packet_number);
+      if (Number.isInteger(n) && n > maxPacketNumber) maxPacketNumber = n;
+    }
+    return maxPacketNumber >= 4 ? 8 : null;
+  }
+
+  function ringCapacityOf(entry) {
+    return C.packetFormatInfo(entry.framesPerPacket).ringCapacity;
+  }
+
   function handleFifoProgress(id, info) {
     const entry = device(id);
     const lag = Number(info && info.lag) || 0;
     entry.lag = lag;
     if (lag > entry.maxLag) entry.maxLag = lag;
+    if (info && info.framesPerPacket) entry.framesPerPacket = info.framesPerPacket;
     if (info && info.draining) {
       setSourceCopy("draining", "sourceDrainingTitle", "sourceDrainingProgress", {
         detailParams: { collected: info.collected, lag }
@@ -627,7 +644,10 @@
     // INSOLE 1.5: FIFO が無く Toolkit が Realtime へ退避して記録する。1 packet = 2 sample / 10 ms、
     // 100 packet/s なので受信順の積み上げ（ordered）で serial を数える（6 分で uint16 半周を超える）。
     const insole15 = result.insole15 === true || result.generation === 2;
-    const packetIntervalMs = insole15 ? 10 : C.PACKET_INTERVAL_MS;
+    // 製品版 FIFO は FW によって 1 packet = 4 フレーム（20 ms）か 8 フレーム（40 ms・FW 20260924.1 以降）
+    const format = C.packetFormatInfo(framesPerPacketOf(entry, samples));
+    entry.framesPerPacket = insole15 ? null : format.framesPerPacket;
+    const packetIntervalMs = insole15 ? 10 : format.packetIntervalMs;
     const analysis = C.analyzeSerials(samples.map((sample) => sample.serial_number), { ordered: insole15 });
     // dropped は「収録中に回復不能と判定された累計」。onStopped(info.dropped) が正。
     // result.fifo.dropped は checkpoint 区間の再集計値なので定義が異なる。
@@ -641,6 +661,7 @@
       dropped,
       durationMs: result.durationMs,
       maxLag: entry.maxLag,
+      ringCapacity: format.ringCapacity,
       ignoreBuffer: insole15
     });
     // CSVが実際に覆う時間。停止時点で未要求だった分は収録スパンに入らない（missing ではない）
@@ -854,7 +875,7 @@
       setMetric(id, "m_dropped", String(entry.dropped), entry.dropped === 0 ? "ok" : "bad");
       setMetric(id, "m_drain_recovered", String(entry.drainRecovered));
       setMetric(id, "m_drain_ms", entry.drainMs === null ? t("valueEmpty") : `${entry.drainMs} ms`);
-      setMetric(id, "m_max_lag", `${entry.maxLag} / ${C.RING_BUFFER_CAPACITY}`,
+      setMetric(id, "m_max_lag", `${entry.maxLag} / ${ringCapacityOf(entry)}`,
         verdict.buffer.lagOverCapacity ? "bad"
           : verdict.buffer.lagRatio >= C.LAG_CAUTION_RATIO ? "warn" : "ok");
     }
@@ -935,7 +956,7 @@
       cell.hidden = !show;
       cell.querySelector(".live-meta-name").textContent = deviceLabel(id);
       const lag = state.recording || state.phase === "draining"
-        ? `${entry.lag} / ${C.RING_BUFFER_CAPACITY}`
+        ? `${entry.lag} / ${ringCapacityOf(entry)}`
         : "—";
       const gap = entry.lastBatchGapMs === null ? "—" : `${Math.round(entry.lastBatchGapMs)} ms`;
       const strong = cell.querySelector("strong");
@@ -945,7 +966,7 @@
         `${t("liveBatchGap")} ${gap}`,
         `${t("liveLag")} ${lag}`
       ].join(" · ");
-      strong.className = entry.lag >= C.RING_BUFFER_CAPACITY * C.LAG_CAUTION_RATIO ? "alert" : "";
+      strong.className = entry.lag >= ringCapacityOf(entry) * C.LAG_CAUTION_RATIO ? "alert" : "";
     });
   }
 
@@ -1252,11 +1273,14 @@
             checkpointDropped: result && result.fifo ? result.fifo.dropped : null,
             drainRecovered: entry.drainRecovered,
             drainMs: entry.drainMs,
-            maxLag: entry.maxLag
+            maxLag: entry.maxLag,
+            framesPerPacket: entry.framesPerPacket,
+            ringCapacity: ringCapacityOf(entry)
           }
         };
       }),
       fifoLimits: {
+        // 4 フレーム形式の上限。デバイスごとの実際の上限は devices[].fifo.ringCapacity
         ringBufferCapacity: C.RING_BUFFER_CAPACITY,
         bufferWindowMs: C.BUFFER_WINDOW_MS
       },

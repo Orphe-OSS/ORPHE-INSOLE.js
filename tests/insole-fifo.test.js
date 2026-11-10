@@ -208,12 +208,21 @@ function near(actual, expected, tol, label) {
   // carryOver 溢れ → 再同期
   const s2 = new Fifo.FifoLoopState();
   const many = new Set();
-  for (let i = 0; i < 101; i++) many.add(1000 + i);
-  const r2 = s2.updateAfterResponse(many, new Set(), 1000, 101);
+  const overflow = Fifo.MAX_CARRY_OVER_SERIALS + 1;
+  for (let i = 0; i < overflow; i++) many.add(1000 + i);
+  const r2 = s2.updateAfterResponse(many, new Set(), 1000, overflow);
   assert.equal(r2, 'resync');
   assert.deepEqual(s2.carryOver, []);
   assert.equal(s2.lastSerial, null);
-  assert.equal(s2.dropped, 101);
+  assert.equal(s2.dropped, overflow);
+
+  // 上限ちょうどまでは捨てずに再要求し続ける（上限は 8 フレーム形式で約 23 秒ぶん）
+  assert.equal(Fifo.MAX_CARRY_OVER_SERIALS, 600);
+  const sKeep = new Fifo.FifoLoopState();
+  const atLimit = new Set();
+  for (let i = 0; i < Fifo.MAX_CARRY_OVER_SERIALS; i++) atLimit.add(1000 + i);
+  assert.equal(sKeep.updateAfterResponse(atLimit, new Set(), 1000, Fifo.MAX_CARRY_OVER_SERIALS), 'ok');
+  assert.equal(sKeep.dropped, 0);
   assert.equal(s2.resyncPending, true); // 次ポーリングでバックログ超過を計上させる
   assert.ok(s2.lossEvents.some((e) => e.reason === 'carryover_overflow'));
 

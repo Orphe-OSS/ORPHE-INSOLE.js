@@ -156,7 +156,11 @@ What does your app need?
 相当。内部は単なる FIFO キューなので名前は `fifo`）。
 
 - クラス: `OrpheInsoleFifo`（`src/InsoleFifo.js`。コアSDKとは疎結合、純粋関数は Node でもテスト可）
-- **クォータニオンは含まれない**（ジャイロ・加速度・6ch圧力のみ。データパケットはヘッダ `0x36`）
+- **クォータニオンは含まれない**（ジャイロ・加速度・6ch圧力のみ）
+- **データパケットの形式は FW で 2 種類あり、SDK が自動判別する**（`OrpheInsoleFifo.PACKET_FORMATS`）:
+  従来 FW は `0x36`・104 byte・**4 フレーム**/packet、**FW 20260924.1 以降は `0x3A`・200 byte・8 フレーム**/packet
+  （serial の進みは約半分の約 26 packet/s、lag 上限は 1500 → 750）。1 serial のサンプル数を 4 と決め打ちせず、
+  `fifo.framesPerPacket`（4 | 8）か `sample.packet_number` を使うこと
 - 収録中はリアルタイム配信が一時停止する（FW の読み取りモードを切り替えるため）
 
 ```javascript
@@ -206,7 +210,7 @@ const fifo2 = new OrpheInsoleFifo(insole, { stopOnLoss: true });
 // 収録後の判定: fifo.droppedCount === 0 なら欠損なし
 ```
 
-CSV は timestamp 昇順・1パケット4行（行間隔は `LEGACY_CSV_FRAME_INTERVAL_MS`＝5ms。後述の
+CSV は timestamp 昇順・1パケット4行（8 フレーム形式は 8行。行間隔は `LEGACY_CSV_FRAME_INTERVAL_MS`＝5ms。後述の
 実測フレーム間隔とは別に、Python 参照実装とのバイト互換のため意図的に据え置き）で、参照実装の
 `tools/check_tokoroten_data.py`（4行/serial・欠損なしを検証）と互換。
 実機（device 00000161/right）で欠損0のロスレス収録を確認済み。
@@ -220,7 +224,8 @@ dt が 0 や負になることがあった。`IMU_ODR_HZ` / `FRAME_INTERVAL_MS` 
 公開されている。dt を計算する用途はこちらを使うこと（CSV の timestamp 文字列から逆算しない）。
 
 **端末内バッファは約30秒分**（`RING_BUFFER_CAPACITY`(1500) packet × 20 ms/packet = 30,000 ms。
-1 packet = 4 frame × `LEGACY_CSV_FRAME_INTERVAL_MS`(5ms) で換算。等価に 50 packet/s × 30 s = 1500）。
+1 packet = 4 frame × `LEGACY_CSV_FRAME_INTERVAL_MS`(5ms) で換算。等価に 50 packet/s × 30 s = 1500。
+8 フレーム形式は 750 packet × 40 ms で同じ約30秒。現在の上限は `fifo.ringCapacity`）。
 この30秒はCSV基準の目安値であり、実測ODR（≈208Hz）換算では1 packetは約19.2msなので
 実際のバッファ時間はやや短い（約28.8秒）。いずれにしても目安であり、
 30秒以内の短時間計測は計測区間全体をバッファに保持しやすく安定した記録に向くが、

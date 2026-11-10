@@ -278,7 +278,11 @@
 
   1 serial packet = 4 frame × 5 ms       =     20 ms
   buffer window   = 1500 packet × 20 ms  = 30,000 ms  ≈ 30 s
-  (equivalent: 200 sample/s ÷ 4 = 50 packet/s → 1500 ÷ 50 = 30 s)</pre>
+  (equivalent: 200 sample/s ÷ 4 = 50 packet/s → 1500 ÷ 50 = 30 s)
+
+FW 20260924.1+ (8 frames per serial packet, header 0x3A)
+  1 serial packet = 8 frame × 5 ms       =     40 ms
+  buffer window   =  750 packet × 40 ms  = 30,000 ms  ≈ 30 s</pre>
           <p data-i18n="bufferCardOutro">
             30秒以内の短時間計測は計測区間の全体をバッファに保持しやすく、安定した記録に向いています。
           </p>

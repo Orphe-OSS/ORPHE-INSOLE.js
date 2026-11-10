@@ -23,6 +23,12 @@
  *
  * 注意: FIFO モードはジャイロ・加速度・6ch圧力のみでクォータニオンを含まない。
  *
+ * データパケットの形式は FW によって 2 種類ある（PACKET_FORMATS）。どちらも自動判別する:
+ *   - 0x36 / 104 byte / 4 フレーム … 従来 FW。約 52 packet/s、リング 1500 packet
+ *   - 0x3A / 200 byte / 8 フレーム … FW 20260924.1 以降。約 26 packet/s、リング 780 packet
+ * 1 packet あたりのサンプル数が違うので、サンプル数や時間を serial 数から換算するときは
+ * 4 を決め打ちせず `fifo.framesPerPacket`（または sample.packet_number の最大値+1）を使うこと。
+ *
  * 単位換算の注意（意図的な差異）: gyro[dps] は Python 参照実装（insole_client）と
  * **意図的に係数 1.14688 倍だけ異なる**。参照実装は raw int16 を理想 Q15 とみなして
  * `raw / 32768 * 2000`（= 61.035 mdps/LSB）で換算するが、本実装は LSM6DSOX の
@@ -51,14 +57,36 @@
   const SUB_STOP_MONITOR = 0x06;
 
   const RESP_STATUS = 0x35;       // コマンド応答/no-data のヘッダ
-  const RESP_DATA = 0x36;         // センサーデータパケットのヘッダ
+  const RESP_DATA = 0x36;         // センサーデータパケットのヘッダ（4 フレーム・104 byte）
+  // FW 20260924.1 以降の FIFO データパケットは 8 フレーム・200 byte（ヘッダ 0x3A）。
+  // ヘッダ(1)+serial(2)+timestamp(5) と 1 フレーム 24 byte は共通で、フレーム数だけが違う。
+  // 1 serial が表す時間が 2 倍（約 38.5 ms）になるので、serial の進みは約 26 packet/s、
+  // FW リングバッファは 780 packet（≒30 秒）。ringCapacity はそこから余裕を取った値。
+  const RESP_DATA_8 = 0x3A;
+  const PACKET_FORMATS = Object.freeze({
+    [RESP_DATA]: Object.freeze({ frames: 4, bytes: 104, ringCapacity: 1500 }),
+    [RESP_DATA_8]: Object.freeze({ frames: 8, bytes: 200, ringCapacity: 750 }),
+  });
+  // データパケットの形式（{frames, bytes, ringCapacity}）。ヘッダと長さの両方が合うときだけ返す
+  // （ヘッダだけ合って長さが違うパケットを読むと範囲外参照になるため）。
+  function packetFormat(dv) {
+    if (!dv || dv.byteLength < 8) return null;
+    const f = PACKET_FORMATS[dv.getUint8(0)];
+    return f && dv.byteLength === f.bytes ? f : null;
+  }
+  function isDataHeader(b) { return b === RESP_DATA || b === RESP_DATA_8; }
   const RESP_NO_DATA_SUB = 0x02;
 
   const RE_REQUEST_DATA_NUM = 30;                    // 1要求に載る (start,count) 組の最大数
   const MAX_DATA_NUMBER_REQUESTED_AT_ONCE = 200;
-  const ONE_SHOT_TIMEOUT_MS = 5000;                  // 200件/60per s ≒ 3.3s + 余裕
-  const MAX_CARRY_OVER_SERIALS = 100;                // carryOver 上限（安全弁）
-  const RING_BUFFER_CAPACITY = 1500;                 // FW リングバッファ余裕上限
+  // 200件/60per s ≒ 3.3s + 余裕（4 フレーム形式の見積もり。8 フレーム形式は 1 packet が 200 byte と
+  // 倍になる。応答が途切れたら ONE_SHOT_IDLE_TIMEOUT_MS で先に抜け、届かなかった分は carryOver で再要求する）
+  const ONE_SHOT_TIMEOUT_MS = 5000;
+  // carryOver 上限（安全弁）。旧値 100 は 8 フレーム形式（約 26 packet/s）だと約 3.8 秒ぶんの
+  // 取りこぼしで溢れ、まだ FW リングに残っていて再要求すれば回収できる分まで回復不能として
+  // 捨ててしまうため 600 に引き上げた（4 フレーム形式で約 12 秒、8 フレーム形式で約 23 秒ぶん）。
+  const MAX_CARRY_OVER_SERIALS = 600;
+  const RING_BUFFER_CAPACITY = 1500;                 // FW リングバッファ余裕上限（4 フレーム形式。形式別の値は PACKET_FORMATS）
   const POLLING_INTERVAL_MS = 200;
   const CURRENT_SERIAL_TIMEOUT_MS = 50;
   const ONE_SHOT_IDLE_TIMEOUT_MS = 400;              // バースト受信中に許容する無音（超えたら「このバーストは終わり」と判断）
@@ -68,9 +96,10 @@
   // #46 の _receiveResponses と同じ idle timeout の考え方）。ただし停止処理が終わらなくなると
   // 困るので、絶対上限として idle 予算の CATCHUP_MAX_BUDGET_FACTOR 倍を超えたら打ち切る。
   // 既定 3000ms × 10 = 30s は FW リングバッファ全域（1500 packet ≒ 60 packet/s で 25s）を
-  // 引き切れる余裕にあたる。
+  // 引き切れる余裕にあたる（4 フレーム形式の見積もり。8 フレーム形式は 750 packet・1 packet 200 byte。
+  // 打ち切られた分は stopped_pending として計上されるので、無音の欠損にはならない）。
   const CATCHUP_MAX_BUDGET_FACTOR = 10;
-  const NOTIFY_DATA_NUM = 4;                         // 1パケット内のフレーム数
+  const NOTIFY_DATA_NUM = 4;                         // 1パケット内のフレーム数（4 フレーム形式。8 フレーム形式は PACKET_FORMATS）
   const NOTIFY_DATA_SIZE = 24;                       // 1フレームのバイト数
   const DATA_PACKET_BYTE_LENGTH = 104;
 
@@ -195,7 +224,7 @@
 
   // データパケットならシリアル番号、そうでなければ null
   function extractSerialIfSensorPacket(dv) {
-    if (dv.byteLength < 3 || dv.getUint8(0) !== RESP_DATA) return null;
+    if (dv.byteLength < 3 || !isDataHeader(dv.getUint8(0))) return null;
     return dv.getUint16(1);
   }
 
@@ -244,14 +273,16 @@
     };
   }
 
-  // 1データパケット(0x36) → 4フレームのサンプル配列（ライブ可視化用）。
-  // フレームは古い順（i=3 が基準、以降 +FRAME_INTERVAL_MS≈4.8077ms）。出力もその順。
+  // 1データパケット(0x36: 4フレーム / 0x3A: 8フレーム) → サンプル配列（ライブ可視化用）。
+  // フレームは古い順（i=frames-1 が基準、以降 +FRAME_INTERVAL_MS≈4.8077ms）。出力もその順。
   function decodePacket(dv) {
     const serial = dv.getUint16(1);
     const baseMs = extractTimestampMs(dv);
     const samples = [];
-    for (let i = NOTIFY_DATA_NUM - 1; i >= 0; i--) {
-      const packet_number = (NOTIFY_DATA_NUM - 1) - i;
+    const fmt = packetFormat(dv);
+    const frames = fmt ? fmt.frames : NOTIFY_DATA_NUM;
+    for (let i = frames - 1; i >= 0; i--) {
+      const packet_number = (frames - 1) - i;
       const f = readFrame(dv, i);
       samples.push({
         serial_number: serial,
@@ -268,15 +299,17 @@
   function f2(v) { return v.toFixed(2).padStart(8); }
   function f4(v) { return v.toFixed(4).padStart(8); }
 
-  // 1データパケット → CSV 4行（参照実装 sensor_data_to_str(csv=True) と同一形式）。
+  // 1データパケット → CSV 4行（8フレーム形式は 8行）（参照実装 sensor_data_to_str(csv=True) と同一形式）。
   // timestamp 列は意図的に LEGACY_CSV_FRAME_INTERVAL_MS（5ms/frame）のまま据え置く
   // （冒頭の定数定義コメント参照。実際のフレーム間隔は FRAME_INTERVAL_MS≈4.8077ms）。
   function packetToCsvRows(dv) {
     const serial = dv.getUint16(1);
     const h = dv.getUint8(3), m = dv.getUint8(4), s = dv.getUint8(5), ms = dv.getUint16(6);
     const rows = [];
-    for (let i = NOTIFY_DATA_NUM - 1; i >= 0; i--) {
-      const offsetMs = ((NOTIFY_DATA_NUM - 1) - i) * LEGACY_CSV_FRAME_INTERVAL_MS;
+    const fmt = packetFormat(dv);
+    const frames = fmt ? fmt.frames : NOTIFY_DATA_NUM;
+    for (let i = frames - 1; i >= 0; i--) {
+      const offsetMs = ((frames - 1) - i) * LEGACY_CSV_FRAME_INTERVAL_MS;
       const f = readFrame(dv, i);
       rows.push([
         String(serial), timestampToStr(h, m, s, ms, offsetMs),
@@ -295,7 +328,7 @@
     entries.sort((a, b) => extractTimestampMs(a) - extractTimestampMs(b));
     const lines = [CSV_HEADER];
     for (const dv of entries) {
-      if (dv.byteLength < 1 || dv.getUint8(0) !== RESP_DATA) continue;
+      if (!packetFormat(dv)) continue;
       for (const row of packetToCsvRows(dv)) lines.push(row);
     }
     return lines.join('\n') + '\n';
@@ -338,6 +371,10 @@
   class FifoLoopState {
     constructor() {
       this.lastSerial = null;
+      // 最初のデータパケットの形式で確定する（8 フレーム形式は 750）。それまでは従来値で判定するが、
+      // 収録開始時は FW バッファを消去してから始めるので、形式が決まる前に lag が上限へ届くことはない。
+      this.ringCapacity = RING_BUFFER_CAPACITY;
+      this.framesPerPacket = null;  // 4 | 8（未受信なら null）
       this.carryOver = [];          // [[start,count], ...]
       this.rawStore = new Map();    // serial -> DataView
       this.dropped = 0;             // 回復不能に失われた累計シリアル数
@@ -421,10 +458,10 @@
       }
 
       let need = serialDistance(this.lastSerial, currentSerial);
-      if (need > RING_BUFFER_CAPACITY) {
+      if (need > this.ringCapacity) {
         // 追従が間に合わず、FW リングバッファが上書きされた分は回復不能。
         // ここで飛ばす serial は「気づかない欠損」になりやすいので必ず記録・通知する。
-        const skip = need - RING_BUFFER_CAPACITY;
+        const skip = need - this.ringCapacity;
         this.lastSerial = (this.lastSerial + skip) % UINT16_MAX;
         this.carryOver = [];
         this.dropped += skip;
@@ -518,6 +555,8 @@
       this.stopOnLoss = options.stopOnLoss || false;
       this.state = new FifoLoopState();
       this._queue = new NotifyQueue();
+      this._warnedUnknownPacket = false;
+      this._notifyStats = new Map();
       this._running = false;
       this._starting = false;
       this._loopPromise = null;
@@ -662,6 +701,7 @@
      */
     async start() {
       if (this._running || this._starting) return this._running;
+      this._warnedUnknownPacket = false;   // 未対応パケットの警告は収録ごとに 1 回
       // 直前の stop()/自動停止のライフサイクル完了を待つ。待たずに再開すると
       // 旧ループと新ループが同じ NotifyQueue を奪い合い、ハンドシェイクの ACK を
       // 旧ループが横取りしてしまう（公開クラスなので交差呼び出しに備える）。
@@ -682,7 +722,15 @@
       this._restoreMode = this.insole.streaming_mode || 4;
 
       // notify をこのモジュールの queue へ横取り
-      this.insole._fifoNotifySink = (dv) => this._queue.push(dv);
+      // 受け取った通知を「ヘッダ:長さ」ごとに数える（0 件のときに、何が届いていたかをその場で診断できるように）
+      this._notifyStats = new Map();
+      this.insole._fifoNotifySink = (dv) => {
+        try {
+          const key = `${dv.byteLength ? dv.getUint8(0).toString(16).padStart(2, '0') : '--'}:${dv.byteLength}`;
+          this._notifyStats.set(key, (this._notifyStats.get(key) || 0) + 1);
+        } catch (_) { /* 診断用なので失敗しても収録は続ける */ }
+        this._queue.push(dv);
+      };
 
       try {
         await this._setReadMode(READ_MODE_FIFO);
@@ -833,6 +881,8 @@
             lag: serialDistance(state.lastSerial, frozenTarget) +
               state.carryOver.reduce((sum, [, c]) => sum + c, 0),
             dropped: state.dropped,
+            framesPerPacket: state.framesPerPacket,
+            ringCapacity: state.ringCapacity,
             draining: true,
             catchup: true,
           }));
@@ -878,6 +928,8 @@
             currentSerial: this._lastCurrentSerial,
             lag: state.carryOver.reduce((sum, [, c]) => sum + c, 0),
             dropped: state.dropped,
+            framesPerPacket: state.framesPerPacket,
+            ringCapacity: state.ringCapacity,
             draining: true,
           }));
         }
@@ -1036,6 +1088,8 @@
             currentSerial,
             lag: this.lag,
             dropped: state.dropped,
+            framesPerPacket: state.framesPerPacket,
+            ringCapacity: state.ringCapacity,
           }));
         }
 
@@ -1073,7 +1127,13 @@
           continue;
         }
         const serial = extractSerialIfSensorPacket(dv);
-        if (serial !== null && expectedSerials.has(serial) && dv.byteLength === DATA_PACKET_BYTE_LENGTH) {
+        const fmt = serial !== null ? packetFormat(dv) : null;
+        if (serial !== null && !fmt) this._noteUnknownPacket(dv);
+        if (fmt && expectedSerials.has(serial)) {
+          if (this.state.framesPerPacket !== fmt.frames) {
+            this.state.framesPerPacket = fmt.frames;
+            this.state.ringCapacity = fmt.ringCapacity;
+          }
           received.set(serial, dv);
         }
       }
@@ -1146,6 +1206,18 @@
     }
 
     // ── 内部ユーティリティ ────────────────────────────────────────────
+    /** FIFO 中に届いた通知の内訳 { 'ヘッダ(hex):長さ': 件数 }。例: {'35:7': 120, '3a:200': 950} */
+    get notifyStats() { return Object.fromEntries(this._notifyStats || []); }
+    /** 収録中のパケット形式（4 | 8 フレーム/パケット。未受信なら null） */
+    get framesPerPacket() { return this.state.framesPerPacket; }
+    /** lag がこれを超えた分を回復不能として扱う上限 packet 数（4 フレーム形式 1500 / 8 フレーム形式 750） */
+    get ringCapacity() { return this.state.ringCapacity; }
+    // データヘッダなのに長さが合わないパケットは黙って捨てず、1 回だけ知らせる（FW の形式変更に気づけるように）
+    _noteUnknownPacket(dv) {
+      if (this._warnedUnknownPacket) return;
+      this._warnedUnknownPacket = true;
+      this._reportError(new Error(`FIFO: 未対応のデータパケット（header 0x${dv.getUint8(0).toString(16)} / ${dv.byteLength} byte）。SDK がこの FW の形式に未対応の可能性があります`));
+    }
     _safe(fn) { try { fn(); } catch (e) { this._reportError(e); } }
     _reportError(error) {
       if (typeof this.onError === 'function') { try { this.onError(error); return; } catch (_) { /* fallthrough */ } }
@@ -1158,6 +1230,8 @@
   OrpheInsoleFifo.READ_MODE_FIFO = READ_MODE_FIFO;
   OrpheInsoleFifo.CSV_HEADER = CSV_HEADER;
   OrpheInsoleFifo.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
+  OrpheInsoleFifo.PACKET_FORMATS = PACKET_FORMATS;
+  OrpheInsoleFifo.packetFormat = packetFormat;
   OrpheInsoleFifo.MAX_CARRY_OVER_SERIALS = MAX_CARRY_OVER_SERIALS;
   OrpheInsoleFifo.RE_REQUEST_DATA_NUM = RE_REQUEST_DATA_NUM;
   OrpheInsoleFifo.GYRO_DPS_PER_LSB = GYRO_DPS_PER_LSB;
