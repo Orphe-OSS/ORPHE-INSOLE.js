@@ -117,6 +117,72 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     }
 
+    .deprecation-banner {
+      background: #1b1210;
+      border-bottom: 2px solid var(--orange);
+      color: #ffffff;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .deprecation-banner-inner {
+      width: min(100% - 32px, var(--max));
+      margin: 0 auto;
+      padding: 10px 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px 14px;
+    }
+
+    .deprecation-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: var(--orange);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .deprecation-text {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.94);
+      text-align: center;
+    }
+
+    .deprecation-text strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .deprecation-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 13px;
+      border: 1px solid rgba(255, 96, 64, 0.85);
+      border-radius: 999px;
+      background: rgba(255, 96, 64, 0.18);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    .deprecation-link:hover,
+    .deprecation-link:focus-visible {
+      background: var(--orange);
+      border-color: var(--orange);
+      outline: none;
+    }
+
     .site-header {
       position: sticky;
       top: 0;
@@ -797,6 +863,19 @@
         width: min(100% - 24px, var(--max));
       }
 
+      .deprecation-banner {
+        font-size: 13px;
+      }
+
+      .deprecation-banner-inner {
+        width: min(100% - 24px, var(--max));
+        justify-content: flex-start;
+      }
+
+      .deprecation-text {
+        text-align: left;
+      }
+
       .brand {
         font-size: 14px;
       }
@@ -874,6 +953,13 @@
 </head>
 
 <body>
+  <div class="deprecation-banner" role="region" aria-label="SDK非推奨化のお知らせ" data-i18n-aria-label="deprecationAriaLabel">
+    <div class="deprecation-banner-inner">
+      <span class="deprecation-badge" data-i18n="deprecationBadge">非推奨</span>
+      <p class="deprecation-text" data-i18n-html="deprecationMessage">このSDK（ORPHE-INSOLE.js）は統合SDK <strong>ORPHE-CORE-INSOLE.js</strong> への移行に伴い非推奨化されます。新規開発・移行は新SDKをご利用ください。</p>
+      <a class="deprecation-link" href="https://orphe-oss.github.io/ORPHE-CORE-INSOLE.js/" data-i18n="deprecationCta">ORPHE-CORE-INSOLE.js へ →</a>
+    </div>
+  </div>
   <header class="site-header">
     <nav class="nav" aria-label="メインナビゲーション" data-i18n-aria-label="navLabel">
       <a class="brand" href="#">
@@ -1434,6 +1520,10 @@
         metaDescription: "ORPHE-INSOLE.js connects ORPHE INSOLE devices to browser apps through Web Bluetooth for pressure, motion, and orientation prototyping.",
         navLabel: "Main navigation",
         languageLabel: "Language",
+        deprecationAriaLabel: "SDK deprecation notice",
+        deprecationBadge: "Deprecated",
+        deprecationMessage: "ORPHE-INSOLE.js is being deprecated in favor of the unified <strong>ORPHE-CORE-INSOLE.js</strong> SDK. Please use the new SDK for new projects and migration.",
+        deprecationCta: "Go to ORPHE-CORE-INSOLE.js →",
         navAbout: "About",
         navProduct: "Product",
         navData: "Data",
@@ -1610,6 +1700,10 @@
         metaDescription: "ORPHE-INSOLE.jsは、Web BluetoothでORPHE INSOLEの足裏圧、モーション、姿勢データをブラウザアプリへ接続するJavaScript SDKです。",
         navLabel: "メインナビゲーション",
         languageLabel: "言語",
+        deprecationAriaLabel: "SDK非推奨化のお知らせ",
+        deprecationBadge: "非推奨",
+        deprecationMessage: "このSDK（ORPHE-INSOLE.js）は統合SDK <strong>ORPHE-CORE-INSOLE.js</strong> への移行に伴い非推奨化されます。新規開発・移行は新SDKをご利用ください。",
+        deprecationCta: "ORPHE-CORE-INSOLE.js へ →",
         navAbout: "概要",
         navProduct: "製品",
         navData: "取得データ",
